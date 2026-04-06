@@ -1,0 +1,84 @@
+:root {
+  color-scheme: light;
+  --bg: #f2efe7;
+  --card: rgba(255, 255, 255, 0.72);
+  --text: #1b1f1d;
+  --muted: #57615d;
+  --accent: #1e5f48;
+  --border: rgba(27, 31, 29, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(30, 95, 72, 0.16), transparent 30%),
+    linear-gradient(135deg, #f7f4ec, var(--bg));
+}
+
+.shell {
+  width: min(720px, calc(100% - 3rem));
+  margin: 12vh auto;
+  padding: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--card);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 24px 60px rgba(27, 31, 29, 0.08);
+}
+
+.eyebrow {
+  margin: 0 0 0.75rem;
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+}
+
+h1 {
+  margin: 0;
+  font-family: "IBM Plex Serif", Georgia, serif;
+  font-size: clamp(2.5rem, 5vw, 4rem);
+}
+
+.lede {
+  max-width: 36rem;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.meta div {
+  padding: 1rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(27, 31, 29, 0.08);
+}
+
+dt {
+  margin-bottom: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+dd {
+  margin: 0;
+  font-weight: 600;
+}
+

@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "garden"
+version = "0.1.0"
+description = "CLI-first authenticated application surface verification workflow tool."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [
+  { name = "Garden Contributors" }
+]
+dependencies = [
+  "fastapi>=0.116.0,<1.0.0",
+  "httpx>=0.28.0,<1.0.0",
+  "jinja2>=3.1.0,<4.0.0",
+  "playwright>=1.52.0,<2.0.0",
+  "pydantic-settings>=2.8.0,<3.0.0",
+  "PyYAML>=6.0.0,<7.0.0",
+  "python-multipart>=0.0.20,<1.0.0",
+  "sqlalchemy>=2.0.0,<3.0.0",
+  "typer>=0.16.0,<1.0.0",
+  "uvicorn[standard]>=0.35.0,<1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pre-commit>=4.2.0,<5.0.0",
+  "pytest>=8.3.0,<9.0.0",
+  "pytest-cov>=6.1.0,<7.0.0",
+  "ruff>=0.11.0,<1.0.0",
+]
+
+[project.scripts]
+gardenctl = "app.cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

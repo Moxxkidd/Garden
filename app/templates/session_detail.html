@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <div class="flex items-end justify-between">
+      <div>
+        <p class="text-sm uppercase tracking-[0.18em] text-slate-500">Auth Session</p>
+        <h1 class="text-3xl font-semibold tracking-tight">Session #{{ auth_session.id }}</h1>
+      </div>
+      <a href="/sessions" class="rounded-full border border-black/10 px-4 py-2 text-sm">Back</a>
+    </div>
+    <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
+      <dl class="grid gap-5 md:grid-cols-2">
+        <div><dt class="text-slate-500">Target</dt><dd class="mt-1 font-medium">{{ target_name }}</dd></div>
+        <div><dt class="text-slate-500">Profile</dt><dd class="mt-1 font-medium">{{ profile_name }}</dd></div>
+        <div><dt class="text-slate-500">Status</dt><dd class="mt-1 font-medium">{{ auth_session.status }}</dd></div>
+        <div><dt class="text-slate-500">Session Type</dt><dd class="mt-1 font-medium">{{ auth_session.session_type }}</dd></div>
+        <div><dt class="text-slate-500">Created</dt><dd class="mt-1 font-medium">{{ auth_session.created_at.isoformat() }}</dd></div>
+        <div><dt class="text-slate-500">Expires</dt><dd class="mt-1 font-medium">{{ auth_session.expires_at.isoformat() if auth_session.expires_at else "-" }}</dd></div>
+        <div><dt class="text-slate-500">Last Validated</dt><dd class="mt-1 font-medium">{{ auth_session.last_validated_at.isoformat() if auth_session.last_validated_at else "-" }}</dd></div>
+        <div><dt class="text-slate-500">Refresh Supported</dt><dd class="mt-1 font-medium">{{ "yes" if auth_session.refresh_supported else "no" }}</dd></div>
+        <div class="md:col-span-2"><dt class="text-slate-500">Storage Ref</dt><dd class="mt-1 font-medium">{{ auth_session.storage_ref }}</dd></div>
+        <div class="md:col-span-2"><dt class="text-slate-500">Last Error</dt><dd class="mt-1 font-medium">{{ auth_session.last_error or "-" }}</dd></div>
+        <div class="md:col-span-2"><dt class="text-slate-500">Redacted Metadata</dt><dd class="mt-2"><pre class="overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-100">{{ session_metadata_json }}</pre></dd></div>
+      </dl>
+    </div>
+  </section>
+{% endblock %}
+

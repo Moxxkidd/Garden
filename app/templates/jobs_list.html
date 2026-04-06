@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <div class="flex items-end justify-between">
+      <div>
+        <p class="text-sm uppercase tracking-[0.18em] text-slate-500">Management</p>
+        <h1 class="text-3xl font-semibold tracking-tight">Scan Jobs</h1>
+      </div>
+      <a href="/jobs" class="rounded-full border border-black/10 px-4 py-2 text-sm">Refresh</a>
+    </div>
+    <div class="overflow-hidden rounded-3xl border border-black/10 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-black/5 text-sm">
+        <thead class="bg-stone-50 text-left text-slate-500">
+          <tr>
+            <th class="px-5 py-3">ID</th>
+            <th class="px-5 py-3">Target</th>
+            <th class="px-5 py-3">Credential</th>
+            <th class="px-5 py-3">Status</th>
+            <th class="px-5 py-3">Started</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-black/5">
+          {% for job in jobs %}
+            <tr class="hover:bg-stone-50">
+              <td class="px-5 py-4 font-medium"><a href="/jobs/{{ job.id }}">{{ job.id }}</a></td>
+              <td class="px-5 py-4">{{ job.target.name if job.target else job.target_id }}</td>
+              <td class="px-5 py-4">{{ job.credential_profile.name if job.credential_profile else job.credential_profile_id }}</td>
+              <td class="px-5 py-4">{{ job.status }}</td>
+              <td class="px-5 py-4 text-slate-600">{{ job.started_at.isoformat() if job.started_at else "-" }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="5" class="px-5 py-8 text-center text-slate-500">No scan jobs found.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

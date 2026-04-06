@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <div class="flex items-end justify-between">
+      <div>
+        <p class="text-sm uppercase tracking-[0.18em] text-slate-500">Management</p>
+        <h1 class="text-3xl font-semibold tracking-tight">Targets</h1>
+      </div>
+      <a href="/targets" class="rounded-full border border-black/10 px-4 py-2 text-sm">Refresh</a>
+    </div>
+    <div class="overflow-hidden rounded-3xl border border-black/10 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-black/5 text-sm">
+        <thead class="bg-stone-50 text-left text-slate-500">
+          <tr>
+            <th class="px-5 py-3">Name</th>
+            <th class="px-5 py-3">Base URL</th>
+            <th class="px-5 py-3">Type</th>
+            <th class="px-5 py-3">Owner</th>
+            <th class="px-5 py-3">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-black/5">
+          {% for target in targets %}
+            <tr class="hover:bg-stone-50">
+              <td class="px-5 py-4 font-medium"><a href="/targets/{{ target.id }}">{{ target.name }}</a></td>
+              <td class="px-5 py-4 text-slate-600">{{ target.base_url }}</td>
+              <td class="px-5 py-4">{{ target.type }}</td>
+              <td class="px-5 py-4">{{ target.owner }}</td>
+              <td class="px-5 py-4">{{ target.status }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="5" class="px-5 py-8 text-center text-slate-500">No targets found.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+

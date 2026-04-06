@@ -1,0 +1,1 @@
+"""Inventory collection integrations."""

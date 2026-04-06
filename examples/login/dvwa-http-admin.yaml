@@ -1,0 +1,19 @@
+adapter: http
+request_timeout_seconds: 5
+retry_attempts: 1
+session_type: http_cookie_jar
+login_request:
+  method: POST
+  url: /login.php
+  body_type: form
+  body:
+    username: "{{ username }}"
+    password: "{{ password }}"
+    Login: Login
+  expected_status: 200
+validate_request:
+  method: GET
+  url: /index.php
+  expected_status: 200
+  success_contains: "DVWA"
+

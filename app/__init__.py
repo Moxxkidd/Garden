@@ -1,0 +1,1 @@
+"""Garden application package."""

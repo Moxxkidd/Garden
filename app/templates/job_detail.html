@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <div class="flex items-end justify-between">
+      <div>
+        <p class="text-sm uppercase tracking-[0.18em] text-slate-500">Scan Job Detail</p>
+        <h1 class="text-3xl font-semibold tracking-tight">Job #{{ job.id }}</h1>
+      </div>
+      <a href="/jobs" class="rounded-full border border-black/10 px-4 py-2 text-sm">Back</a>
+    </div>
+    <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
+      <dl class="grid gap-5 md:grid-cols-2">
+        <div><dt class="text-slate-500">Target</dt><dd class="mt-1 font-medium">{{ job.target.name if job.target else job.target_id }}</dd></div>
+        <div><dt class="text-slate-500">Credential Profile</dt><dd class="mt-1 font-medium">{{ job.credential_profile.name if job.credential_profile else job.credential_profile_id }}</dd></div>
+        <div><dt class="text-slate-500">Status</dt><dd class="mt-1 font-medium">{{ job.status }}</dd></div>
+        <div><dt class="text-slate-500">Started</dt><dd class="mt-1 font-medium">{{ job.started_at.isoformat() if job.started_at else "-" }}</dd></div>
+        <div><dt class="text-slate-500">Finished</dt><dd class="mt-1 font-medium">{{ job.finished_at.isoformat() if job.finished_at else "-" }}</dd></div>
+        <div class="md:col-span-2"><dt class="text-slate-500">Summary</dt><dd class="mt-1 font-medium">{{ job.summary or "-" }}</dd></div>
+        <div class="md:col-span-2"><dt class="text-slate-500">Error</dt><dd class="mt-1 font-medium">{{ job.error_message or "-" }}</dd></div>
+      </dl>
+    </div>
+    {% if inventory_run %}
+      <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold">Inventory Summary</h2>
+          <a href="/inventory/{{ inventory_run.id }}" class="text-sm text-slate-500">View inventory</a>
+        </div>
+        <dl class="mt-4 grid gap-5 md:grid-cols-2">
+          <div><dt class="text-slate-500">Inventory Run</dt><dd class="mt-1 font-medium">{{ inventory_run.id }}</dd></div>
+          <div><dt class="text-slate-500">Status</dt><dd class="mt-1 font-medium">{{ inventory_run.status }}</dd></div>
+          <div><dt class="text-slate-500">Pages</dt><dd class="mt-1 font-medium">{{ inventory_run.pages_count }}</dd></div>
+          <div><dt class="text-slate-500">Endpoints</dt><dd class="mt-1 font-medium">{{ inventory_run.endpoints_count }}</dd></div>
+          <div><dt class="text-slate-500">Parameters</dt><dd class="mt-1 font-medium">{{ inventory_run.parameters_count }}</dd></div>
+          <div><dt class="text-slate-500">Annotations</dt><dd class="mt-1 font-medium">{{ inventory_run.annotations_count }}</dd></div>
+        </dl>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

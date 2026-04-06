@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <div class="flex items-end justify-between">
+      <div>
+        <p class="text-sm uppercase tracking-[0.18em] text-slate-500">Redacted Evidence</p>
+        <h1 class="text-3xl font-semibold tracking-tight">Evidence</h1>
+      </div>
+    </div>
+    <div class="rounded-3xl border border-black/10 bg-white shadow-sm overflow-hidden">
+      <table class="min-w-full text-sm">
+        <thead class="bg-stone-50 text-left text-slate-500">
+          <tr>
+            <th class="px-6 py-3 font-medium">ID</th>
+            <th class="px-6 py-3 font-medium">Type</th>
+            <th class="px-6 py-3 font-medium">Finding</th>
+            <th class="px-6 py-3 font-medium">Method</th>
+            <th class="px-6 py-3 font-medium">Status</th>
+            <th class="px-6 py-3 font-medium">Title</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-black/5">
+          {% for evidence in evidences %}
+            <tr class="hover:bg-stone-50">
+              <td class="px-6 py-4 font-medium"><a href="/evidence/{{ evidence.id }}">#{{ evidence.id }}</a></td>
+              <td class="px-6 py-4">{{ evidence.evidence_type }}</td>
+              <td class="px-6 py-4">
+                {% if evidence.finding_id %}
+                  <a href="/findings/{{ evidence.finding_id }}" class="text-slate-700 hover:text-slate-900">Finding #{{ evidence.finding_id }}</a>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+              <td class="px-6 py-4">{{ evidence.http_method or "-" }}</td>
+              <td class="px-6 py-4">{{ evidence.http_status if evidence.http_status is not none else "-" }}</td>
+              <td class="px-6 py-4">{{ evidence.title }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="6" class="px-6 py-8 text-center text-slate-500">No evidence captured yet.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

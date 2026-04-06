@@ -1,0 +1,13 @@
+adapter: playwright
+request_timeout_seconds: 15
+retry_attempts: 1
+login_url: /login.php
+validate_url: /index.php
+username_selector: "input[name='username']"
+password_selector: "input[name='password']"
+submit_selector: "input[name='Login']"
+success_selector: "#system_info"
+success_text: "Username:"
+success_url_contains: "/index.php"
+error_selector: ".message"
+refresh_via_relogin: true

@@ -1,0 +1,18 @@
+[
+  {
+    "name": "garden-demo-web",
+    "base_url": "http://127.0.0.1:8000",
+    "type": "web",
+    "owner": "appsec",
+    "tags": ["demo", "local"],
+    "status": "active"
+  },
+  {
+    "name": "garden-demo-alt",
+    "base_url": "http://localhost:8000",
+    "type": "admin",
+    "owner": "security-engineering",
+    "tags": ["demo", "local", "alternate-host"],
+    "status": "active"
+  }
+]

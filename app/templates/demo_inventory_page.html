@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
+      <p class="text-sm uppercase tracking-[0.18em] text-emerald-700">{{ section_label }}</p>
+      <h1 class="mt-2 text-3xl font-semibold tracking-tight">{{ heading }}</h1>
+      <p class="mt-4 text-slate-600">{{ description }}</p>
+      <div class="mt-6 flex flex-wrap gap-3 text-sm">
+        <a href="/demo/auth/ui/home" class="rounded-full border border-black/10 px-4 py-2 hover:bg-stone-100">Home</a>
+        <a href="/demo/auth/app/admin/users" class="rounded-full border border-black/10 px-4 py-2 hover:bg-stone-100">Admin Users</a>
+        <a href="/demo/auth/app/manage/config" class="rounded-full border border-black/10 px-4 py-2 hover:bg-stone-100">Manage Config</a>
+        <a href="/demo/auth/app/export-center" class="rounded-full border border-black/10 px-4 py-2 hover:bg-stone-100">Export Center</a>
+      </div>
+    </div>
+    <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
+      <p class="text-sm text-slate-500">
+        Logged in as <strong>{{ session_record.username }}</strong> with role
+        <strong>{{ session_record.role }}</strong>.
+      </p>
+    </div>
+    {% if page_key == "admin_users" %}
+      <div class="rounded-3xl border border-amber-200 bg-amber-50 p-8 shadow-sm">
+        <p class="text-sm font-medium text-amber-900">DEBUG banner active for staging-admin.internal.local</p>
+        <p class="mt-2 text-sm text-amber-800">Support contact: support@app.internal.local</p>
+      </div>
+    {% elif page_key == "manage_config" %}
+      <div class="rounded-3xl border border-sky-200 bg-sky-50 p-8 shadow-sm">
+        <p class="text-sm font-medium text-sky-900">Config path: /srv/garden/config/settings.py</p>
+        <p class="mt-2 text-sm text-sky-800">Environment marker: non-production staging</p>
+      </div>
+    {% elif page_key == "export_center" %}
+      <div class="rounded-3xl border border-emerald-200 bg-emerald-50 p-8 shadow-sm">
+        <p class="text-sm font-medium text-emerald-900">Build version 2026.04.1</p>
+        <p class="mt-2 text-sm text-emerald-800">trace_id=demo-trace-001</p>
+      </div>
+    {% endif %}
+  </section>
+
+  {% if page_key == "admin_users" %}
+    <script>
+      window.addEventListener("load", async () => {
+        await fetch("/demo/auth/app/api/admin/users?userId=42&role=admin");
+        await fetch("/demo/auth/app/api/admin/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: 42, role: "admin", token: "demo-token" })
+        });
+      });
+    </script>
+  {% elif page_key == "manage_config" %}
+    <script>
+      window.addEventListener("load", async () => {
+        await fetch("/demo/auth/app/api/manage/config?debug=true&actuator=health");
+        const payload = new URLSearchParams();
+        payload.set("key", "garden-demo");
+        payload.set("secret", "demo-secret");
+        await fetch("/demo/auth/app/api/manage/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: payload.toString()
+        });
+        await fetch("/demo/auth/app/api/actuator/health?key=live");
+      });
+    </script>
+  {% elif page_key == "export_center" %}
+    <script>
+      window.addEventListener("load", async () => {
+        await fetch("/demo/auth/app/api/export/download?format=csv&session=current");
+        const payload = new URLSearchParams();
+        payload.set("password", "demo-password");
+        payload.set("token", "demo-upload-token");
+        await fetch("/demo/auth/app/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: payload.toString()
+        });
+      });
+    </script>
+  {% endif %}
+{% endblock %}

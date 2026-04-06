@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="mx-auto max-w-xl rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
+    <p class="text-sm uppercase tracking-[0.18em] text-slate-500">Local Demo</p>
+    <h1 class="mt-2 text-3xl font-semibold tracking-tight">Demo UI Login</h1>
+    <p class="mt-3 text-sm text-slate-600">
+      Use <code>admin@example.local</code> or <code>user@example.local</code>.
+    </p>
+    {% if error %}
+      <div class="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        {{ error }}
+      </div>
+    {% endif %}
+    <form action="/demo/auth/ui/login" method="post" class="mt-6 space-y-4">
+      <div>
+        <label class="mb-1 block text-sm text-slate-600" for="username">Username</label>
+        <input id="username" name="username" class="w-full rounded-2xl border border-black/10 px-4 py-3" />
+      </div>
+      <div>
+        <label class="mb-1 block text-sm text-slate-600" for="password">Password</label>
+        <input id="password" name="password" type="password" class="w-full rounded-2xl border border-black/10 px-4 py-3" />
+      </div>
+      <button class="rounded-full bg-slate-900 px-5 py-2.5 text-sm text-white" id="submit-login" type="submit">
+        Sign In
+      </button>
+    </form>
+  </section>
+{% endblock %}
+

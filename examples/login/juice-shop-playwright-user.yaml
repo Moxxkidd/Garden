@@ -1,0 +1,11 @@
+adapter: playwright
+request_timeout_seconds: 15
+retry_attempts: 1
+login_url: /#/login
+validate_url: /#/search
+username_selector: '#email'
+password_selector: '#password'
+submit_selector: '#loginButton'
+success_text: 'Search'
+success_url_contains: '/#/search'
+refresh_via_relogin: true

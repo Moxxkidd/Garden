@@ -1,0 +1,24 @@
+adapter: http
+request_timeout_seconds: 5
+retry_attempts: 1
+session_type: http_cookie_jar
+login_request:
+  method: POST
+  url: /demo/auth/http/login
+  body_type: json
+  body:
+    username: "{{ username }}"
+    password: "{{ password }}"
+  expected_status: 200
+  success_contains: '"authenticated":true'
+validate_request:
+  method: GET
+  url: /demo/auth/http/me
+  expected_status: 200
+  success_contains: '"authenticated":true'
+refresh_request:
+  method: POST
+  url: /demo/auth/http/refresh
+  expected_status: 200
+  success_contains: '"refreshed":true'
+

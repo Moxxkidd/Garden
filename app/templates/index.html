@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="space-y-8">
+    <div class="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
+      <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">
+          CLI-First Authenticated Verification
+        </p>
+        <h1 class="mt-3 text-4xl font-semibold tracking-tight">{{ project_name }} Dashboard</h1>
+        <p class="mt-4 max-w-3xl text-base leading-7 text-slate-600">
+          Garden is a safe-by-default internal security workflow for authorized post-login verification.
+          The CLI stays primary for repeatable execution, while this dashboard keeps recent workflow state,
+          findings, and retest outcomes easy to review during demos and triage.
+        </p>
+        <div class="mt-6 flex flex-wrap gap-3 text-sm">
+          <a href="/targets" class="rounded-full bg-slate-900 px-4 py-2 text-white">Targets</a>
+          <a href="/inventory" class="rounded-full border border-black/10 px-4 py-2">Inventory</a>
+          <a href="/findings" class="rounded-full border border-black/10 px-4 py-2">Findings</a>
+          <a href="/evidence" class="rounded-full border border-black/10 px-4 py-2">Evidence</a>
+        </div>
+      </div>
+      <aside class="rounded-3xl border border-black/10 bg-stone-50 p-6 shadow-sm">
+        <h2 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Runtime</h2>
+        <dl class="mt-4 grid gap-4 text-sm">
+          <div>
+            <dt class="text-slate-500">Version</dt>
+            <dd class="mt-1 font-medium">{{ project_version }}</dd>
+          </div>
+          <div>
+            <dt class="text-slate-500">Health Endpoint</dt>
+            <dd class="mt-1 font-medium"><code>/healthz</code></dd>
+          </div>
+          <div>
+            <dt class="text-slate-500">Target Guardrail</dt>
+            <dd class="mt-1 font-medium">Local-only by default</dd>
+          </div>
+          <div>
+            <dt class="text-slate-500">UI Scope</dt>
+            <dd class="mt-1 font-medium">Browse, triage, and review only</dd>
+          </div>
+        </dl>
+      </aside>
+    </div>
+
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">Targets</p>
+        <p class="mt-3 text-3xl font-semibold">{{ dashboard.total_targets }}</p>
+      </div>
+      <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">Credential Profiles</p>
+        <p class="mt-3 text-3xl font-semibold">{{ dashboard.total_credential_profiles }}</p>
+      </div>
+      <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">Findings</p>
+        <p class="mt-3 text-3xl font-semibold">{{ dashboard.total_findings }}</p>
+      </div>
+      <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">High Severity</p>
+        <p class="mt-3 text-3xl font-semibold">{{ dashboard.high_severity_findings }}</p>
+      </div>
+      <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">High Confidence</p>
+        <p class="mt-3 text-3xl font-semibold">{{ dashboard.high_confidence_findings }}</p>
+      </div>
+    </div>
+
+    <div class="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
+      <div class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold">Recent Jobs</h2>
+          <a href="/jobs" class="text-sm text-slate-500">View all</a>
+        </div>
+        <div class="mt-4 overflow-hidden rounded-2xl border border-black/10">
+          <table class="min-w-full divide-y divide-black/5 text-sm">
+            <thead class="bg-stone-50 text-left text-slate-500">
+              <tr>
+                <th class="px-4 py-3">Job</th>
+                <th class="px-4 py-3">Target</th>
+                <th class="px-4 py-3">Profile</th>
+                <th class="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-black/5">
+              {% for job in dashboard.recent_jobs %}
+                <tr class="hover:bg-stone-50">
+                  <td class="px-4 py-3 font-medium"><a href="/jobs/{{ job.id }}">{{ job.id }}</a></td>
+                  <td class="px-4 py-3">{{ job.target.name if job.target else job.target_id }}</td>
+                  <td class="px-4 py-3">{{ job.credential_profile.name if job.credential_profile else job.credential_profile_id }}</td>
+                  <td class="px-4 py-3">{{ job.status }}</td>
+                </tr>
+              {% else %}
+                <tr><td colspan="4" class="px-4 py-6 text-center text-slate-500">No workflow jobs have been recorded yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="space-y-6">
+        <div class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold">Findings Overview</h2>
+            <a href="/findings" class="text-sm text-slate-500">Open findings</a>
+          </div>
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            {% for status, count in dashboard.status_breakdown.items() %}
+              <div class="rounded-2xl border border-black/10 bg-stone-50 p-4">
+                <p class="text-xs uppercase tracking-[0.16em] text-slate-500">{{ status }}</p>
+                <p class="mt-2 text-2xl font-semibold">{{ count }}</p>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
+          <h2 class="text-lg font-semibold">Category Distribution</h2>
+          <div class="mt-4 space-y-3 text-sm">
+            {% for category, count in dashboard.category_distribution %}
+              <div class="flex items-center justify-between rounded-2xl border border-black/10 bg-stone-50 px-4 py-3">
+                <span class="truncate pr-4">{{ category }}</span>
+                <span class="font-medium">{{ count }}</span>
+              </div>
+            {% else %}
+              <div class="rounded-2xl border border-dashed border-black/10 bg-stone-50 px-4 py-6 text-slate-500">No findings categories yet.</div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Recent Retest Outcomes</h2>
+        <a href="/findings" class="text-sm text-slate-500">Manage findings</a>
+      </div>
+      <div class="mt-4 grid gap-4 lg:grid-cols-2">
+        {% for retest in dashboard.recent_retests %}
+          <div class="rounded-2xl border border-black/10 bg-stone-50 p-4">
+            <p class="text-sm font-medium text-slate-900">
+              <a href="/findings/{{ retest.finding.id if retest.finding else retest.finding_id }}">Finding #{{ retest.finding_id }}</a>
+              · {{ retest.status }}
+            </p>
+            <p class="mt-1 text-sm text-slate-600">
+              {{ retest.target.name if retest.target else retest.target_id }} ·
+              {{ retest.credential_profile.name if retest.credential_profile else retest.credential_profile_id }}
+            </p>
+            <p class="mt-2 text-sm text-slate-700">{{ retest.summary }}</p>
+            <p class="mt-2 text-xs uppercase tracking-[0.16em] text-slate-500">{{ retest.created_at.isoformat() }}</p>
+          </div>
+        {% else %}
+          <div class="rounded-2xl border border-dashed border-black/10 bg-stone-50 p-6 text-sm text-slate-500">
+            No retest outcomes recorded yet. Move a finding to <span class="font-medium">fixed</span> and run a retest to populate this view.
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+{% endblock %}

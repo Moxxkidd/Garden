@@ -1,0 +1,13 @@
+adapter: playwright
+request_timeout_seconds: 10
+retry_attempts: 1
+login_url: /demo/auth/ui/login
+validate_url: /demo/auth/ui/home
+username_selector: "#username"
+password_selector: "#password"
+submit_selector: "#submit-login"
+success_selector: "#demo-home-title"
+success_text: "Demo Home"
+success_url_contains: "/demo/auth/ui/home"
+refresh_via_relogin: true
+

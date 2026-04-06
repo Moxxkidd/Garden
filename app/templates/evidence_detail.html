@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <div class="flex items-end justify-between">
+      <div>
+        <p class="text-sm uppercase tracking-[0.18em] text-slate-500">Evidence Detail</p>
+        <h1 class="text-3xl font-semibold tracking-tight">Evidence #{{ evidence.id }}</h1>
+      </div>
+      <a href="/evidence" class="rounded-full border border-black/10 px-4 py-2 text-sm">Back</a>
+    </div>
+    <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
+      <dl class="grid gap-5 md:grid-cols-2">
+        <div><dt class="text-slate-500">Type</dt><dd class="mt-1 font-medium">{{ evidence.evidence_type }}</dd></div>
+        <div><dt class="text-slate-500">Finding</dt><dd class="mt-1 font-medium">{% if evidence.finding_id %}<a href="/findings/{{ evidence.finding_id }}">Finding #{{ evidence.finding_id }}</a>{% else %}-{% endif %}</dd></div>
+        <div><dt class="text-slate-500">Target</dt><dd class="mt-1 font-medium">{{ evidence.target.name if evidence.target else evidence.target_id }}</dd></div>
+        <div><dt class="text-slate-500">Profile</dt><dd class="mt-1 font-medium">{{ evidence.credential_profile.name if evidence.credential_profile else evidence.credential_profile_id }}</dd></div>
+        <div><dt class="text-slate-500">Session</dt><dd class="mt-1 font-medium">{{ evidence.session_id }}</dd></div>
+        <div><dt class="text-slate-500">Job</dt><dd class="mt-1 font-medium">{{ evidence.job_id }}</dd></div>
+        <div><dt class="text-slate-500">Inventory Run</dt><dd class="mt-1 font-medium">{{ evidence.inventory_run_id if evidence.inventory_run_id is not none else "-" }}</dd></div>
+        <div><dt class="text-slate-500">Created</dt><dd class="mt-1 font-medium">{{ evidence.created_at.isoformat() }}</dd></div>
+        <div><dt class="text-slate-500">Method</dt><dd class="mt-1 font-medium">{{ evidence.http_method or "-" }}</dd></div>
+        <div><dt class="text-slate-500">Status</dt><dd class="mt-1 font-medium">{{ evidence.http_status if evidence.http_status is not none else "-" }}</dd></div>
+        <div class="md:col-span-2"><dt class="text-slate-500">Title</dt><dd class="mt-1 font-medium">{{ evidence.title }}</dd></div>
+        <div class="md:col-span-2"><dt class="text-slate-500">Summary</dt><dd class="mt-1 font-medium">{{ evidence.summary }}</dd></div>
+        <div class="md:col-span-2"><dt class="text-slate-500">URL</dt><dd class="mt-1 break-all font-medium">{{ evidence.url or "-" }}</dd></div>
+        <div class="md:col-span-2"><dt class="text-slate-500">Page Title</dt><dd class="mt-1 font-medium">{{ evidence.page_title or "-" }}</dd></div>
+        <div class="md:col-span-2"><dt class="text-slate-500">Storage Ref</dt><dd class="mt-1 break-all text-sm text-slate-700">{{ evidence.storage_ref }}</dd></div>
+        <div class="md:col-span-2"><dt class="text-slate-500">Redacted Preview</dt><dd class="mt-1 whitespace-pre-wrap rounded-2xl bg-stone-50 p-4 text-sm text-slate-800">{{ evidence.preview_redacted }}</dd></div>
+        <div class="md:col-span-2"><dt class="text-slate-500">Structured Redacted Payload</dt><dd class="mt-1"><pre class="whitespace-pre-wrap text-sm text-slate-700">{{ payload | tojson(indent=2) }}</pre></dd></div>
+      </dl>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <div class="flex items-end justify-between">
+      <div>
+        <p class="text-sm uppercase tracking-[0.18em] text-slate-500">Authenticated Inventory</p>
+        <h1 class="text-3xl font-semibold tracking-tight">Inventory Run #{{ inventory_run.id }}</h1>
+      </div>
+      <a href="/inventory" class="rounded-full border border-black/10 px-4 py-2 text-sm">Back</a>
+    </div>
+    <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
+      <dl class="grid gap-5 md:grid-cols-2">
+        <div><dt class="text-slate-500">Target</dt><dd class="mt-1 font-medium">{{ target_name }}</dd></div>
+        <div><dt class="text-slate-500">Profile</dt><dd class="mt-1 font-medium">{{ profile_name }}</dd></div>
+        <div><dt class="text-slate-500">Session</dt><dd class="mt-1 font-medium">{{ inventory_run.auth_session_id }}</dd></div>
+        <div><dt class="text-slate-500">Job</dt><dd class="mt-1 font-medium"><a href="/jobs/{{ inventory_run.scan_job_id }}">{{ inventory_run.scan_job_id }}</a></dd></div>
+        <div><dt class="text-slate-500">Status</dt><dd class="mt-1 font-medium">{{ inventory_run.status }}</dd></div>
+        <div><dt class="text-slate-500">Started From</dt><dd class="mt-1 font-medium">{{ inventory_run.started_from_url }}</dd></div>
+        <div><dt class="text-slate-500">Counts</dt><dd class="mt-1 font-medium">pages={{ inventory_run.pages_count }}, endpoints={{ inventory_run.endpoints_count }}, parameters={{ inventory_run.parameters_count }}, annotations={{ inventory_run.annotations_count }}</dd></div>
+        <div><dt class="text-slate-500">Controls</dt><dd class="mt-1 font-medium">max_pages={{ inventory_run.max_pages }}, max_depth={{ inventory_run.max_depth }}, max_requests={{ inventory_run.max_requests }}, delay_ms={{ inventory_run.delay_ms }}</dd></div>
+        <div class="md:col-span-2"><dt class="text-slate-500">Summary</dt><dd class="mt-1 font-medium">{{ inventory_run.summary or "-" }}</dd></div>
+      </dl>
+    </div>
+    <div class="grid gap-6 lg:grid-cols-2">
+      <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
+        <h2 class="text-lg font-semibold">Pages</h2>
+        <div class="mt-4 space-y-3 text-sm">
+          {% for page in inventory_run.pages %}
+            <div class="rounded-2xl border border-black/10 px-4 py-3">
+              <div class="font-medium">{{ page.title or "(untitled)" }}</div>
+              <div class="text-slate-500">{{ page.url }}</div>
+              <div class="mt-1 text-slate-500">depth={{ page.depth }} visits={{ page.visit_count }}</div>
+            </div>
+          {% else %}
+            <p class="text-slate-500">No pages captured.</p>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
+        <h2 class="text-lg font-semibold">Endpoints</h2>
+        <div class="mt-4 space-y-3 text-sm">
+          {% for endpoint in inventory_run.endpoints %}
+            <div class="rounded-2xl border border-black/10 px-4 py-3">
+              <div class="font-medium">{{ endpoint.method }} {{ endpoint.path }}</div>
+              <div class="text-slate-500">{{ endpoint.url }}</div>
+              <div class="mt-1 text-slate-500">status={{ endpoint.status_codes_observed|join(",") }} count={{ endpoint.request_count }}</div>
+            </div>
+          {% else %}
+            <p class="text-slate-500">No endpoints captured.</p>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
+        <h2 class="text-lg font-semibold">Parameters</h2>
+        <div class="mt-4 space-y-3 text-sm">
+          {% for parameter in inventory_run.parameters %}
+            <div class="rounded-2xl border border-black/10 px-4 py-3">
+              <div class="font-medium">{{ parameter.source_type }}: {{ parameter.name }}</div>
+              <div class="text-slate-500">sensitive={{ "yes" if parameter.sensitive else "no" }} count={{ parameter.seen_count }}</div>
+            </div>
+          {% else %}
+            <p class="text-slate-500">No parameters captured.</p>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
+        <h2 class="text-lg font-semibold">Annotations</h2>
+        <div class="mt-4 space-y-3 text-sm">
+          {% for annotation in inventory_run.annotations %}
+            <div class="rounded-2xl border border-black/10 px-4 py-3">
+              <div class="font-medium">{{ annotation.marker }}</div>
+              <div class="text-slate-500">{{ annotation.subject_type }}: {{ annotation.subject_ref }}</div>
+              <div class="mt-1 text-slate-500">{{ annotation.reason }}</div>
+            </div>
+          {% else %}
+            <p class="text-slate-500">No annotations captured.</p>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+{% endblock %}

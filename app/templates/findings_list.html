@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <div class="flex items-end justify-between">
+      <div>
+        <p class="text-sm uppercase tracking-[0.18em] text-slate-500">Low-Risk Findings</p>
+        <h1 class="text-3xl font-semibold tracking-tight">Findings</h1>
+      </div>
+      <a href="/findings" class="rounded-full border border-black/10 px-4 py-2 text-sm">Refresh</a>
+    </div>
+    <div class="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+      {% for status, count in breakdown.items() %}
+        <div class="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
+          <p class="text-xs uppercase tracking-[0.16em] text-slate-500">{{ status }}</p>
+          <p class="mt-2 text-2xl font-semibold">{{ count }}</p>
+        </div>
+      {% endfor %}
+    </div>
+    <div class="overflow-hidden rounded-3xl border border-black/10 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-black/5 text-sm">
+        <thead class="bg-stone-50 text-left text-slate-500">
+          <tr>
+            <th class="px-5 py-3">ID</th>
+            <th class="px-5 py-3">Severity</th>
+            <th class="px-5 py-3">Confidence</th>
+            <th class="px-5 py-3">Status</th>
+            <th class="px-5 py-3">Category</th>
+            <th class="px-5 py-3">Title</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-black/5">
+          {% for finding in findings %}
+            <tr class="hover:bg-stone-50">
+              <td class="px-5 py-4 font-medium"><a href="/findings/{{ finding.id }}">{{ finding.id }}</a></td>
+              <td class="px-5 py-4">{{ finding.severity }}</td>
+              <td class="px-5 py-4">{{ finding.confidence }}</td>
+              <td class="px-5 py-4">{{ finding.status }}</td>
+              <td class="px-5 py-4">{{ finding.category }}</td>
+              <td class="px-5 py-4">{{ finding.title }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="px-5 py-8 text-center text-slate-500">No findings yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ page_title or "Garden" }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body class="min-h-screen bg-stone-100 text-slate-900" hx-boost="true">
+    <header class="border-b border-black/10 bg-white/80 backdrop-blur">
+      <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <a href="/" class="text-xl font-semibold tracking-tight">Garden</a>
+        <nav class="flex gap-3 text-sm text-slate-600">
+          <a href="/" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">Dashboard</a>
+          <a href="/targets" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">Targets</a>
+          <a href="/credentials" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">Credentials</a>
+          <a href="/jobs" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">Jobs</a>
+          <a href="/sessions" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">Sessions</a>
+          <a href="/inventory" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">Inventory</a>
+          <a href="/findings" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">Findings</a>
+          <a href="/evidence" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">Evidence</a>
+        </nav>
+      </div>
+    </header>
+    <main class="mx-auto max-w-6xl px-6 py-10">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>
