@@ -53,7 +53,7 @@ Garden 是一个 **Python、FastAPI、Typer、SQLAlchemy、Jinja2、HTMX、Playw
 - 支持 findings/report 导出
 
 
-### CLI 命令总览
+### CLI 命令
 
 Garden 的主命令是：
 
@@ -61,112 +61,11 @@ Garden 的主命令是：
 gardenctl
 ```
 
-最常用的全局命令：
+最常用的全局命令：**[garden-ctl.com](https://garden-ctl.com/)**
 
-| 命令 | 用途 |
-| --- | --- |
-| `gardenctl --help` | 查看全部命令与帮助信息 |
-| `gardenctl version` | 查看当前版本 |
-| `gardenctl healthcheck` | 不启动 Web 服务，直接做本地健康检查 |
 
-Target 管理：
 
-| 命令 | 用途 |
-| --- | --- |
-| `gardenctl target add` | 新增一个 target |
-| `gardenctl target list` | 列出全部 target |
-| `gardenctl target show <id>` | 查看某个 target 详情 |
-| `gardenctl target delete <id> --yes` | 删除 target |
-| `gardenctl target import --file <path>` | 从 YAML / JSON 导入 target |
 
-Credential Profile 管理：
-
-| 命令 | 用途 |
-| --- | --- |
-| `gardenctl cred add` | 新增 credential profile |
-| `gardenctl cred list` | 列出全部 credential profile |
-| `gardenctl cred show <id>` | 查看某个 credential profile |
-| `gardenctl cred delete <id> --yes` | 删除 credential profile |
-
-Job 浏览：
-
-| 命令 | 用途 |
-| --- | --- |
-| `gardenctl job list` | 查看 workflow 过程中产生的 jobs |
-| `gardenctl job show <id>` | 查看某个 job 的详情与摘要 |
-
-登录与 Session：
-
-| 命令 | 用途 |
-| --- | --- |
-| `gardenctl login test --target <name> --profile <name>` | 执行登录测试并在成功时创建可复用 session |
-| `gardenctl login validate --session <id>` | 校验已有 session 是否仍然有效 |
-| `gardenctl session list` | 列出已保存 session |
-| `gardenctl session show <id>` | 查看某个 session 的红acted元数据 |
-| `gardenctl session refresh <id>` | 刷新某个 session |
-
-Authenticated Inventory：
-
-| 命令 | 用途 |
-| --- | --- |
-| `gardenctl inventory build --target <name> --profile <name>` | 先 fresh login，再构建一轮 inventory |
-| `gardenctl inventory build --session <id>` | 复用已有 session 构建 inventory |
-| `gardenctl inventory list` | 列出全部 inventory runs |
-| `gardenctl inventory show <id>` | 查看某个 inventory run 的页面、接口、参数、annotation 摘要 |
-| `gardenctl inventory export --id <id> --format json` | 导出 inventory 为 JSON |
-| `gardenctl inventory export --id <id> --format csv` | 导出 inventory 为 CSV |
-
-Checks：
-
-| 命令 | 用途 |
-| --- | --- |
-| `gardenctl checks run --inventory <id>` | 对某个 inventory run 执行内置低风险 checks |
-
-Findings：
-
-| 命令 | 用途 |
-| --- | --- |
-| `gardenctl findings list` | 列出全部 findings |
-| `gardenctl findings list --status <status>` | 按生命周期状态过滤 findings |
-| `gardenctl findings list --category <category>` | 按检查类别过滤 findings |
-| `gardenctl findings show <id>` | 查看 finding 详情、inventory refs、evidence refs、retest 信息 |
-| `gardenctl findings update-status <id> --status <status>` | 更新 finding 生命周期状态 |
-| `gardenctl findings export --format md` | 导出 findings Markdown |
-| `gardenctl findings export --format json` | 导出 findings JSON |
-| `gardenctl findings export --format csv` | 导出 findings CSV |
-
-Evidence：
-
-| 命令 | 用途 |
-| --- | --- |
-| `gardenctl evidence list` | 列出全部 evidence |
-| `gardenctl evidence list --finding <id>` | 只看某个 finding 的 evidence |
-| `gardenctl evidence show <id>` | 查看 evidence 元数据与默认脱敏 preview |
-| `gardenctl evidence export --finding <id> --format json` | 导出某个 finding 的 evidence 为 JSON |
-| `gardenctl evidence export --finding <id> --format md` | 导出某个 finding 的 evidence 为 Markdown |
-
-Retest 与 Report：
-
-| 命令 | 用途 |
-| --- | --- |
-| `gardenctl retest run --finding <id>` | 对 `fixed` 或 `retest-pending` finding 执行复测 |
-| `gardenctl report generate --job <id> --format md` | 为某个 job 生成 Markdown report |
-
-### 推荐使用顺序
-
-如果你第一次使用 Garden，建议按下面这个顺序走：
-
-1. `gardenctl healthcheck`
-2. `gardenctl target add` 或 `gardenctl target import`
-3. `gardenctl cred add`
-4. `gardenctl login test`
-5. `gardenctl inventory build`
-6. `gardenctl checks run`
-7. `gardenctl findings list`
-8. `gardenctl evidence list`
-9. `gardenctl findings update-status`
-10. `gardenctl retest run`
-11. `gardenctl findings export` / `gardenctl report generate`
 
 ## Outputs（输出）
 
