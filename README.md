@@ -1,6 +1,10 @@
 # Garden
 
+> **[garden-ctl.com](https://garden-ctl.com/)**  —  登录态安全验证工作流平台
+
 Garden 是一个 **Python、FastAPI、Typer、SQLAlchemy、Jinja2、HTMX、Playwright ** 的安全工作流工具，面向**授权场景下的登录后应用面验证**。
+
+
 
 ## 界面预览
 
