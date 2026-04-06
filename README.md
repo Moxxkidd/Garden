@@ -10,6 +10,24 @@ Garden 是一个 **Python、FastAPI、Typer、SQLAlchemy、Jinja2、HTMX、Playw
 
 ![Garden Dashboard](images/dashboard.png)
 
+## 仓库结构
+
+- `app/`：核心应用代码
+- `design-output/`：展示页静态产物
+- `docs/`：架构与使用文档
+- `examples/`：安全示例配置
+- `images/`：README 展示图片
+- `scripts/`：辅助脚本目录
+- `tests/`：测试代码
+- `.env.example`：环境变量示例
+- `.gitignore`：Git 忽略规则
+- `.pre-commit-config.yaml`：预提交检查配置
+- `Dockerfile`：容器镜像构建文件
+- `Makefile`：常用开发命令
+- `README.md`：项目总览说明
+- `docker-compose.yml`：本地编排启动配置
+- `pyproject.toml`：Python 项目与依赖配置
+
 
 
 ## Workflow（工作流）
@@ -268,5 +286,4 @@ Garden 的价值就在于：它不是单点能力，而是把这些能力串起�
 
 - 真实企业系统的登录后面不只有 API
 - 还有页面、管理面、配置页、导出页、import/upload 入口、浏览器态 evidence
-
 
