@@ -61,7 +61,7 @@ Garden 的主命令是：
 gardenctl
 ```
 
-最常用的全局命令：**[garden-ctl.com](https://garden-ctl.com/)**
+最常用的全局命令：**见[garden-ctl.com](https://garden-ctl.com/)**
 
 
 
