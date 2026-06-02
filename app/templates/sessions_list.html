@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
 
 {% block content %}
   <section class="space-y-6">
@@ -27,7 +28,7 @@
               <td class="px-5 py-4">{{ row.target_name }}</td>
               <td class="px-5 py-4">{{ row.profile_name }}</td>
               <td class="px-5 py-4">{{ row.session.session_type }}</td>
-              <td class="px-5 py-4">{{ row.session.status }}</td>
+              <td class="px-5 py-4">{{ status_badge(row.session.status) }}</td>
             </tr>
           {% else %}
             <tr>
@@ -39,4 +40,3 @@
     </div>
   </section>
 {% endblock %}
-

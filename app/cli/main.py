@@ -1,7 +1,5 @@
 """Typer CLI entrypoint for Garden."""
 
-import json
-
 import typer
 
 from app.cli.checks import app as checks_app
@@ -15,6 +13,7 @@ from app.cli.report import app as report_app
 from app.cli.retest import app as retest_app
 from app.cli.sessions import app as session_app
 from app.cli.targets import app as target_app
+from app.cli.utils import console, render_json
 from app.core.logging import configure_logging
 from app.core.settings import get_settings
 from app.db.bootstrap import init_database
@@ -41,14 +40,14 @@ def main() -> None:
 def version() -> None:
     """Show the current Garden version."""
     settings = get_settings()
-    typer.echo(f"{settings.project_name} {settings.project_version}")
+    console.print(f"[bold]{settings.project_name}[/bold] {settings.project_version}")
 
 
 @app.command()
 def healthcheck() -> None:
     """Run a local application health snapshot without starting the API server."""
     response = build_health_response()
-    typer.echo(json.dumps(response.model_dump(), indent=2))
+    render_json(response.model_dump(), title="Health Check")
 
 
 app.add_typer(target_app, name="target")

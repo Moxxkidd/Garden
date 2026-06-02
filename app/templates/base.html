@@ -27,5 +27,34 @@
     <main class="mx-auto max-w-6xl px-6 py-10">
       {% block content %}{% endblock %}
     </main>
+    <script>
+      (function () {
+        const units = [
+          { max: 60, fmt: function (n) { return 'just now'; } },
+          { max: 3600, div: 60, suffix: 'm ago' },
+          { max: 86400, div: 3600, suffix: 'h ago' },
+          { max: 604800, div: 86400, suffix: 'd ago' },
+        ];
+        function friendly(el) {
+          var iso = el.getAttribute('data-iso');
+          if (!iso) return;
+          var then = new Date(iso);
+          var diff = (Date.now() - then.getTime()) / 1000;
+          for (var i = 0; i < units.length; i++) {
+            var u = units[i];
+            if (diff < u.max) {
+              el.textContent = u.fmt ? u.fmt(diff) : Math.floor(diff / u.div) + u.suffix;
+              return;
+            }
+          }
+          el.textContent = then.getFullYear() + '-' +
+            String(then.getMonth() + 1).padStart(2, '0') + '-' +
+            String(then.getDate()).padStart(2, '0') + ' ' +
+            String(then.getHours()).padStart(2, '0') + ':' +
+            String(then.getMinutes()).padStart(2, '0');
+        }
+        document.querySelectorAll('time[data-iso]').forEach(function (el) { friendly(el); });
+      })();
+    </script>
   </body>
 </html>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
 
 {% block content %}
   <section class="space-y-6">
@@ -13,17 +14,24 @@
       <dl class="grid gap-5 md:grid-cols-2">
         <div><dt class="text-slate-500">Target</dt><dd class="mt-1 font-medium">{{ target_name }}</dd></div>
         <div><dt class="text-slate-500">Profile</dt><dd class="mt-1 font-medium">{{ profile_name }}</dd></div>
-        <div><dt class="text-slate-500">Status</dt><dd class="mt-1 font-medium">{{ auth_session.status }}</dd></div>
+        <div><dt class="text-slate-500">Status</dt><dd class="mt-1">{{ status_badge(auth_session.status) }}</dd></div>
         <div><dt class="text-slate-500">Session Type</dt><dd class="mt-1 font-medium">{{ auth_session.session_type }}</dd></div>
-        <div><dt class="text-slate-500">Created</dt><dd class="mt-1 font-medium">{{ auth_session.created_at.isoformat() }}</dd></div>
-        <div><dt class="text-slate-500">Expires</dt><dd class="mt-1 font-medium">{{ auth_session.expires_at.isoformat() if auth_session.expires_at else "-" }}</dd></div>
-        <div><dt class="text-slate-500">Last Validated</dt><dd class="mt-1 font-medium">{{ auth_session.last_validated_at.isoformat() if auth_session.last_validated_at else "-" }}</dd></div>
+        <div><dt class="text-slate-500">Created</dt><dd class="mt-1 font-medium"><time data-iso="{{ auth_session.created_at.isoformat() }}">{{ auth_session.created_at.isoformat() }}</time></dd></div>
+        <div><dt class="text-slate-500">Expires</dt><dd class="mt-1 font-medium">{% if auth_session.expires_at %}<time data-iso="{{ auth_session.expires_at.isoformat() }}">{{ auth_session.expires_at.isoformat() }}</time>{% else %}-{% endif %}</dd></div>
+        <div><dt class="text-slate-500">Last Validated</dt><dd class="mt-1 font-medium">{% if auth_session.last_validated_at %}<time data-iso="{{ auth_session.last_validated_at.isoformat() }}">{{ auth_session.last_validated_at.isoformat() }}</time>{% else %}-{% endif %}</dd></div>
         <div><dt class="text-slate-500">Refresh Supported</dt><dd class="mt-1 font-medium">{{ "yes" if auth_session.refresh_supported else "no" }}</dd></div>
         <div class="md:col-span-2"><dt class="text-slate-500">Storage Ref</dt><dd class="mt-1 font-medium">{{ auth_session.storage_ref }}</dd></div>
         <div class="md:col-span-2"><dt class="text-slate-500">Last Error</dt><dd class="mt-1 font-medium">{{ auth_session.last_error or "-" }}</dd></div>
-        <div class="md:col-span-2"><dt class="text-slate-500">Redacted Metadata</dt><dd class="mt-2"><pre class="overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-100">{{ session_metadata_json }}</pre></dd></div>
+        <div class="md:col-span-2">
+          <dt class="text-slate-500">Redacted Metadata</dt>
+          <dd class="mt-2">
+            <details>
+              <summary class="cursor-pointer text-xs text-slate-500 hover:text-slate-700">Show metadata</summary>
+              <pre class="mt-2 overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-100">{{ session_metadata_json }}</pre>
+            </details>
+          </dd>
+        </div>
       </dl>
     </div>
   </section>
 {% endblock %}
-

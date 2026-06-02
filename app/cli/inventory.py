@@ -6,7 +6,15 @@ from typing import Annotated
 
 import typer
 
-from app.cli.utils import handle_cli_error, print_inventory_summary
+from app.cli.utils import (
+    console,
+    handle_cli_error,
+    print_inventory_summary,
+    progress_spinner,
+    render_key_value,
+    render_table,
+    styled_status,
+)
 from app.core.errors import GardenError, InputValidationError
 from app.db.bootstrap import session_scope
 from app.schemas.inventory import InventoryBuildControls
@@ -18,6 +26,11 @@ app = typer.Typer(help="Build and browse authenticated inventory.")
 service = InventoryBuildService()
 target_service = TargetService()
 credential_service = CredentialProfileService()
+
+_SHOW_PAGE_LIMIT = 5
+_SHOW_ENDPOINT_LIMIT = 5
+_SHOW_PARAM_LIMIT = 8
+_SHOW_ANNOTATION_LIMIT = 8
 
 
 @app.command("build")
@@ -51,18 +64,16 @@ def build_inventory(
     )
     try:
         with session_scope() as session:
-            if session_id is not None:
-                typer.echo(f"Building inventory from session {session_id}...")
-                summary = service.build_from_session(session, session_id, controls)
-            else:
-                typer.echo(f"Building inventory from target '{target_name}'...")
-                typer.echo(f"Using profile '{profile_name}'...")
-                summary = service.build_from_target_profile(
-                    session,
-                    target_name or "",
-                    profile_name or "",
-                    controls,
-                )
+            with progress_spinner("Building authenticated inventory ..."):
+                if session_id is not None:
+                    summary = service.build_from_session(session, session_id, controls)
+                else:
+                    summary = service.build_from_target_profile(
+                        session,
+                        target_name or "",
+                        profile_name or "",
+                        controls,
+                    )
         print_inventory_summary(summary)
     except GardenError as error:
         handle_cli_error(error)
@@ -74,26 +85,28 @@ def list_inventory() -> None:
     with session_scope() as session:
         inventory_runs = service.list(session)
         if not inventory_runs:
-            typer.echo("No inventory runs found.")
+            console.print("[dim]No inventory runs found.[/dim]")
             return
-        typer.echo(
-            f"{'ID':<4} {'TARGET':<24} {'PROFILE':<24} {'SESSION':<8} "
-            f"{'JOB':<6} {'STATUS':<10} COUNTS"
-        )
-        for inventory_run in inventory_runs:
-            target_name = target_service.get(session, inventory_run.target_id).name
-            profile_name = credential_service.get(session, inventory_run.credential_profile_id).name
+
+        headers = ["ID", "Target", "Profile", "Session", "Job", "Status", "Counts"]
+        rows = []
+        for inv in inventory_runs:
+            target_name = target_service.get(session, inv.target_id).name
+            profile_name = credential_service.get(session, inv.credential_profile_id).name
             counts = (
-                f"p={inventory_run.pages_count}/"
-                f"e={inventory_run.endpoints_count}/"
-                f"pa={inventory_run.parameters_count}/"
-                f"a={inventory_run.annotations_count}"
+                f"p={inv.pages_count}/e={inv.endpoints_count}/"
+                f"pa={inv.parameters_count}/a={inv.annotations_count}"
             )
-            typer.echo(
-                f"{inventory_run.id:<4} {target_name[:24]:<24} {profile_name[:24]:<24} "
-                f"{inventory_run.auth_session_id:<8} {inventory_run.scan_job_id:<6} "
-                f"{inventory_run.status:<10} {counts}"
-            )
+            rows.append([
+                str(inv.id),
+                target_name,
+                profile_name,
+                str(inv.auth_session_id),
+                str(inv.scan_job_id),
+                styled_status(inv.status),
+                counts,
+            ])
+        render_table(headers, rows, title="Inventory Runs")
 
 
 @app.command("show")
@@ -104,51 +117,101 @@ def show_inventory(inventory_run_id: int) -> None:
             inventory_run = service.get(session, inventory_run_id)
             target_name = target_service.get(session, inventory_run.target_id).name
             profile_name = credential_service.get(session, inventory_run.credential_profile_id).name
-        typer.echo(f"Inventory Run #{inventory_run.id}")
-        typer.echo(f"Target: {target_name}")
-        typer.echo(f"Profile: {profile_name}")
-        typer.echo(f"Session: {inventory_run.auth_session_id}")
-        typer.echo(f"Scan Job: {inventory_run.scan_job_id}")
-        typer.echo(f"Status: {inventory_run.status}")
-        typer.echo(f"Started From: {inventory_run.started_from_url}")
-        typer.echo(
-            "Controls: "
-            f"max_pages={inventory_run.max_pages} "
-            f"max_depth={inventory_run.max_depth} "
-            f"max_requests={inventory_run.max_requests} "
-            f"delay_ms={inventory_run.delay_ms}"
-        )
-        typer.echo(
-            "Counts: "
-            f"pages={inventory_run.pages_count} "
-            f"endpoints={inventory_run.endpoints_count} "
-            f"parameters={inventory_run.parameters_count} "
-            f"annotations={inventory_run.annotations_count}"
-        )
-        typer.echo(f"Summary: {inventory_run.summary or '-'}")
-        typer.echo("Pages:")
-        for page in inventory_run.pages[:5]:
-            typer.echo(f"  - depth={page.depth} visits={page.visit_count} {page.url}")
-        typer.echo("Endpoints:")
-        for endpoint in inventory_run.endpoints[:5]:
-            typer.echo(
-                "  - "
-                f"{endpoint.method} {endpoint.path} "
-                f"status={','.join(str(code) for code in endpoint.status_codes_observed)} "
-                f"count={endpoint.request_count}"
+
+        rows: list[tuple[str, str]] = [
+            ("Target", target_name),
+            ("Profile", profile_name),
+            ("Session", str(inventory_run.auth_session_id)),
+            ("Scan Job", str(inventory_run.scan_job_id)),
+            ("Status", styled_status(inventory_run.status)),
+            ("Started From", inventory_run.started_from_url),
+            (
+                "Controls",
+                f"max_pages={inventory_run.max_pages}  "
+                f"max_depth={inventory_run.max_depth}  "
+                f"max_requests={inventory_run.max_requests}  "
+                f"delay_ms={inventory_run.delay_ms}",
+            ),
+            (
+                "Counts",
+                f"pages={inventory_run.pages_count}  "
+                f"endpoints={inventory_run.endpoints_count}  "
+                f"parameters={inventory_run.parameters_count}  "
+                f"annotations={inventory_run.annotations_count}",
+            ),
+            ("Summary", inventory_run.summary or "-"),
+        ]
+        render_key_value(rows, title=f"Inventory Run #{inventory_run.id}")
+
+        # --- Pages ---
+        pages = inventory_run.pages
+        if pages:
+            page_headers = ["Depth", "Visits", "URL"]
+            page_rows = [
+                [str(p.depth), str(p.visit_count), p.url] for p in pages[:_SHOW_PAGE_LIMIT]
+            ]
+            caption = (
+                f"Showing {min(len(pages), _SHOW_PAGE_LIMIT)} of {len(pages)} pages"
+                if len(pages) > _SHOW_PAGE_LIMIT
+                else None
             )
-        typer.echo("Parameters:")
-        for parameter in inventory_run.parameters[:8]:
-            typer.echo(
-                f"  - {parameter.source_type}:{parameter.name} "
-                f"sensitive={'yes' if parameter.sensitive else 'no'} "
-                f"count={parameter.seen_count}"
+            render_table(page_headers, page_rows, title="Pages", caption=caption)
+
+        # --- Endpoints ---
+        endpoints = inventory_run.endpoints
+        if endpoints:
+            ep_headers = ["Method", "Path", "Status Codes", "Count"]
+            ep_rows = [
+                [
+                    e.method,
+                    e.path,
+                    ",".join(str(c) for c in e.status_codes_observed),
+                    str(e.request_count),
+                ]
+                for e in endpoints[:_SHOW_ENDPOINT_LIMIT]
+            ]
+            caption = (
+                f"Showing {min(len(endpoints), _SHOW_ENDPOINT_LIMIT)} of {len(endpoints)} endpoints"
+                if len(endpoints) > _SHOW_ENDPOINT_LIMIT
+                else None
             )
-        typer.echo("Annotations:")
-        for annotation in inventory_run.annotations[:8]:
-            typer.echo(
-                f"  - {annotation.subject_type}:{annotation.subject_ref} -> {annotation.marker}"
+            render_table(ep_headers, ep_rows, title="Endpoints", caption=caption)
+
+        # --- Parameters ---
+        params = inventory_run.parameters
+        if params:
+            param_headers = ["Source:Name", "Sensitive", "Count"]
+            param_rows = [
+                [
+                    f"{p.source_type}:{p.name}",
+                    "[yellow]yes[/yellow]" if p.sensitive else "[dim]no[/dim]",
+                    str(p.seen_count),
+                ]
+                for p in params[:_SHOW_PARAM_LIMIT]
+            ]
+            caption = (
+                f"Showing {min(len(params), _SHOW_PARAM_LIMIT)} of {len(params)} parameters"
+                if len(params) > _SHOW_PARAM_LIMIT
+                else None
             )
+            render_table(param_headers, param_rows, title="Parameters", caption=caption)
+
+        # --- Annotations ---
+        annotations = inventory_run.annotations
+        if annotations:
+            ann_headers = ["Subject", "Marker"]
+            ann_rows = [
+                [f"{a.subject_type}:{a.subject_ref}", a.marker]
+                for a in annotations[:_SHOW_ANNOTATION_LIMIT]
+            ]
+            caption = (
+                f"Showing {min(len(annotations), _SHOW_ANNOTATION_LIMIT)}"
+                f" of {len(annotations)} annotations"
+                if len(annotations) > _SHOW_ANNOTATION_LIMIT
+                else None
+            )
+            render_table(ann_headers, ann_rows, title="Annotations", caption=caption)
+
     except GardenError as error:
         handle_cli_error(error)
 
@@ -162,11 +225,15 @@ def export_inventory(
     if export_format not in {"json", "csv"}:
         handle_cli_error(InputValidationError("Inventory export format must be 'json' or 'csv'."))
     try:
-        with session_scope() as session:
-            if export_format == "json":
-                result = service.export_json(session, inventory_run_id)
-            else:
-                result = service.export_csv(session, inventory_run_id)
-        typer.echo(f"Exported inventory run {inventory_run_id} to {result.output_path}")
+        with progress_spinner("Exporting inventory ..."):
+            with session_scope() as session:
+                if export_format == "json":
+                    result = service.export_json(session, inventory_run_id)
+                else:
+                    result = service.export_csv(session, inventory_run_id)
+        console.print(
+            f"[green]Exported inventory run {inventory_run_id} to[/green]"
+            f" {result.output_path}"
+        )
     except GardenError as error:
         handle_cli_error(error)

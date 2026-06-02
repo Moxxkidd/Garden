@@ -6,7 +6,11 @@ from typing import Annotated
 
 import typer
 
-from app.cli.utils import handle_cli_error, print_check_run_summary
+from app.cli.utils import (
+    handle_cli_error,
+    print_check_run_summary,
+    progress_spinner,
+)
 from app.core.errors import GardenError
 from app.db.bootstrap import session_scope
 from app.services.findings import CheckRunService
@@ -22,8 +26,8 @@ def run_checks(
     """Run built-in low-risk checks against an inventory run."""
     try:
         with session_scope() as session:
-            typer.echo(f"Running low-risk checks against inventory {inventory_run_id}...")
-            summary = service.run_inventory_checks(session, inventory_run_id)
+            with progress_spinner("Running low-risk checks ..."):
+                summary = service.run_inventory_checks(session, inventory_run_id)
         print_check_run_summary(summary)
     except GardenError as error:
         handle_cli_error(error)

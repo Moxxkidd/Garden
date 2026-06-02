@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
-import json
 from typing import Annotated
 
 import typer
 
-from app.cli.utils import format_timestamp, handle_cli_error
+from app.cli.utils import (
+    console,
+    format_timestamp,
+    handle_cli_error,
+    progress_spinner,
+    render_json,
+    render_key_value,
+    render_panel,
+    render_table,
+    styled_http_status,
+)
 from app.core.errors import GardenError, InputValidationError
 from app.db.bootstrap import session_scope
 from app.services.evidence import EvidenceService
@@ -24,19 +33,23 @@ def list_evidence(
     with session_scope() as session:
         evidences = service.list(session, finding_id=finding_id)
         if not evidences:
-            typer.echo("No evidence found.")
+            console.print("[dim]No evidence found.[/dim]")
             return
-        typer.echo(
-            f"{'ID':<4} {'TYPE':<16} {'FINDING':<8} {'STATUS':<6} {'METHOD':<8} {'URL':<46} TITLE"
-        )
-        for evidence in evidences:
-            status = str(evidence.http_status) if evidence.http_status is not None else "-"
-            url = (evidence.url or "-")[:46]
-            typer.echo(
-                f"{evidence.id:<4} {evidence.evidence_type[:16]:<16} "
-                f"{str(evidence.finding_id or '-'): <8} {status:<6} "
-                f"{(evidence.http_method or '-')[:8]:<8} {url:<46} {evidence.title}"
-            )
+
+        headers = ["ID", "Type", "Finding", "Status", "Method", "URL", "Title"]
+        rows = [
+            [
+                str(e.id),
+                e.evidence_type[:16],
+                str(e.finding_id or "-"),
+                styled_http_status(e.http_status),
+                (e.http_method or "-")[:8],
+                (e.url or "-"),
+                e.title,
+            ]
+            for e in evidences
+        ]
+        render_table(headers, rows, title="Evidence")
 
 
 @app.command("show")
@@ -46,29 +59,36 @@ def show_evidence(evidence_id: int) -> None:
         with session_scope() as session:
             evidence = service.get(session, evidence_id)
             payload = service.payload_for(evidence)
-        typer.echo(f"Evidence #{evidence.id}")
-        typer.echo(f"Type: {evidence.evidence_type}")
-        typer.echo(f"Title: {evidence.title}")
-        typer.echo(f"Summary: {evidence.summary}")
-        typer.echo(f"Target ID: {evidence.target_id}")
-        typer.echo(f"Credential Profile ID: {evidence.credential_profile_id}")
-        typer.echo(f"Session ID: {evidence.session_id}")
-        typer.echo(f"Job ID: {evidence.job_id}")
-        typer.echo(f"Finding ID: {evidence.finding_id if evidence.finding_id is not None else '-'}")
-        typer.echo(
-            f"Inventory Run ID: "
-            f"{evidence.inventory_run_id if evidence.inventory_run_id is not None else '-'}"
-        )
-        typer.echo(f"Method: {evidence.http_method or '-'}")
-        typer.echo(f"URL: {evidence.url or '-'}")
-        typer.echo(f"Page Title: {evidence.page_title or '-'}")
-        typer.echo(f"Status: {evidence.http_status if evidence.http_status is not None else '-'}")
-        typer.echo(f"Storage Ref: {evidence.storage_ref}")
-        typer.echo(f"Created: {format_timestamp(evidence.created_at)}")
-        typer.echo("Redacted Preview:")
-        typer.echo(evidence.preview_redacted or "-")
-        typer.echo("Structured Payload:")
-        typer.echo(json.dumps(payload, indent=2))
+
+        rows: list[tuple[str, str]] = [
+            ("Type", evidence.evidence_type),
+            ("Title", evidence.title),
+            ("Summary", evidence.summary),
+            ("Target ID", str(evidence.target_id)),
+            ("Credential Profile ID", str(evidence.credential_profile_id)),
+            ("Session ID", str(evidence.session_id)),
+            ("Job ID", str(evidence.job_id)),
+            ("Finding ID", str(evidence.finding_id) if evidence.finding_id is not None else "-"),
+            (
+                "Inventory Run ID",
+                str(evidence.inventory_run_id) if evidence.inventory_run_id is not None else "-",
+            ),
+            ("Method", evidence.http_method or "-"),
+            ("URL", evidence.url or "-"),
+            ("Page Title", evidence.page_title or "-"),
+            ("Status", styled_http_status(evidence.http_status)),
+            ("Storage Ref", evidence.storage_ref),
+            ("Created", format_timestamp(evidence.created_at)),
+        ]
+        render_key_value(rows, title=f"Evidence #{evidence.id}")
+
+        if evidence.preview_redacted:
+            render_panel(evidence.preview_redacted, title="Redacted Preview")
+        else:
+            console.print("[dim]No redacted preview available.[/dim]")
+
+        render_json(payload, title="Structured Payload")
+
     except GardenError as error:
         handle_cli_error(error)
 
@@ -82,14 +102,16 @@ def export_evidence(
     if export_format not in {"json", "md"}:
         handle_cli_error(InputValidationError("Evidence export format must be 'json' or 'md'."))
     try:
-        with session_scope() as session:
-            result = service.export_for_finding(
-                session,
-                finding_id=finding_id,
-                export_format=export_format,
-            )
-        typer.echo(
-            f"Exported evidence bundle for finding {result.finding_id} to {result.output_path}"
+        with progress_spinner("Exporting evidence bundle ..."):
+            with session_scope() as session:
+                result = service.export_for_finding(
+                    session,
+                    finding_id=finding_id,
+                    export_format=export_format,
+                )
+        console.print(
+            f"[green]Exported evidence bundle for finding {result.finding_id} to[/green] "
+            f"{result.output_path}"
         )
     except GardenError as error:
         handle_cli_error(error)

@@ -6,7 +6,11 @@ from typing import Annotated
 
 import typer
 
-from app.cli.utils import handle_cli_error
+from app.cli.utils import (
+    console,
+    handle_cli_error,
+    progress_spinner,
+)
 from app.core.errors import GardenError
 from app.db.bootstrap import session_scope
 from app.services.reporting import ReportService
@@ -22,8 +26,11 @@ def generate_report(
 ) -> None:
     """Generate a redacted job report."""
     try:
-        with session_scope() as session:
-            result = service.generate(session, job_id=job_id, export_format=export_format)
-        typer.echo(f"Generated report for job {result.job_id} at {result.output_path}")
+        with progress_spinner("Generating report ..."):
+            with session_scope() as session:
+                result = service.generate(session, job_id=job_id, export_format=export_format)
+        console.print(
+            f"[green]Generated report for job {result.job_id} at[/green] {result.output_path}"
+        )
     except GardenError as error:
         handle_cli_error(error)

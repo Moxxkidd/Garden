@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% from "_macros.html" import severity_badge, confidence_badge, status_badge %}
 
 {% block content %}
   <section class="space-y-6">
     <div class="flex items-end justify-between">
       <div>
-        <p class="text-sm uppercase tracking-[0.18em] text-slate-500">Low-Risk Finding</p>
+        <p class="text-sm uppercase tracking-[0.18em] text-slate-500">Finding Detail</p>
         <h1 class="text-3xl font-semibold tracking-tight">Finding #{{ finding.id }}</h1>
       </div>
       <a href="/findings" class="rounded-full border border-black/10 px-4 py-2 text-sm">Back</a>
@@ -32,20 +33,21 @@
         <div><dt class="text-slate-500">Title</dt><dd class="mt-1 font-medium">{{ finding.title }}</dd></div>
         <div><dt class="text-slate-500">Check</dt><dd class="mt-1 font-medium">{{ finding.check_name }}</dd></div>
         <div><dt class="text-slate-500">Category</dt><dd class="mt-1 font-medium">{{ finding.category }}</dd></div>
-        <div><dt class="text-slate-500">Status</dt><dd class="mt-1 font-medium">{{ finding.status }}</dd></div>
-        <div><dt class="text-slate-500">Severity</dt><dd class="mt-1 font-medium">{{ finding.severity }}</dd></div>
-        <div><dt class="text-slate-500">Confidence</dt><dd class="mt-1 font-medium">{{ finding.confidence }}</dd></div>
+        <div><dt class="text-slate-500">Status</dt><dd class="mt-1">{{ status_badge(finding.status) }}</dd></div>
+        <div><dt class="text-slate-500">Severity</dt><dd class="mt-1">{{ severity_badge(finding.severity) }}</dd></div>
+        <div><dt class="text-slate-500">Confidence</dt><dd class="mt-1">{{ confidence_badge(finding.confidence) }}</dd></div>
         <div><dt class="text-slate-500">Target</dt><dd class="mt-1 font-medium">{{ finding.target.name if finding.target else finding.target_id }}</dd></div>
         <div><dt class="text-slate-500">Profile</dt><dd class="mt-1 font-medium">{{ finding.credential_profile.name if finding.credential_profile else finding.credential_profile_id }}</dd></div>
         <div><dt class="text-slate-500">Session</dt><dd class="mt-1 font-medium">{{ finding.session_id }}</dd></div>
         <div><dt class="text-slate-500">Job</dt><dd class="mt-1 font-medium">{{ finding.job_id }}</dd></div>
-        <div><dt class="text-slate-500">First Seen</dt><dd class="mt-1 font-medium">{{ finding.first_seen.isoformat() }}</dd></div>
-        <div><dt class="text-slate-500">Last Seen</dt><dd class="mt-1 font-medium">{{ finding.last_seen.isoformat() }}</dd></div>
+        <div><dt class="text-slate-500">First Seen</dt><dd class="mt-1 font-medium"><time data-iso="{{ finding.first_seen.isoformat() }}">{{ finding.first_seen.isoformat() }}</time></dd></div>
+        <div><dt class="text-slate-500">Last Seen</dt><dd class="mt-1 font-medium"><time data-iso="{{ finding.last_seen.isoformat() }}">{{ finding.last_seen.isoformat() }}</time></dd></div>
         <div class="md:col-span-2">
           <dt class="text-slate-500">Latest Retest</dt>
           <dd class="mt-1 font-medium">
             {% if latest_retest %}
-              {{ latest_retest.created_at.isoformat() }} · {{ latest_retest.status }} · {{ latest_retest.summary }}
+              <time data-iso="{{ latest_retest.created_at.isoformat() }}">{{ latest_retest.created_at.isoformat() }}</time>
+              · {{ status_badge(latest_retest.status) }} · {{ latest_retest.summary }}
             {% else %}
               No retest recorded yet.
             {% endif %}
@@ -53,7 +55,15 @@
         </div>
         <div class="md:col-span-2"><dt class="text-slate-500">Why It Triggered</dt><dd class="mt-1 whitespace-pre-wrap font-medium">{{ finding.trigger_explanation }}</dd></div>
         <div class="md:col-span-2"><dt class="text-slate-500">False-Positive Boundaries</dt><dd class="mt-1 whitespace-pre-wrap font-medium">{{ finding.false_positive_boundaries }}</dd></div>
-        <div class="md:col-span-2"><dt class="text-slate-500">Linked Inventory Context</dt><dd class="mt-1"><pre class="whitespace-pre-wrap text-sm text-slate-700">{{ finding.inventory_refs | tojson(indent=2) }}</pre></dd></div>
+        <div class="md:col-span-2">
+          <dt class="text-slate-500">Linked Inventory Context</dt>
+          <dd class="mt-1">
+            <details class="group">
+              <summary class="cursor-pointer text-xs text-slate-500 hover:text-slate-700">Show JSON</summary>
+              <pre class="mt-2 overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-100">{{ finding.inventory_refs | tojson(indent=2) }}</pre>
+            </details>
+          </dd>
+        </div>
         <div class="md:col-span-2">
           <dt class="text-slate-500">Linked Evidence</dt>
           <dd class="mt-3">
@@ -62,7 +72,10 @@
                 <a href="/evidence/{{ evidence.id }}" class="rounded-2xl border border-black/10 bg-stone-50 p-4 text-sm transition hover:border-black/20 hover:bg-white">
                   <p class="font-medium text-slate-900">{{ evidence.title }}</p>
                   <p class="mt-1 text-slate-500">{{ evidence.evidence_type }} · {{ evidence.http_method or "-" }} · {{ evidence.http_status if evidence.http_status is not none else "-" }}</p>
-                  <p class="mt-2 line-clamp-3 whitespace-pre-wrap text-slate-700">{{ evidence.preview_redacted }}</p>
+                  <div class="mt-2">
+                    <div class="line-clamp-3 whitespace-pre-wrap text-slate-700 evidence-preview" id="evidence-preview-{{ evidence.id }}">{{ evidence.preview_redacted }}</div>
+                    <button type="button" class="mt-1 text-xs text-slate-500 hover:text-slate-700 evidence-toggle" data-target="evidence-preview-{{ evidence.id }}">Show more</button>
+                  </div>
                 </a>
               {% else %}
                 <div class="rounded-2xl border border-dashed border-black/10 bg-stone-50 p-4 text-sm text-slate-500">No linked evidence captured yet.</div>
@@ -75,4 +88,15 @@
       </dl>
     </div>
   </section>
+
+  <script>
+    document.querySelectorAll('.evidence-toggle').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        var target = document.getElementById(this.getAttribute('data-target'));
+        var collapsed = target.classList.toggle('line-clamp-3');
+        this.textContent = collapsed ? 'Show more' : 'Show less';
+      });
+    });
+  </script>
 {% endblock %}

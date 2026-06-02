@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import http_status_badge %}
 
 {% block content %}
   <section class="space-y-6">
@@ -18,16 +19,24 @@
         <div><dt class="text-slate-500">Session</dt><dd class="mt-1 font-medium">{{ evidence.session_id }}</dd></div>
         <div><dt class="text-slate-500">Job</dt><dd class="mt-1 font-medium">{{ evidence.job_id }}</dd></div>
         <div><dt class="text-slate-500">Inventory Run</dt><dd class="mt-1 font-medium">{{ evidence.inventory_run_id if evidence.inventory_run_id is not none else "-" }}</dd></div>
-        <div><dt class="text-slate-500">Created</dt><dd class="mt-1 font-medium">{{ evidence.created_at.isoformat() }}</dd></div>
+        <div><dt class="text-slate-500">Created</dt><dd class="mt-1 font-medium"><time data-iso="{{ evidence.created_at.isoformat() }}">{{ evidence.created_at.isoformat() }}</time></dd></div>
         <div><dt class="text-slate-500">Method</dt><dd class="mt-1 font-medium">{{ evidence.http_method or "-" }}</dd></div>
-        <div><dt class="text-slate-500">Status</dt><dd class="mt-1 font-medium">{{ evidence.http_status if evidence.http_status is not none else "-" }}</dd></div>
+        <div><dt class="text-slate-500">Status</dt><dd class="mt-1">{{ http_status_badge(evidence.http_status) }}</dd></div>
         <div class="md:col-span-2"><dt class="text-slate-500">Title</dt><dd class="mt-1 font-medium">{{ evidence.title }}</dd></div>
         <div class="md:col-span-2"><dt class="text-slate-500">Summary</dt><dd class="mt-1 font-medium">{{ evidence.summary }}</dd></div>
         <div class="md:col-span-2"><dt class="text-slate-500">URL</dt><dd class="mt-1 break-all font-medium">{{ evidence.url or "-" }}</dd></div>
         <div class="md:col-span-2"><dt class="text-slate-500">Page Title</dt><dd class="mt-1 font-medium">{{ evidence.page_title or "-" }}</dd></div>
         <div class="md:col-span-2"><dt class="text-slate-500">Storage Ref</dt><dd class="mt-1 break-all text-sm text-slate-700">{{ evidence.storage_ref }}</dd></div>
         <div class="md:col-span-2"><dt class="text-slate-500">Redacted Preview</dt><dd class="mt-1 whitespace-pre-wrap rounded-2xl bg-stone-50 p-4 text-sm text-slate-800">{{ evidence.preview_redacted }}</dd></div>
-        <div class="md:col-span-2"><dt class="text-slate-500">Structured Redacted Payload</dt><dd class="mt-1"><pre class="whitespace-pre-wrap text-sm text-slate-700">{{ payload | tojson(indent=2) }}</pre></dd></div>
+        <div class="md:col-span-2">
+          <dt class="text-slate-500">Structured Redacted Payload</dt>
+          <dd class="mt-1">
+            <details>
+              <summary class="cursor-pointer text-xs text-slate-500 hover:text-slate-700">Show payload</summary>
+              <pre class="mt-2 overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-100">{{ payload | tojson(indent=2) }}</pre>
+            </details>
+          </dd>
+        </div>
       </dl>
     </div>
   </section>

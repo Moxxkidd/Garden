@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
 
 {% block content %}
   <section class="space-y-6">
@@ -15,10 +16,10 @@
         <div><dt class="text-slate-500">Base URL</dt><dd class="mt-1 font-medium">{{ target.base_url }}</dd></div>
         <div><dt class="text-slate-500">Type</dt><dd class="mt-1 font-medium">{{ target.type }}</dd></div>
         <div><dt class="text-slate-500">Owner</dt><dd class="mt-1 font-medium">{{ target.owner }}</dd></div>
-        <div><dt class="text-slate-500">Status</dt><dd class="mt-1 font-medium">{{ target.status }}</dd></div>
+        <div><dt class="text-slate-500">Status</dt><dd class="mt-1">{{ status_badge(target.status) }}</dd></div>
         <div><dt class="text-slate-500">Tags</dt><dd class="mt-1 font-medium">{{ target.tags | join(", ") if target.tags else "-" }}</dd></div>
-        <div><dt class="text-slate-500">Created</dt><dd class="mt-1 font-medium">{{ target.created_at.isoformat() }}</dd></div>
-        <div><dt class="text-slate-500">Updated</dt><dd class="mt-1 font-medium">{{ target.updated_at.isoformat() }}</dd></div>
+        <div><dt class="text-slate-500">Created</dt><dd class="mt-1 font-medium"><time data-iso="{{ target.created_at.isoformat() }}">{{ target.created_at.isoformat() }}</time></dd></div>
+        <div><dt class="text-slate-500">Updated</dt><dd class="mt-1 font-medium"><time data-iso="{{ target.updated_at.isoformat() }}">{{ target.updated_at.isoformat() }}</time></dd></div>
       </dl>
     </div>
     <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
@@ -31,7 +32,7 @@
           <a href="/sessions/{{ auth_session.id }}" class="block rounded-2xl border border-black/10 px-4 py-3 hover:bg-stone-50">
             <div class="flex items-center justify-between">
               <span class="font-medium">Session #{{ auth_session.id }}</span>
-              <span class="text-sm text-slate-500">{{ auth_session.status }}</span>
+              {{ status_badge(auth_session.status) }}
             </div>
             <div class="mt-1 text-sm text-slate-500">{{ auth_session.session_type }}</div>
           </a>

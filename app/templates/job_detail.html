@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
 
 {% block content %}
   <section class="space-y-6">
@@ -13,9 +14,13 @@
       <dl class="grid gap-5 md:grid-cols-2">
         <div><dt class="text-slate-500">Target</dt><dd class="mt-1 font-medium">{{ job.target.name if job.target else job.target_id }}</dd></div>
         <div><dt class="text-slate-500">Credential Profile</dt><dd class="mt-1 font-medium">{{ job.credential_profile.name if job.credential_profile else job.credential_profile_id }}</dd></div>
-        <div><dt class="text-slate-500">Status</dt><dd class="mt-1 font-medium">{{ job.status }}</dd></div>
-        <div><dt class="text-slate-500">Started</dt><dd class="mt-1 font-medium">{{ job.started_at.isoformat() if job.started_at else "-" }}</dd></div>
-        <div><dt class="text-slate-500">Finished</dt><dd class="mt-1 font-medium">{{ job.finished_at.isoformat() if job.finished_at else "-" }}</dd></div>
+        <div><dt class="text-slate-500">Status</dt><dd class="mt-1">{{ status_badge(job.status) }}</dd></div>
+        <div><dt class="text-slate-500">Started</dt><dd class="mt-1 font-medium">
+          {% if job.started_at %}<time data-iso="{{ job.started_at.isoformat() }}">{{ job.started_at.isoformat() }}</time>{% else %}-{% endif %}
+        </dd></div>
+        <div><dt class="text-slate-500">Finished</dt><dd class="mt-1 font-medium">
+          {% if job.finished_at %}<time data-iso="{{ job.finished_at.isoformat() }}">{{ job.finished_at.isoformat() }}</time>{% else %}-{% endif %}
+        </dd></div>
         <div class="md:col-span-2"><dt class="text-slate-500">Summary</dt><dd class="mt-1 font-medium">{{ job.summary or "-" }}</dd></div>
         <div class="md:col-span-2"><dt class="text-slate-500">Error</dt><dd class="mt-1 font-medium">{{ job.error_message or "-" }}</dd></div>
       </dl>
@@ -28,7 +33,7 @@
         </div>
         <dl class="mt-4 grid gap-5 md:grid-cols-2">
           <div><dt class="text-slate-500">Inventory Run</dt><dd class="mt-1 font-medium">{{ inventory_run.id }}</dd></div>
-          <div><dt class="text-slate-500">Status</dt><dd class="mt-1 font-medium">{{ inventory_run.status }}</dd></div>
+          <div><dt class="text-slate-500">Status</dt><dd class="mt-1">{{ status_badge(inventory_run.status) }}</dd></div>
           <div><dt class="text-slate-500">Pages</dt><dd class="mt-1 font-medium">{{ inventory_run.pages_count }}</dd></div>
           <div><dt class="text-slate-500">Endpoints</dt><dd class="mt-1 font-medium">{{ inventory_run.endpoints_count }}</dd></div>
           <div><dt class="text-slate-500">Parameters</dt><dd class="mt-1 font-medium">{{ inventory_run.parameters_count }}</dd></div>

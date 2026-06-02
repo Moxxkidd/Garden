@@ -5,7 +5,15 @@ from typing import Annotated
 
 import typer
 
-from app.cli.utils import format_tags, handle_cli_error
+from app.cli.utils import (
+    console,
+    format_tags,
+    format_timestamp,
+    handle_cli_error,
+    render_key_value,
+    render_table,
+    styled_status,
+)
 from app.core.errors import GardenError
 from app.db.bootstrap import session_scope
 from app.models.enums import TargetStatus, TargetType
@@ -37,7 +45,7 @@ def add_target(
         )
         with session_scope() as session:
             target = service.create(session, payload)
-        typer.echo(f"Created target #{target.id}: {target.name}")
+        console.print(f"[green]Created target #{target.id}:[/green] {target.name}")
     except GardenError as error:
         handle_cli_error(error)
 
@@ -48,14 +56,15 @@ def list_targets() -> None:
     with session_scope() as session:
         targets = service.list(session)
     if not targets:
-        typer.echo("No targets found.")
+        console.print("[dim]No targets found.[/dim]")
         return
-    typer.echo(f"{'ID':<4} {'NAME':<20} {'TYPE':<10} {'STATUS':<10} OWNER")
-    for target in targets:
-        typer.echo(
-            f"{target.id:<4} {target.name[:20]:<20} "
-            f"{target.type:<10} {target.status:<10} {target.owner}"
-        )
+
+    headers = ["ID", "Name", "Type", "Status", "Owner"]
+    rows = [
+        [str(t.id), t.name, t.type, styled_status(t.status), t.owner]
+        for t in targets
+    ]
+    render_table(headers, rows, title="Targets")
 
 
 @app.command("show")
@@ -64,15 +73,18 @@ def show_target(target_id: int) -> None:
     try:
         with session_scope() as session:
             target = service.get(session, target_id)
-        typer.echo(f"Target #{target.id}")
-        typer.echo(f"Name: {target.name}")
-        typer.echo(f"Base URL: {target.base_url}")
-        typer.echo(f"Type: {target.type}")
-        typer.echo(f"Owner: {target.owner}")
-        typer.echo(f"Tags: {format_tags(target.tags)}")
-        typer.echo(f"Status: {target.status}")
-        typer.echo(f"Created: {target.created_at.isoformat()}")
-        typer.echo(f"Updated: {target.updated_at.isoformat()}")
+
+        rows: list[tuple[str, str]] = [
+            ("Name", target.name),
+            ("Base URL", target.base_url),
+            ("Type", target.type),
+            ("Owner", target.owner),
+            ("Tags", format_tags(target.tags)),
+            ("Status", styled_status(target.status)),
+            ("Created", format_timestamp(target.created_at)),
+            ("Updated", format_timestamp(target.updated_at)),
+        ]
+        render_key_value(rows, title=f"Target #{target.id}")
     except GardenError as error:
         handle_cli_error(error)
 
@@ -88,7 +100,7 @@ def delete_target(
     try:
         with session_scope() as session:
             service.delete(session, target_id)
-        typer.echo(f"Deleted target {target_id}.")
+        console.print(f"[green]Deleted target {target_id}.[/green]")
     except GardenError as error:
         handle_cli_error(error)
 
@@ -107,9 +119,9 @@ def import_targets(
     try:
         with session_scope() as session:
             result = service.import_file(session, file_path, on_duplicate=on_duplicate)
-        typer.echo(
-            "Import complete: "
-            f"imported={result.imported} updated={result.updated} skipped={result.skipped}"
+        console.print(
+            f"[green]Import complete:[/green] "
+            f"imported={result.imported}  updated={result.updated}  skipped={result.skipped}"
         )
     except GardenError as error:
         handle_cli_error(error)

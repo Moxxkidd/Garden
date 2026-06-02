@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% from "_macros.html" import severity_badge, confidence_badge, status_badge %}
 
 {% block content %}
   <section class="space-y-6">
     <div class="flex items-end justify-between">
       <div>
-        <p class="text-sm uppercase tracking-[0.18em] text-slate-500">Low-Risk Findings</p>
+        <p class="text-sm uppercase tracking-[0.18em] text-slate-500">Browse Findings</p>
         <h1 class="text-3xl font-semibold tracking-tight">Findings</h1>
       </div>
       <a href="/findings" class="rounded-full border border-black/10 px-4 py-2 text-sm">Refresh</a>
@@ -33,9 +34,9 @@
           {% for finding in findings %}
             <tr class="hover:bg-stone-50">
               <td class="px-5 py-4 font-medium"><a href="/findings/{{ finding.id }}">{{ finding.id }}</a></td>
-              <td class="px-5 py-4">{{ finding.severity }}</td>
-              <td class="px-5 py-4">{{ finding.confidence }}</td>
-              <td class="px-5 py-4">{{ finding.status }}</td>
+              <td class="px-5 py-4">{{ severity_badge(finding.severity) }}</td>
+              <td class="px-5 py-4">{{ confidence_badge(finding.confidence) }}</td>
+              <td class="px-5 py-4">{{ status_badge(finding.status) }}</td>
               <td class="px-5 py-4">{{ finding.category }}</td>
               <td class="px-5 py-4">{{ finding.title }}</td>
             </tr>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
 
 {% block content %}
   <section class="space-y-6">
@@ -30,7 +31,7 @@
               <td class="px-5 py-4">{{ row.profile_name }}</td>
               <td class="px-5 py-4">{{ row.inventory_run.auth_session_id }}</td>
               <td class="px-5 py-4"><a href="/jobs/{{ row.inventory_run.scan_job_id }}">{{ row.inventory_run.scan_job_id }}</a></td>
-              <td class="px-5 py-4">{{ row.inventory_run.status }}</td>
+              <td class="px-5 py-4">{{ status_badge(row.inventory_run.status) }}</td>
               <td class="px-5 py-4">
                 p={{ row.inventory_run.pages_count }}
                 e={{ row.inventory_run.endpoints_count }}

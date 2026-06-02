@@ -57,7 +57,7 @@ def test_management_pages_render(app, seeded_findings) -> None:
     assert "env://GARDEN_DEMO_ADMIN_PASSWORD" in credential_detail_response.text
     assert "Session #1" in credential_detail_response.text
     assert jobs_response.status_code == 200
-    assert "completed" in jobs_response.text
+    assert "COMPLETED" in jobs_response.text.upper()
     assert "local-admin" in jobs_response.text
     assert job_detail_response.status_code == 200
     assert "Initial management smoke job." in job_detail_response.text

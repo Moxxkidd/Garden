@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import http_status_badge %}
 
 {% block content %}
   <section class="space-y-6">
@@ -33,7 +34,7 @@
                 {% endif %}
               </td>
               <td class="px-6 py-4">{{ evidence.http_method or "-" }}</td>
-              <td class="px-6 py-4">{{ evidence.http_status if evidence.http_status is not none else "-" }}</td>
+              <td class="px-6 py-4">{{ http_status_badge(evidence.http_status) }}</td>
               <td class="px-6 py-4">{{ evidence.title }}</td>
             </tr>
           {% else %}

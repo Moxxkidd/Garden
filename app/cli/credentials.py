@@ -4,7 +4,13 @@ from typing import Annotated
 
 import typer
 
-from app.cli.utils import handle_cli_error
+from app.cli.utils import (
+    console,
+    format_timestamp,
+    handle_cli_error,
+    render_key_value,
+    render_table,
+)
 from app.core.errors import GardenError
 from app.db.bootstrap import session_scope
 from app.models.enums import AuthType
@@ -39,7 +45,9 @@ def add_credential(
         )
         with session_scope() as session:
             credential = service.create(session, payload)
-        typer.echo(f"Created credential profile #{credential.id}: {credential.name}")
+        console.print(
+            f"[green]Created credential profile #{credential.id}:[/green] {credential.name}"
+        )
     except GardenError as error:
         handle_cli_error(error)
 
@@ -50,14 +58,15 @@ def list_credentials() -> None:
     with session_scope() as session:
         credentials = service.list(session)
     if not credentials:
-        typer.echo("No credential profiles found.")
+        console.print("[dim]No credential profiles found.[/dim]")
         return
-    typer.echo(f"{'ID':<4} {'TARGET':<8} {'NAME':<18} {'AUTH':<10} USERNAME")
-    for credential in credentials:
-        typer.echo(
-            f"{credential.id:<4} {credential.target_id:<8} {credential.name[:18]:<18} "
-            f"{credential.auth_type:<10} {credential.username}"
-        )
+
+    headers = ["ID", "Target", "Name", "Auth Type", "Username"]
+    rows = [
+        [str(c.id), str(c.target_id), c.name, c.auth_type, c.username]
+        for c in credentials
+    ]
+    render_table(headers, rows, title="Credential Profiles")
 
 
 @app.command("show")
@@ -66,16 +75,19 @@ def show_credential(credential_id: int) -> None:
     try:
         with session_scope() as session:
             credential = service.get(session, credential_id)
-        typer.echo(f"Credential Profile #{credential.id}")
-        typer.echo(f"Target ID: {credential.target_id}")
-        typer.echo(f"Name: {credential.name}")
-        typer.echo(f"Role: {credential.role}")
-        typer.echo(f"Auth Type: {credential.auth_type}")
-        typer.echo(f"Username: {credential.username}")
-        typer.echo(f"Secret Ref: {redact_secret_ref(credential.secret_ref)}")
-        typer.echo(f"Login Config Path: {credential.login_config_path}")
-        typer.echo(f"Created: {credential.created_at.isoformat()}")
-        typer.echo(f"Updated: {credential.updated_at.isoformat()}")
+
+        rows: list[tuple[str, str]] = [
+            ("Target ID", str(credential.target_id)),
+            ("Name", credential.name),
+            ("Role", credential.role),
+            ("Auth Type", credential.auth_type),
+            ("Username", credential.username),
+            ("Secret Ref", redact_secret_ref(credential.secret_ref)),
+            ("Login Config Path", credential.login_config_path),
+            ("Created", format_timestamp(credential.created_at)),
+            ("Updated", format_timestamp(credential.updated_at)),
+        ]
+        render_key_value(rows, title=f"Credential Profile #{credential.id}")
     except GardenError as error:
         handle_cli_error(error)
 
@@ -91,6 +103,6 @@ def delete_credential(
     try:
         with session_scope() as session:
             service.delete(session, credential_id)
-        typer.echo(f"Deleted credential profile {credential_id}.")
+        console.print(f"[green]Deleted credential profile {credential_id}.[/green]")
     except GardenError as error:
         handle_cli_error(error)
