@@ -3,453 +3,1232 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Garden — 登录态安全验证工作流平台</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<title>Garden — 登录态安全验证工作流</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --vp-c-brand:#10b981;
-  --vp-c-brand-light:#34d399;
-  --vp-c-brand-dark:#059669;
-  --vp-c-brand-bg:rgba(16,185,129,.12);
-  --vp-c-text-1:#1b1b1f;
-  --vp-c-text-2:#60646c;
-  --vp-c-text-3:#86909c;
-  --vp-c-divider:rgba(60,60,67,.12);
-  --vp-c-divider-light:rgba(60,60,67,.06);
-  --vp-c-bg:#fff;
-  --vp-c-bg-soft:#f6f6f7;
-  --vp-c-bg-mute:#e5e5e6;
-  --vp-nav-height:64px;
-  --vp-sidebar-width:272px;
-  --vp-c-green-dimm:rgba(16,185,129,.08);
-  --vp-code-bg:#292b30;
-  --vp-c-yellow:#d97706;
+  --c-text:#1b1b1f;
+  --c-muted:#5f6368;
+  --c-border:#dadce0;
+  --c-bg:#fff;
+  --c-bg-soft:#f8f8f8;
+  --c-code-bg:#f2f2f2;
+  --c-accent:#1e5f48;
+  --nav-h:56px;
+  --sidebar-w:260px;
 }
 html{scroll-behavior:smooth}
-body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,sans-serif;color:var(--vp-c-text-1);background:var(--vp-c-bg);-webkit-font-smoothing:antialiased}
-a{color:inherit;text-decoration:none}
-button{font-family:inherit}
-
-/* ===== NAV ===== */
-.VPNav{position:fixed;top:0;left:0;right:0;z-index:40;height:var(--vp-nav-height);border-bottom:1px solid var(--vp-c-divider);background:rgba(255,255,255,.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-.VPNav .container{max-width:1440px;margin:0 auto;height:100%;display:flex;align-items:center;justify-content:space-between;padding:0 24px 0 24px}
-.VPNav .logo{font-size:16px;font-weight:700;color:var(--vp-c-text-1);display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;white-space:nowrap}
-.VPNav .logo svg{width:28px;height:28px}
-.VPNav .logo span{color:var(--vp-c-brand)}
-.VPNav .nav-links{display:flex;align-items:center;gap:0}
-.VPNav .nav-link{padding:0 16px;font-size:14px;font-weight:500;color:var(--vp-c-text-2);cursor:pointer;line-height:var(--vp-nav-height);transition:color .25s}
-.VPNav .nav-link:hover{color:var(--vp-c-brand)}
-.VPNav .search{border:1px solid var(--vp-c-divider);border-radius:8px;padding:6px 12px 6px 32px;font-size:13px;color:var(--vp-c-text-3);width:200px;outline:none;background:var(--vp-c-bg-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2386909c' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E") 10px center no-repeat;transition:border-color .25s,width .25s}
-.VPNav .search:focus{border-color:var(--vp-c-brand);color:var(--vp-c-text-1);width:240px}
-.VPNav .nav-right{display:flex;align-items:center;gap:4px}
-.VPNav .icon-link{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;color:var(--vp-c-text-2);transition:color .25s,background .25s}
-.VPNav .icon-link:hover{color:var(--vp-c-text-1);background:var(--vp-c-bg-soft)}
-
-/* ===== HOMEPAGE ===== */
-.VPHome{padding-top:var(--vp-nav-height)}
-.VPHero{padding:64px 24px 48px;text-align:center;position:relative;overflow:hidden}
-.VPHero .glow{position:absolute;border-radius:50%;filter:blur(100px);pointer-events:none;animation:glow-float 8s ease-in-out infinite}
-.VPHero .glow-1{width:600px;height:500px;background:rgba(16,185,129,.1);top:-100px;right:-100px;animation-delay:0s}
-.VPHero .glow-2{width:500px;height:450px;background:rgba(59,130,246,.08);bottom:-80px;left:-80px;animation-delay:-3s}
-@keyframes glow-float{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-30px,20px) scale(.92)}}
-.VPHero .flora{position:absolute;pointer-events:none;opacity:.55;z-index:0}
-.VPHero .flora-left{left:0;bottom:0}
-.VPHero .flora-right{right:0;bottom:0}
-
-.VPHero .wrapper{position:relative;z-index:10;max-width:592px;margin:0 auto}
-.VPHero .name{font-size:4rem;font-weight:800;line-height:1.1;letter-spacing:-.02em}
-.VPHero .name .gradient{background:linear-gradient(120deg,#10b981 30%,#3b82f6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.VPHero .text{font-size:3rem;font-weight:700;line-height:1.15;color:var(--vp-c-text-1);padding-top:4px}
-.VPHero .tagline{padding-top:16px;font-size:1.125rem;line-height:1.7;color:var(--vp-c-text-2);max-width:480px;margin:0 auto}
-.VPHero .actions{display:flex;gap:12px;justify-content:center;padding-top:32px;flex-wrap:wrap}
-.VPHero .action-btn{display:inline-flex;align-items:center;border:none;border-radius:20px;padding:0 20px;line-height:38px;font-size:14px;font-weight:600;cursor:pointer;transition:all .25s}
-.VPHero .brand{background:var(--vp-c-brand);color:#fff}
-.VPHero .brand:hover{background:var(--vp-c-brand-dark)}
-.VPHero .alt{background:var(--vp-c-bg-mute);color:var(--vp-c-text-1)}
-.VPHero .alt:hover{background:#d4d4d5}
-
-.VPFeatures{padding:48px 24px 64px;max-width:1152px;margin:0 auto}
-.VPFeatures .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-.VPFeatures .item{border:1px solid var(--vp-c-divider-light);border-radius:12px;padding:24px;background:var(--vp-c-bg-soft);transition:border-color .25s,box-shadow .25s}
-.VPFeatures .item:hover{border-color:var(--vp-c-divider);box-shadow:0 2px 12px rgba(0,0,0,.04)}
-.VPFeatures .icon{display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:8px;background:var(--vp-c-bg);font-size:24px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
-.VPFeatures .title{font-size:15px;font-weight:600;color:var(--vp-c-text-1);line-height:1.4;margin-bottom:8px}
-.VPFeatures .details{font-size:14px;line-height:1.6;color:var(--vp-c-text-2);font-weight:400}
-
-.VPHome .extra-sections{max-width:1152px;margin:0 auto;padding:0 24px 80px}
-.section-block{margin-bottom:48px}
-.section-block .tag{font-size:12px;font-weight:600;color:var(--vp-c-brand);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
-.section-block .heading{font-size:24px;font-weight:700;color:var(--vp-c-text-1);margin-bottom:12px}
-.section-block .desc{font-size:15px;color:var(--vp-c-text-2);line-height:1.7;margin-bottom:20px;max-width:640px}
-.pain-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.pain-item{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--vp-c-text-2);padding:8px 12px;border-radius:8px;background:var(--vp-c-bg-soft)}
-.pain-x{color:#ef4444;font-weight:700;font-size:16px}
-.boundary-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-.boundary-card{background:var(--vp-c-bg);border:1px solid var(--vp-c-divider-light);border-radius:10px;padding:20px}
-.boundary-card h3{font-size:15px;font-weight:700;color:var(--vp-c-text-1);margin-bottom:8px}
-.boundary-card p{font-size:13px;color:var(--vp-c-text-2);line-height:1.6}
-.steps-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.step-card{background:var(--vp-c-bg-soft);border:1px solid var(--vp-c-divider-light);border-radius:10px;padding:20px;transition:border-color .2s}
-.step-card:hover{border-color:var(--vp-c-divider)}
-.step-card.accent{border-color:var(--vp-c-brand);background:var(--vp-c-green-dimm)}
-.step-num{font-size:24px;font-weight:800;color:var(--vp-c-brand);opacity:.4;margin-bottom:8px}
-.step-card h4{font-size:14px;font-weight:600;color:var(--vp-c-text-1);margin-bottom:4px}
-.step-card p{font-size:12px;color:var(--vp-c-text-2);line-height:1.5}
-.modules-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.mod-card{background:var(--vp-c-bg);border:1px solid var(--vp-c-divider-light);border-radius:10px;padding:16px;transition:border-color .2s}
-.mod-card:hover{border-color:var(--vp-c-divider)}
-.mod-num{font-size:20px;font-weight:800;color:var(--vp-c-brand);opacity:.35;margin-bottom:4px}
-.mod-card h4{font-size:13px;font-weight:600;color:var(--vp-c-text-1);margin-bottom:4px}
-.mod-card p{font-size:12px;color:var(--vp-c-text-2);line-height:1.5}
-
-.VPFooter{border-top:1px solid var(--vp-c-divider);padding:24px;text-align:center;font-size:13px;color:var(--vp-c-text-3)}
-
-/* ===== DOC PAGE ===== */
-.VPDoc{display:none;padding-top:var(--vp-nav-height)}
-.VPDoc.active{display:block}
-
-.VPSidebar{position:fixed;top:var(--vp-nav-height);bottom:0;left:0;z-index:30;width:var(--vp-sidebar-width);padding:24px 20px 96px 20px;overflow-x:hidden;overflow-y:auto;background:var(--vp-c-bg);border-right:1px solid var(--vp-c-divider)}
-.VPSidebar::-webkit-scrollbar{width:3px}
-.VPSidebar::-webkit-scrollbar-thumb{background:var(--vp-c-divider);border-radius:4px}
-.VPSidebar .group{margin-bottom:4px}
-.VPSidebar .group-title{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;font-size:13px;font-weight:700;color:var(--vp-c-text-1);cursor:pointer;border-radius:6px;transition:background .15s;user-select:none}
-.VPSidebar .group-title:hover{background:var(--vp-c-bg-soft)}
-.VPSidebar .group-title svg{width:14px;height:14px;color:var(--vp-c-text-3);transition:transform .2s;flex-shrink:0}
-.VPSidebar .group-title.open svg{transform:rotate(90deg)}
-.VPSidebar .group-items{overflow:hidden;max-height:0;transition:max-height .3s ease}
-.VPSidebar .group-items.open{max-height:600px}
-.VPSidebar .group-link{display:block;padding:4px 8px 4px 16px;margin:1px 0;font-size:13px;color:var(--vp-c-text-2);border-radius:6px;cursor:pointer;transition:color .15s,background .15s;line-height:1.6;border-left:2px solid transparent}
-.VPSidebar .group-link:hover{color:var(--vp-c-text-1);background:var(--vp-c-bg-soft)}
-.VPSidebar .group-link.active{color:var(--vp-c-brand);font-weight:600;border-left-color:var(--vp-c-brand);background:var(--vp-c-green-dimm)}
-.VPSidebar .group-link.mono{font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12px}
-
-.VPContent{margin-left:var(--vp-sidebar-width);min-height:calc(100vh - var(--vp-nav-height))}
-.VPContent .container{max-width:752px;margin:0 auto;padding:32px 48px 96px}
-.VPContent .breadcrumb{font-size:12px;color:var(--vp-c-text-3);margin-bottom:12px}
-.VPContent h1{font-size:32px;font-weight:700;color:var(--vp-c-text-1);letter-spacing:-.02em;line-height:1.3;margin-bottom:0}
-.VPContent h1 .anchor{display:inline;margin-left:8px;color:var(--vp-c-text-3);opacity:0;transition:opacity .15s;font-weight:400;text-decoration:none}
-.VPContent h1:hover .anchor{opacity:1}
-.VPContent .header-meta{display:flex;gap:24px;margin-top:16px;margin-bottom:24px;padding-bottom:24px;border-bottom:1px solid var(--vp-c-divider-light)}
-.VPContent .meta-item{font-size:12px;color:var(--vp-c-text-3)}
-.VPContent .meta-item span{display:block;font-size:14px;color:var(--vp-c-text-2);font-weight:500;margin-top:2px}
-.VPContent h2{font-size:22px;font-weight:600;color:var(--vp-c-text-1);margin-top:40px;margin-bottom:12px;padding-top:24px;border-top:1px solid var(--vp-c-divider-light);letter-spacing:-.01em}
-.VPContent h2:first-of-type{border-top:none;margin-top:24px;padding-top:0}
-.VPContent p{font-size:15px;line-height:1.8;color:var(--vp-c-text-2);margin-bottom:16px}
-.VPContent .code-block{background:var(--vp-code-bg);border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto}
-.VPContent .code-block code{font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:13px;line-height:1.7;color:var(--vp-c-yellow);white-space:pre}
-.VPContent .check-list{list-style:none;margin:8px 0 16px}
-.VPContent .check-list li{display:flex;align-items:flex-start;gap:8px;padding:4px 0;font-size:14px;line-height:1.7;color:var(--vp-c-text-2)}
-.VPContent .check-list li::before{content:'✓';color:var(--vp-c-brand);font-weight:700;font-size:15px;flex-shrink:0;margin-top:1px}
-.VPContent .info-box{background:var(--vp-c-green-dimm);border:1px solid rgba(16,185,129,.2);border-radius:8px;padding:14px 18px;margin:16px 0;font-size:13px;line-height:1.7;color:var(--vp-c-brand-dark)}
-.VPContent .info-box::before{content:'TIP';display:block;font-size:12px;font-weight:700;color:var(--vp-c-brand);margin-bottom:4px}
-.doc-pagination{display:flex;justify-content:space-between;margin-top:48px;padding-top:24px;border-top:1px solid var(--vp-c-divider-light)}
-.page-link{padding:12px 16px;border:1px solid var(--vp-c-divider);border-radius:8px;font-size:13px;color:var(--vp-c-text-2);cursor:pointer;transition:border-color .25s,color .25s}
-.page-link:hover{border-color:var(--vp-c-brand);color:var(--vp-c-brand)}
-.page-link.next{text-align:right;border-color:var(--vp-c-brand);color:var(--vp-c-brand);font-weight:500}
-.page-link .label{font-size:11px;color:var(--vp-c-text-3);margin-bottom:2px;font-weight:400}
-.page-link .title{font-weight:500}
-
-/* ===== RESPONSIVE ===== */
-@media(max-width:960px){
-  .VPHero .name{font-size:3rem}
-  .VPHero .text{font-size:2.2rem}
-  .VPFeatures .grid{grid-template-columns:repeat(2,1fr)}
-  .pain-grid{grid-template-columns:repeat(2,1fr)}
-  .steps-grid{grid-template-columns:repeat(2,1fr)}
-  .modules-grid{grid-template-columns:repeat(2,1fr)}
-  .boundary-cards{grid-template-columns:1fr}
-  .VPSidebar{width:220px}
-  .VPContent{margin-left:220px}
-  .VPContent .container{padding:24px 24px 80px}
-  .VPNav .search{width:160px}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,sans-serif;
+  color:var(--c-text);background:var(--c-bg);
+  line-height:1.6;-webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
 }
+a{color:inherit;text-decoration-underline-offset:3px;text-decoration-color:var(--c-border)}
+a:hover{text-decoration-color:var(--c-text)}
+
+/* ── animated background grid ── */
+.bg-grid{
+  position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    linear-gradient(rgba(30,95,72,.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(30,95,72,.03) 1px,transparent 1px);
+  background-size:60px 60px;
+  animation:grid-drift 20s linear infinite;
+}
+@keyframes grid-drift{
+  0%{background-position:0 0,0 0}
+  100%{background-position:60px 60px,60px 60px}
+}
+
+/* ── hero glow orbs ── */
+.hero-wrap{position:relative;overflow:hidden}
+.orb{
+  position:absolute;border-radius:50%;filter:blur(80px);pointer-events:none;
+  animation:orb-float 10s ease-in-out infinite;
+}
+.orb-1{width:400px;height:350px;background:rgba(30,95,72,.06);top:-60px;right:-80px;animation-delay:0s}
+.orb-2{width:350px;height:300px;background:rgba(59,130,246,.04);bottom:-40px;left:-60px;animation-delay:-5s}
+.orb-3{width:250px;height:220px;background:rgba(30,95,72,.04);top:40%;left:50%;animation-delay:-2s}
+@keyframes orb-float{
+  0%,100%{transform:translate(0,0) scale(1)}
+  33%{transform:translate(-20px,15px) scale(1.05)}
+  66%{transform:translate(15px,-10px) scale(.95)}
+}
+
+/* ── Nav ── */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:50;
+  height:var(--nav-h);border-bottom:1px solid var(--c-border);
+  background:rgba(255,255,255,.85);backdrop-filter:blur(8px);
+}
+nav .inner{
+  max-width:1280px;margin:0 auto;height:100%;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 24px;
+}
+nav .logo{font-size:15px;font-weight:700;cursor:pointer;user-select:none}
+nav .logo span{color:var(--c-accent)}
+nav .links{display:flex;align-items:center;gap:20px;font-size:13px;color:var(--c-muted)}
+nav .links a{text-decoration:none}
+nav .links a:hover{color:var(--c-text)}
+nav .gh{display:flex;align-items:center;gap:6px;font-size:13px;text-decoration:none;color:var(--c-muted)}
+nav .gh:hover{color:var(--c-text)}
+nav .gh svg{width:18px;height:18px}
+.menu-btn{display:none;border:none;background:none;cursor:pointer;padding:4px;color:var(--c-muted)}
+
+/* ── Home ── */
+#home{padding-top:var(--nav-h)}
+.hero{padding:80px 24px 48px;text-align:center}
+.hero h1{font-size:2.5rem;font-weight:800;letter-spacing:-.02em;line-height:1.15;max-width:640px;margin:0 auto}
+.hero h1 em{font-style:normal;color:var(--c-accent)}
+.hero .lead{margin-top:16px;font-size:1.05rem;color:var(--c-muted);max-width:520px;margin-left:auto;margin-right:auto;line-height:1.7}
+.hero .btns{margin-top:28px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+/* btn hover */
+.btn{
+  display:inline-flex;align-items:center;
+  padding:10px 22px;border-radius:6px;
+  font-size:14px;font-weight:600;
+  border:1.5px solid var(--c-border);
+  background:var(--c-bg);
+  cursor:pointer;text-decoration:none;
+  transition:border-color .25s,background .25s,transform .2s;
+}
+.btn:hover{text-decoration:none;border-color:var(--c-text);transform:translateY(-1px)}
+.btn.pri{background:var(--c-text);color:var(--c-bg);border-color:var(--c-text)}
+.btn.pri:hover{opacity:.85;transform:translateY(-1px)}
+
+/* features grid */
+.feat{padding:32px 24px 64px;max-width:1024px;margin:0 auto}
+.feat .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+/* feat items animation */
+.feat .item{
+  border:1px solid var(--c-border);border-radius:6px;padding:24px;
+  transition:border-color .3s,box-shadow .3s;
+}
+.feat .item:hover{
+  border-color:var(--c-accent);
+  box-shadow:0 4px 20px rgba(30,95,72,.08);
+}
+.feat .item .label{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--c-accent);letter-spacing:.05em;margin-bottom:8px}
+.feat .item h3{font-size:15px;font-weight:600;margin-bottom:6px}
+.feat .item p{font-size:13px;color:var(--c-muted);line-height:1.6}
+
+.extra{margin-top:32px;max-width:1024px;margin-left:auto;margin-right:auto;padding:0 24px}
+.extra .tag{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--c-accent);letter-spacing:.05em;margin-bottom:6px}
+.extra h2{font-size:1.15rem;font-weight:700;margin-bottom:8px}
+.extra .sub{font-size:14px;color:var(--c-muted);margin-bottom:20px;line-height:1.7;max-width:580px}
+
+.pipeline{
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  font-size:13px;font-family:"SF Mono",SFMono-Regular,Consolas,monospace;
+  padding:14px 18px;background:var(--c-code-bg);border-radius:6px;
+  margin-bottom:24px;overflow-x:auto;
+}
+.pipeline span{color:var(--c-text);font-weight:600;white-space:nowrap}
+.pipeline b{color:var(--c-accent);margin:0 2px}
+
+/* pipeline flow animation */
+#pipeline-bar span{
+  transition:color .5s;
+}
+#pipeline-bar.flowing span{color:var(--c-text)}
+#pipeline-bar.flowing span.highlight{color:var(--c-accent);font-weight:700}
+
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+/* card hover animation */
+.card{
+  border:1px solid var(--c-border);border-radius:6px;
+  padding:20px;font-size:14px;
+  transition:border-color .3s,box-shadow .3s,transform .3s;
+}
+.card:hover{
+  border-color:var(--c-accent);
+  box-shadow:0 4px 20px rgba(30,95,72,.08);
+  transform:translateY(-2px);
+}
+.card h3{font-size:15px;margin-bottom:4px}
+.card p{color:var(--c-muted);font-size:13px;line-height:1.55}
+
+.checks{list-style:none;display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+.checks li{font-size:13px;color:var(--c-muted);padding-left:18px;position:relative}
+.checks li::before{content:"—";position:absolute;left:0;color:var(--c-accent)}
+
+pre{
+  background:var(--c-code-bg);padding:16px 20px;border-radius:6px;
+  overflow-x:auto;margin:12px 0;font-size:13px;
+  font-family:"SF Mono",SFMono-Regular,Consolas,monospace;
+  line-height:1.8;
+}
+
+.home-footer{border-top:1px solid var(--c-border);padding:32px 24px;text-align:center;font-size:13px;color:var(--c-muted)}
+.home-footer a{color:var(--c-muted)}
+
+/* ── Docs ── */
+#docs{display:none;padding-top:var(--nav-h)}
+#docs.open{display:flex}
+
+.sidebar{
+  position:fixed;top:var(--nav-h);bottom:0;left:0;
+  width:var(--sidebar-w);padding:24px 16px 80px;
+  overflow-y:auto;border-right:1px solid var(--c-border);background:var(--c-bg);
+}
+.sidebar .group{margin-bottom:8px}
+.sidebar .group-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:6px 8px;font-size:13px;font-weight:700;
+  cursor:pointer;user-select:none;border-radius:4px;
+}
+.sidebar .group-head:hover{background:var(--c-bg-soft)}
+.sidebar .group-head svg{width:12px;height:12px;color:var(--c-muted);transition:transform .2s}
+.sidebar .group-head.open svg{transform:rotate(90deg)}
+.sidebar .group-items{overflow:hidden;max-height:0;transition:max-height .3s}
+.sidebar .group-items.open{max-height:600px}
+.sidebar .link{
+  display:block;padding:4px 8px 4px 16px;
+  font-size:13px;color:var(--c-muted);
+  border-radius:4px;cursor:pointer;
+  border-left:2px solid transparent;
+}
+.sidebar .link:hover{color:var(--c-text);background:var(--c-bg-soft)}
+.sidebar .link.active{color:var(--c-accent);font-weight:600;border-left-color:var(--c-accent);background:rgba(30,95,72,.06)}
+/* fade-in on scroll */
+.fade-in-up{
+  opacity:0;transform:translateY(20px);
+  transition:opacity .6s ease,transform .6s ease;
+}
+.fade-in-up.visible{opacity:1;transform:translateY(0)}
+
+.doc-main{margin-left:var(--sidebar-w);flex:1;min-height:calc(100vh - var(--nav-h))}
+.doc-content{max-width:700px;margin:0 auto;padding:40px 48px 80px}
+
+.doc-content h1{font-size:1.75rem;font-weight:700;letter-spacing:-.01em;margin-bottom:0}
+.doc-content .meta-row{display:flex;gap:24px;margin:12px 0 20px;padding-bottom:20px;border-bottom:1px solid var(--c-border);font-size:12px;color:var(--c-muted)}
+.doc-content .meta-row span{display:block;font-size:14px;color:var(--c-text);font-weight:500;margin-top:2px}
+.doc-content h2{font-size:1.15rem;font-weight:600;margin-top:36px;margin-bottom:10px;padding-top:20px;border-top:1px solid var(--c-border)}
+.doc-content h2:first-of-type{border-top:none;margin-top:20px;padding-top:0}
+.doc-content p{font-size:14px;line-height:1.8;color:var(--c-muted);margin-bottom:14px}
+.doc-content code{
+  font-family:"SF Mono",SFMono-Regular,Consolas,monospace;
+  font-size:12px;background:var(--c-code-bg);padding:2px 5px;border-radius:3px;
+}
+.doc-content pre{
+  background:var(--c-code-bg);padding:14px 18px;border-radius:6px;
+  overflow-x:auto;margin:12px 0;font-size:13px;
+  font-family:"SF Mono",SFMono-Regular,Consolas,monospace;
+  line-height:1.8;
+}
+.doc-content .check-list{list-style:none;margin:8px 0 14px}
+.doc-content .check-list li{
+  font-size:14px;line-height:1.8;color:var(--c-muted);
+  padding-left:20px;position:relative;
+}
+.doc-content .check-list li::before{content:"—";position:absolute;left:0;color:var(--c-accent)}
+.doc-content .tip{
+  background:rgba(30,95,72,.06);border:1px solid rgba(30,95,72,.15);
+  border-radius:6px;padding:12px 16px;margin:14px 0;
+  font-size:13px;color:var(--c-accent);line-height:1.7;
+}
+.doc-content .tip::before{content:"Note";display:block;font-size:11px;font-weight:700;margin-bottom:4px;color:var(--c-accent)}
+.doc-pager{display:flex;justify-content:space-between;margin-top:40px;padding-top:20px;border-top:1px solid var(--c-border)}
+.doc-pager .pg{font-size:13px;color:var(--c-muted);cursor:pointer;max-width:45%}
+.doc-pager .pg:hover{color:var(--c-text)}
+.doc-pager .pg.next{text-align:right;font-weight:500}
+.doc-pager .pg .pg-label{font-size:11px;color:var(--c-muted);margin-bottom:2px}
+
+.search-box{
+  width:200px;padding:6px 10px 6px 30px;
+  border:1px solid var(--c-border);border-radius:6px;
+  font-size:13px;outline:none;background:var(--c-bg-soft);
+}
+.search-box:focus{border-color:var(--c-accent)}
+
+/* ── mobile ── */
 @media(max-width:768px){
-  .VPHero .name{font-size:2.4rem}
-  .VPHero .text{font-size:1.8rem}
-  .VPHero .tagline{font-size:1rem}
-  .VPFeatures .grid{grid-template-columns:1fr}
-  .pain-grid{grid-template-columns:1fr}
-  .steps-grid{grid-template-columns:1fr 1fr}
-  .modules-grid{grid-template-columns:1fr 1fr}
-  .VPSidebar{transform:translateX(-100%);transition:transform .3s;box-shadow:2px 0 8px rgba(0,0,0,.1);width:260px;z-index:50;background:var(--vp-c-bg)}
-  .VPSidebar.mobile-open{transform:translateX(0)}
-  .VPContent{margin-left:0}
-  .VPContent .container{padding:20px 16px 64px}
-  .mobile-toggle{display:flex!important}
-  .mobile-overlay{display:block!important}
-  .mobile-overlay.active{opacity:1;pointer-events:auto}
-  .VPNav .search{display:none}
+  .hero h1{font-size:1.75rem}
+  .grid2,.grid3,.checks{grid-template-columns:1fr}
+  .menu-btn{display:flex}
+  .orb{display:none}
+  .sidebar{
+    transform:translateX(-100%);z-index:40;
+    box-shadow:2px 0 8px rgba(0,0,0,.12);
+  }
+  .sidebar.mobile-open{transform:translateX(0)}
+  .doc-main{margin-left:0}
+  .doc-content{padding:24px 20px 60px}
+  #docs .overlay{display:block!important}
 }
-@media(max-width:480px){
-  .VPHero .name{font-size:2rem}
-  .VPHero .text{font-size:1.5rem}
-  .steps-grid,.modules-grid{grid-template-columns:1fr}
-}
-
-.mobile-toggle{display:none;align-items:center;justify-content:center;width:36px;height:36px;border:none;background:none;cursor:pointer;border-radius:8px;color:var(--vp-c-text-2);transition:background .15s}
-.mobile-toggle:hover{background:var(--vp-c-bg-soft)}
-.mobile-overlay{display:none;position:fixed;top:var(--vp-nav-height);left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:45;opacity:0;pointer-events:none;transition:opacity .3s}
+#docs .overlay{display:none;position:fixed;top:var(--nav-h);left:0;right:0;bottom:0;background:rgba(0,0,0,.3);z-index:35}
 </style>
 </head>
 <body>
 
-<!-- ===== NAV (shared) ===== -->
-<nav class="VPNav" id="vpnav">
-  <div class="container">
-    <div style="display:flex;align-items:center;gap:4px">
-      <button class="mobile-toggle" id="mobileToggle" onclick="toggleMobileSidebar()">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+<!-- NAV -->
+<nav>
+  <div class="inner">
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="menu-btn" id="menuBtn" onclick="toggleSidebar()" aria-label="Menu">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
       </button>
-      <div class="logo" onclick="showLanding()">
-        <svg viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="12" stroke="#10b981" stroke-width="2"/><path d="M14 6c0 4-3 8-3 12h6c0-4-3-8-3-12z" fill="#10b981" opacity=".3"/><path d="M14 6c1 3 2 6 2 10M14 6c-1 3-2 6-2 10" stroke="#10b981" stroke-width="1.5" stroke-linecap="round"/></svg>
-        <span>Garden</span>
-      </div>
+      <div class="logo" onclick="showHome()">Garden</div>
     </div>
-    <div class="nav-right">
-      <input class="search" placeholder="搜索文档..." id="searchInput"/>
-      <a class="nav-link" onclick="showDocs('intro')">快速开始</a>
-      <a class="nav-link" onclick="showDocs('intro')">关于</a>
-      <a class="icon-link" href="https://github.com/Moxxkidd/Garden" target="_blank" title="GitHub">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+    <div style="display:flex;align-items:center;gap:12px">
+      <input class="search-box" placeholder="Search docs&hellip;" id="searchInput"/>
+      <a class="links" onclick="showDocs('intro')" style="cursor:pointer">Docs</a>
+      <a class="gh" href="https://github.com/Moxxkidd/Garden" target="_blank">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+        GitHub
       </a>
     </div>
   </div>
 </nav>
 
-<!-- ===== HOMEPAGE ===== -->
-<div class="VPHome" id="home">
+<!-- ── HOME ── -->
+<div id="home">
 
-  <section class="VPHero">
-    <div class="glow glow-1"></div>
-    <div class="glow glow-2"></div>
-    <svg class="flora flora-left" width="240" height="300" viewBox="0 0 240 300" fill="none"><path d="M0 300C20 240 50 180 80 130C110 80 130 40 140 0" stroke="#86EFAC" stroke-width="2"/><ellipse cx="55" cy="190" rx="28" ry="13" transform="rotate(-40 55 190)" fill="#BBF7D0"/><ellipse cx="40" cy="230" rx="22" ry="10" transform="rotate(-50 40 230)" fill="#DCFCE7"/><ellipse cx="75" cy="155" rx="26" ry="12" transform="rotate(-30 75 155)" fill="#BBF7D0"/><ellipse cx="95" cy="120" rx="22" ry="10" transform="rotate(-25 95 120)" fill="#DCFCE7"/><ellipse cx="110" cy="85" rx="20" ry="9" transform="rotate(-20 110 85)" fill="#BBF7D0"/><ellipse cx="125" cy="50" rx="18" ry="8" transform="rotate(-15 125 50)" fill="#DCFCE7"/><ellipse cx="25" cy="260" rx="20" ry="9" transform="rotate(40 25 260)" fill="#BBF7D0"/><ellipse cx="65" cy="175" rx="18" ry="8" transform="rotate(35 65 175)" fill="#DCFCE7"/></svg>
-    <svg class="flora flora-right" width="260" height="280" viewBox="0 0 260 280" fill="none"><path d="M260 280C240 220 210 160 180 110C150 60 130 20 125 0" stroke="#86EFAC" stroke-width="2"/><ellipse cx="200" cy="175" rx="28" ry="13" transform="rotate(40 200 175)" fill="#BBF7D0"/><ellipse cx="220" cy="215" rx="24" ry="11" transform="rotate(50 220 215)" fill="#DCFCE7"/><ellipse cx="180" cy="140" rx="26" ry="12" transform="rotate(30 180 140)" fill="#BBF7D0"/><ellipse cx="165" cy="105" rx="22" ry="10" transform="rotate(25 165 105)" fill="#DCFCE7"/><ellipse cx="150" cy="70" rx="20" ry="9" transform="rotate(20 150 70)" fill="#BBF7D0"/><ellipse cx="230" cy="245" rx="20" ry="9" transform="rotate(-45 230 245)" fill="#BBF7D0"/></svg>
-    <div class="wrapper">
-      <h1 class="name"><span class="gradient">Garden</span></h1>
-      <p class="text">登录态安全验证工作流平台</p>
-      <div class="actions">
-        <button class="action-btn brand" onclick="showDocs('intro')">开始体验</button>
-        <a class="action-btn alt" href="https://github.com/Moxxkidd/Garden" target="_blank">GitHub</a>
-      </div>
-    </div>
-  </section>
-
-  <section class="VPFeatures">
-    <div class="grid">
-      <div class="item">
-        <div class="icon">🔐</div>
-        <h3 class="title">登录态驱动</h3>
-        <p class="details">通过 HTTP / Playwright 适配器执行真实登录，创建可复用的 AuthSession，进入 OA/ERP/管理后台等匿名扫描器无法覆盖的系统。</p>
-      </div>
-      <div class="item">
-        <div class="icon">📋</div>
-        <h3 class="title">完整工作流闭环</h3>
-        <p class="details">target → credential → login → session → inventory → checks → findings → evidence → retest → export，11 个 CLI 子命令组、32+ 命令全链路贯通。</p>
-      </div>
-      <div class="item">
-        <div class="icon">🛡️</div>
-        <h3 class="title">安全护栏默认开启</h3>
-        <p class="details">默认仅允许本地目标、不做破坏性检查、secret 不直接存储、evidence 默认脱敏、所有关键操作记审计日志。</p>
-      </div>
-    </div>
-  </section>
-
-  <div class="extra-sections">
-    <div class="section-block">
-      <div class="tag">为什么做这个项目</div>
-      <h2 class="heading">登录后安全验证，缺乏完整工作流</h2>
-      <p class="desc">企业里真正难的，往往不是匿名站点扫描，而是登录后的业务系统——OA、ERP、管理后台、SSO 后系统，匿名扫描器根本进不去。</p>
-      <div class="pain-grid">
-        <div class="pain-item"><span class="pain-x">×</span>登录动作不可复用</div>
-        <div class="pain-item"><span class="pain-x">×</span>测完之后不好交付</div>
-        <div class="pain-item"><span class="pain-x">×</span>页面/API 覆盖面不清楚</div>
-        <div class="pain-item"><span class="pain-x">×</span>修复后不好复测</div>
-        <div class="pain-item"><span class="pain-x">×</span>风险线索和证据不标准</div>
-        <div class="pain-item"><span class="pain-x">×</span>结果难进入团队流程</div>
-      </div>
-    </div>
-
-    <div class="section-block">
-      <div class="tag">边界清晰</div>
-      <h2 class="heading">Garden 不是谁的替代品</h2>
-      <div class="boundary-cards">
-        <div class="boundary-card"><h3>≠ Burp / ZAP</h3><p>代理流量、手工测试、主动扫描是它们的强项。Garden 补的是登录编排、inventory 盘点、证据脱敏、finding 生命周期与复测导出。</p></div>
-        <div class="boundary-card"><h3>≠ Nuclei</h3><p>通用模板扫描器偏匿名/协议级。Garden 做的是登录后业务路径的验证工作流，产出适合团队协作的结构化结果。</p></div>
-        <div class="boundary-card"><h3>≠ Traffic Recorder</h3><p>录制工具解决"流量怎么拿"。Garden 解决"拿到之后怎么办"——变成 inventory、findings、证据、复测对象。</p></div>
-        <div class="boundary-card"><h3>≠ API 授权测试框架</h3><p>API 越权工具只看接口权限。Garden 范围更广：浏览器态、页面态、接口态、登录后真实路径全都覆盖。</p></div>
-      </div>
-    </div>
-
-    <div class="section-block">
-      <div class="tag">8 步工作流</div>
-      <h2 class="heading">从配置目标到导出报告，全流程贯通</h2>
-      <div class="steps-grid">
-        <div class="step-card accent"><div class="step-num">01</div><h4>配置目标</h4><p>本地/测试环境<br>URL、类型、标签</p></div>
-        <div class="step-card"><div class="step-num">02</div><h4>凭证档案</h4><p>多角色、环境变量<br>引用、不存真实 secret</p></div>
-        <div class="step-card"><div class="step-num">03</div><h4>测试登录</h4><p>Playwright UI 或<br>HTTP 登录流程</p></div>
-        <div class="step-card"><div class="step-num">04</div><h4>建立 Inventory</h4><p>页面、接口、参数<br>敏感点自动标记</p></div>
-        <div class="step-card"><div class="step-num">05</div><h4>低风险检查</h4><p>调试泄露、后台暴露<br>IDOR 线索、上传入口</p></div>
-        <div class="step-card"><div class="step-num">06</div><h4>证据脱敏</h4><p>请求/响应、截图<br>默认脱敏 token/secret</p></div>
-        <div class="step-card"><div class="step-num">07</div><h4>Finding 生命周期</h4><p>状态流转、去重<br>复测、导出</p></div>
-        <div class="step-card accent"><div class="step-num">08</div><h4>导出交付</h4><p>Markdown / JSON<br>CSV 进入团队流程</p></div>
-      </div>
-    </div>
-
-    <div class="section-block">
-      <div class="tag">核心模块</div>
-      <h2 class="heading">8 个主要模块，各司其职</h2>
-      <div class="modules-grid">
-        <div class="mod-card"><div class="mod-num">01</div><h4>资产与目标管理</h4><p>target 管理、标签、owner、安全护栏校验</p></div>
-        <div class="mod-card"><div class="mod-num">02</div><h4>凭证与登录配置</h4><p>多角色、login 配置、secret 引用</p></div>
-        <div class="mod-card"><div class="mod-num">03</div><h4>登录编排</h4><p>UI/HTTP 适配器、登录测试、统一 result</p></div>
-        <div class="mod-card"><div class="mod-num">04</div><h4>会话与状态</h4><p>AuthSession 存储、生命周期、审计日志</p></div>
-        <div class="mod-card"><div class="mod-num">05</div><h4>Inventory 模块</h4><p>页面、接口、参数清单、敏感点标记</p></div>
-        <div class="mod-card"><div class="mod-num">06</div><h4>Security Checks</h4><p>低风险检查器、severity/confidence 判定</p></div>
-        <div class="mod-card"><div class="mod-num">07</div><h4>Evidence & Redaction</h4><p>截图、请求响应预览、默认脱敏</p></div>
-        <div class="mod-card"><div class="mod-num">08</div><h4>Finding & Reporting</h4><p>状态流转、去重、复测、MD/JSON/CSV 导出</p></div>
-      </div>
-    </div>
+<div class="bg-grid"></div>
+<div class="hero-wrap">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+<section class="hero">
+  <h1>Garden: 登录后的<em>安全验证</em>工作流</h1>
+  <p class="lead">CLI-first 的内部工具，把授权场景下的登录、盘点、检查、取证、复测串成一条可重复、可审计的管线。</p>
+  <div class="btns">
+    <button class="btn pri" onclick="showDocs('intro')">Read the docs</button>
+    <a class="btn" href="https://github.com/Moxxkidd/Garden" target="_blank">View on GitHub</a>
   </div>
-
-  <footer class="VPFooter">Garden Project · All Rights Reserved.</footer>
+</section>
 </div>
 
-<!-- ===== DOC PAGE ===== -->
-<div class="VPDoc" id="docpage">
-  <div class="mobile-overlay" id="mobileOverlay" onclick="closeMobileSidebar()"></div>
-  <aside class="VPSidebar" id="sidebar"></aside>
-  <div class="VPContent">
-    <div class="container" id="docContent"></div>
+<section class="feat">
+  <div class="grid">
+    <div class="item">
+      <div class="label">Login-driven</div>
+      <h3>登录态驱动</h3>
+      <p>HTTP / Playwright 适配器执行真实登录，创建可复用的 AuthSession，覆盖匿名扫瞄器无法进入的 OA、ERP、管理后台。</p>
+    </div>
+    <div class="item">
+      <div class="label">End-to-end</div>
+      <h3>完整工作流闭环</h3>
+      <p>target → credential → login → session → inventory → checks → findings → evidence → retest → export，11 个 CLI 子命令组全链路贯通。</p>
+    </div>
+    <div class="item">
+      <div class="label">Safe by default</div>
+      <h3>安全护栏默认开启</h3>
+      <p>默认仅允许本地目标、不做破坏性检查、secret 不直接存储、evidence 默认脱敏、所有关键操作记审计日志。</p>
+    </div>
+  </div>
+</section>
+
+<div class="extra" style="margin-bottom:48px">
+  <div class="tag">Pipeline</div>
+  <h2>工作流</h2>
+  <p class="sub">10 个阶段，每个阶段产出结构化数据，不是纯文本日志。</p>
+  <div class="pipeline" id="pipeline-bar">
+    <span>target</span> <b>&rarr;</b>
+    <span>credential</span> <b>&rarr;</b>
+    <span>login</span> <b>&rarr;</b>
+    <span>session</span> <b>&rarr;</b>
+    <span>inventory</span> <b>&rarr;</b>
+    <span>checks</span> <b>&rarr;</b>
+    <span>findings</span> <b>&rarr;</b>
+    <span>evidence</span> <b>&rarr;</b>
+    <span>retest</span> <b>&rarr;</b>
+    <span>export</span>
+  </div>
+</div>
+
+<div class="extra" style="margin-bottom:48px">
+  <div class="tag">对比</div>
+  <h2>Garden 与主流安全工具的定位差异</h2>
+  <div class="grid2" style="margin-top:16px">
+    <div class="card"><h3>Garden vs Burp / ZAP</h3><p>Burp/ZAP 强在代理抓包、手工测试、主动扫描。Garden 补的是登录编排、结构化 Inventory、Finding 生命周期、证据脱敏、复测与报告导出。</p></div>
+    <div class="card"><h3>Garden vs Nuclei</h3><p>Nuclei 擅长匿名协议级模板扫描。Garden 专注登录后的业务路径验证，产出面向团队协作的结构化结果。</p></div>
+    <div class="card"><h3>Garden vs 流量录制工具</h3><p>录制工具解决"流量怎么拿"。Garden 解决"拿到之后怎么办"——把流量变成 inventory、findings、证据、复测对象。</p></div>
+    <div class="card"><h3>Garden vs API 权限测试框架</h3><p>API 越权测试只看接口权限。Garden 同时覆盖浏览器态、页面态、接口态和登录后的完整业务路径。</p></div>
+  </div>
+</div>
+
+<div class="extra" style="margin-bottom:48px">
+  <div class="tag">Constraints</div>
+  <h2>设计约束</h2>
+  <ul class="checks" style="margin-top:12px">
+    <li>默认只允许本地目标</li>
+    <li>不做破坏性测试 / exploit</li>
+    <li>核心逻辑在 service 层</li>
+    <li>secret 不直接存储、不直接打印</li>
+    <li>evidence 和导出默认脱敏</li>
+    <li>inventory 结构化，不退化流量堆</li>
+    <li>所有关键操作记审计日志</li>
+    <li>CLI-first，Web UI 最小化</li>
+  </ul>
+</div>
+
+<div class="extra" style="margin-bottom:64px">
+  <div class="tag">Quick start</div>
+  <h2>5 分钟开始</h2>
+  <pre>$ git clone https://github.com/Moxxkidd/Garden.git
+$ cd garden
+$ pip install -e '.[dev]'
+$ playwright install chromium
+$ cp .env.example .env
+
+$ gardenctl target add --name demo --base-url http://127.0.0.1:8080 --type web --owner appsec
+$ gardenctl cred add --target-id 1 --name admin --role admin \
+    --auth-type password --username admin@local --secret-ref env://PASS --login-config-path login.yaml
+$ gardenctl login test --target demo --profile admin
+$ gardenctl inventory build --target demo --profile admin
+$ gardenctl checks run --inventory 1
+$ gardenctl findings list
+$ gardenctl findings export --format md</pre>
+</div>
+
+<footer class="home-footer">
+  Garden Project &middot; <a href="https://github.com/Moxxkidd/Garden">github.com/Moxxkidd/Garden</a>
+</footer>
+</div>
+
+<!-- ── DOCS ── -->
+<div id="docs">
+  <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="doc-main">
+    <div class="doc-content" id="docContent"></div>
   </div>
 </div>
 
 <script>
-const docs=[
-  {cat:'快速开始',items:[{id:'intro',title:'简介'},{id:'install',title:'安装'},{id:'quickstart',title:'Demo Walkthrough'},{id:'structure',title:'项目结构'}]},
-  {cat:'核心概念',items:[{id:'targets',title:'目标管理'},{id:'credentials',title:'凭证档案'},{id:'login',title:'登录编排'},{id:'sessions',title:'会话管理'},{id:'inventory',title:'Inventory 盘点'}]},
-  {cat:'安全检查',items:[{id:'checks-overview',title:'检查器概览'},{id:'debug-leak',title:'调试信息泄露'},{id:'admin-exposure',title:'后台暴露检测'},{id:'idor',title:'IDOR 线索'},{id:'upload-import',title:'上传/导入入口'},{id:'sensitive-disclosure',title:'敏感信息泄露'},{id:'auth-headers',title:'响应头/缓存检查'}]},
-  {cat:'证据与报告',items:[{id:'evidence',title:'证据采集'},{id:'redaction',title:'脱敏规则'},{id:'finding-lifecycle',title:'Finding 生命周期'},{id:'retest',title:'复测 Retest'},{id:'export',title:'导出格式'},{id:'report',title:'Report 生成'}]},
-  {cat:'CLI 命令',items:[{id:'cli-target',title:'gardenctl target',mono:true},{id:'cli-cred',title:'gardenctl cred',mono:true},{id:'cli-login',title:'gardenctl login',mono:true},{id:'cli-session',title:'gardenctl session',mono:true},{id:'cli-inventory',title:'gardenctl inventory',mono:true},{id:'cli-checks',title:'gardenctl checks',mono:true},{id:'cli-findings',title:'gardenctl findings',mono:true},{id:'cli-evidence',title:'gardenctl evidence',mono:true},{id:'cli-retest',title:'gardenctl retest',mono:true},{id:'cli-report',title:'gardenctl report',mono:true}]},
-  {cat:'进阶',items:[{id:'architecture',title:'架构设计'},{id:'guardrails',title:'安全护栏'},{id:'outputs',title:'结构化产出'},{id:'constraints',title:'设计约束'}]}
+const TREE=[
+  {cat:'快速开始',items:[
+    {id:'intro',title:'简介'},
+    {id:'install',title:'安装'},
+    {id:'quickstart',title:'Demo 演练'},
+    {id:'structure',title:'项目结构'}
+  ]},
+  {cat:'核心概念',items:[
+    {id:'targets',title:'目标管理'},
+    {id:'credentials',title:'凭证档案'},
+    {id:'login',title:'登录编排'},
+    {id:'sessions',title:'会话管理'},
+    {id:'inventory',title:'Inventory 盘点'}
+  ]},
+  {cat:'安全检查',items:[
+    {id:'checks-overview',title:'概览'},
+    {id:'debug-leak',title:'调试泄露'},
+    {id:'admin-exposure',title:'后台暴露'},
+    {id:'idor',title:'IDOR 线索'},
+    {id:'upload-import',title:'上传/导入入口'},
+    {id:'sensitive-disclosure',title:'敏感信息泄露'},
+    {id:'auth-headers',title:'响应头/缓存检查'}
+  ]},
+  {cat:'证据与报告',items:[
+    {id:'evidence',title:'证据采集'},
+    {id:'redaction',title:'脱敏规则'},
+    {id:'finding-lifecycle',title:'Finding 生命周期'},
+    {id:'retest',title:'复测'},
+    {id:'export',title:'导出格式'},
+    {id:'report',title:'报告生成'}
+  ]},
+  {cat:'CLI 参考',items:[
+    {id:'cli-target',title:'gardenctl target',mono:true},
+    {id:'cli-cred',title:'gardenctl cred',mono:true},
+    {id:'cli-login',title:'gardenctl login',mono:true},
+    {id:'cli-session',title:'gardenctl session',mono:true},
+    {id:'cli-inventory',title:'gardenctl inventory',mono:true},
+    {id:'cli-checks',title:'gardenctl checks',mono:true},
+    {id:'cli-findings',title:'gardenctl findings',mono:true},
+    {id:'cli-evidence',title:'gardenctl evidence',mono:true},
+    {id:'cli-retest',title:'gardenctl retest',mono:true},
+    {id:'cli-report',title:'gardenctl report',mono:true}
+  ]},
+  {cat:'进阶',items:[
+    {id:'architecture',title:'架构设计'},
+    {id:'guardrails',title:'安全护栏'},
+    {id:'outputs',title:'结构化产出'},
+    {id:'constraints',title:'设计约束'}
+  ]}
 ];
 
-const C={
-intro:{b:'快速开始 > 简介',h:`<h1>简介 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>450 字</span></div><div class="meta-item">阅读时间<span>3 分钟</span></div></div><p>Garden 是一个 <strong>CLI-first、minimal-Web-UI-second</strong> 的安全工作流工具，面向授权场景下的登录后应用面验证。它不是传统意义上的"扫描器"，而是面向企业 AppSec 团队的内部安全工作流子系统。</p><h2>核心工作流</h2><div class="code-block"><code>target → credential profile → login → authenticated session\n     → inventory → checks → findings → evidence\n     → triage → retest → export</code></div><p>Garden 产出的不是"跑过了什么命令"或"一堆原始流量"，而是结构化工作流产物：target 清单、credential profile 清单、authenticated session 记录、审计事件、scan jobs、结构化 inventory、explainable findings、linked redacted evidence、retest records，以及 Markdown / JSON / CSV 导出。</p><h2>推荐使用顺序</h2><div class="code-block"><code>$ gardenctl healthcheck\n$ gardenctl target add          # 或 target import\n$ gardenctl cred add\n$ gardenctl login test\n$ gardenctl inventory build\n$ gardenctl checks run\n$ gardenctl findings list\n$ gardenctl evidence list\n$ gardenctl findings update-status\n$ gardenctl retest run\n$ gardenctl findings export      # 或 report generate</code></div><div class="info-box">Garden 的核心定位不是"找更多洞"，而是把登录后业务系统的安全验证，做成一个可重复、可审计、可复测、可工程化落地的流程。</div>`},
-install:{b:'快速开始 > 安装',h:`<h1>安装 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>200 字</span></div><div class="meta-item">阅读时间<span>2 分钟</span></div></div><h2>前置依赖</h2><ul class="check-list"><li>Python 3.10+</li><li>pip（项目使用 hatchling 构建系统）</li><li>Node.js 18+（用于 Playwright 浏览器自动化）</li></ul><h2>克隆与安装</h2><div class="code-block"><code>$ git clone https://github.com/Moxxkidd/Garden.git\n$ cd garden\n$ python -m venv .venv && source .venv/bin/activate\n$ pip install -e '.[dev]'\n$ playwright install chromium</code></div><h2>环境配置</h2><div class="code-block"><code>$ cp .env.example .env\n# 确保 GARDEN_ALLOW_NON_LOCAL_TARGETS=false</code></div><h2>启动服务</h2><div class="code-block"><code>$ make demo\n# 或直接:\n$ uvicorn app.main:app --host 127.0.0.1 --port 8000</code></div><h2>验证安装</h2><div class="code-block"><code>$ gardenctl healthcheck\n$ gardenctl version</code></div><div class="info-box">推荐使用虚拟环境隔离依赖。项目使用 pyproject.toml + hatchling 作为构建系统。</div>`},
-quickstart:{b:'快速开始 > Demo Walkthrough',h:`<h1>Demo Walkthrough <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>400 字</span></div><div class="meta-item">阅读时间<span>5 分钟</span></div></div><p>5-10 分钟走完完整 Garden 工作流。使用内置 demo target 演示。</p><h2>1. 启动服务</h2><div class="code-block"><code>$ make demo\n$ curl -s http://127.0.0.1:8000/healthz</code></div><h2>2. 添加 Target</h2><div class="code-block"><code>$ gardenctl target import --file examples/targets/local-demo-targets.yaml --on-duplicate skip\n# 或手动:\n$ gardenctl target add --name garden-demo-web --base-url http://127.0.0.1:8000 --type web --owner appsec --tag demo --tag local</code></div><h2>3. 添加凭证</h2><div class="code-block"><code>$ gardenctl cred add --target-id 1 --name garden-demo-admin --role admin \\\n  --auth-type password --username admin@example.local \\\n  --secret-ref env://GARDEN_DEMO_ADMIN_PASSWORD \\\n  --login-config-path examples/login/demo-http-admin.yaml</code></div><h2>4. 登录 → Inventory → Checks</h2><div class="code-block"><code>$ gardenctl login test --target garden-demo-web --profile garden-demo-admin\n$ gardenctl inventory build --target garden-demo-web --profile garden-demo-admin\n$ gardenctl inventory show 1\n$ gardenctl checks run --inventory 1\n$ gardenctl findings list</code></div><h2>5. 审阅与复测</h2><div class="code-block"><code>$ gardenctl evidence list\n$ gardenctl findings update-status 1 --status fixed\n$ gardenctl retest run --finding 1\n$ gardenctl findings export --format md\n$ gardenctl report generate --job 2 --format md</code></div><h2>6. Web UI 浏览</h2><p>打开浏览器访问以下页面：</p><ul class="check-list"><li>http://127.0.0.1:8000/ — Dashboard 总览</li><li>http://127.0.0.1:8000/targets — 目标列表</li><li>http://127.0.0.1:8000/inventory — Inventory 浏览</li><li>http://127.0.0.1:8000/findings — Findings 分诊</li><li>http://127.0.0.1:8000/evidence — 脱敏证据查看</li></ul>`},
-structure:{b:'快速开始 > 项目结构',h:`<h1>项目结构 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>300 字</span></div><div class="meta-item">阅读时间<span>2 分钟</span></div></div><div class="code-block"><code>garden/\n├── app/\n│   ├── api/              # FastAPI 路由 (targets, findings, evidence...)\n│   ├── cli/              # Typer CLI（11 个子命令组）\n│   ├── core/             # 配置、日志、安全护栏、异常\n│   ├── db/               # SQLAlchemy bootstrap\n│   ├── models/           # 13 个 ORM 模型\n│   ├── schemas/          # Pydantic 传输 schema\n│   ├── services/         # 22 个业务逻辑模块\n│   ├── security_checks/  # 6 个低风险检查插件\n│   ├── redaction/        # 集中脱敏逻辑\n│   ├── integrations/     # HTTP/Playwright 登录 & 采集适配器\n│   ├── templates/        # Jinja2 服务端渲染 HTML\n│   ├── static/           # 最小 CSS\n│   └── workers/          # 后台执行预留\n├── tests/                # 20 个测试模块\n├── docs/                 # architecture / threat-model / demo-walkthrough\n├── examples/             # 示例 target YAML/JSON + login 配置\n├── exports/              # 导出文件输出目录\n└── pyproject.toml        # hatchling 构建 + 依赖</code></div><h2>关键设计原则</h2><ul class="check-list"><li>业务逻辑集中在 services/ 层</li><li>CLI 和 Web 路由都调用同一组 service</li><li>检查器以插件形式注册在 security_checks/registry.py</li><li>脱敏逻辑集中在 redaction/，CLI/UI/导出三端不会漂移</li><li>登录适配器实现同一个 contract（HTTP / Playwright）</li></ul>`},
-targets:{b:'核心概念 > 目标管理',h:`<h1>目标管理 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>200 字</span></div><div class="meta-item">阅读时间<span>2 分钟</span></div></div><p>每个安全验证的起点都是一个 Target。Garden 要求所有操作都绑定在明确的目标上，包含 name、base_url、type、owner、tags、status。</p><h2>安全护栏</h2><p>默认只允许 localhost / 127.0.0.1 / Docker 网络地址。非本地目标需要显式设置 <code>GARDEN_ALLOW_NON_LOCAL_TARGETS=true</code>。</p><h2>CLI 操作</h2><div class="code-block"><code>$ gardenctl target add --name my-app --base-url http://127.0.0.1:8080 --type web --owner appsec --tag demo\n✓ Target "my-app" added (local, safe)\n\n$ gardenctl target import --file examples/targets/local-demo-targets.yaml --on-duplicate skip\n$ gardenctl target list\n$ gardenctl target show 1\n$ gardenctl target delete 1 --yes</code></div><div class="info-box">支持从 YAML / JSON 批量导入 target，适合团队统一管理目标列表。</div>`},
-credentials:{b:'核心概念 > 凭证档案',h:`<h1>凭证档案 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>180 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>Credential Profile 管理登录所需的凭证，支持多角色。使用 <code>secret_ref</code>（如 <code>env://GARDEN_DEMO_ADMIN_PASSWORD</code>）引用密码，不直接存储明文。</p><h2>CLI 操作</h2><div class="code-block"><code>$ gardenctl cred add \\\n    --target-id 1 \\\n    --name garden-demo-admin \\\n    --role admin \\\n    --auth-type password \\\n    --username admin@example.local \\\n    --secret-ref env://GARDEN_DEMO_ADMIN_PASSWORD \\\n    --login-config-path examples/login/demo-http-admin.yaml\n\n$ gardenctl cred list\n$ gardenctl cred show 1\n$ gardenctl cred delete 1 --yes</code></div><div class="info-box">login-config-path 指定登录配置 YAML，支持 HTTP 和 Playwright 两种适配器。示例配置见 examples/login/ 目录。</div>`},
-login:{b:'核心概念 > 登录编排',h:`<h1>登录编排 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>180 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>Garden 使用 adapter 策略执行登录。配置解析与执行解耦，HTTP 和 Playwright UI 流程实现同一个 contract，登录结果统一为 AuthSession。</p><h2>两种适配器</h2><ul class="check-list"><li><strong>HTTP Adapter</strong> — 适合 API 登录、cookie/token 接口</li><li><strong>Playwright Adapter</strong> — 适合需要浏览器操作的 UI 登录流程</li></ul><h2>CLI 操作</h2><div class="code-block"><code>$ gardenctl login test --target garden-demo-web --profile garden-demo-admin\n✓ Login successful\n\n$ gardenctl login validate --session 1</code></div><p>登录成功后自动创建可复用的 AuthSession，原始敏感材料存储在 storage_ref 后面，不会在显示模型中暴露。</p>`},
-sessions:{b:'核心概念 > 会话管理',h:`<h1>会话管理 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>150 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>AuthSession 是登录成功后的可复用凭据容器，inventory 构建和 retest 都可以复用已有 session。</p><h2>生命周期</h2><ul class="check-list"><li>创建 — 登录成功后自动创建</li><li>验证 — <code>gardenctl login validate --session &lt;id&gt;</code></li><li>刷新 — <code>gardenctl session refresh &lt;id&gt;</code></li><li>归档 — 过期后保留审计记录</li></ul><h2>CLI 操作</h2><div class="code-block"><code>$ gardenctl session list\n$ gardenctl session show 1\n$ gardenctl session refresh 1</code></div><p>session show 仅显示 redacted 元数据，不暴露原始 token/cookie。</p>`},
-inventory:{b:'核心概念 > Inventory 盘点',h:`<h1>Inventory 盘点 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>250 字</span></div><div class="meta-item">阅读时间<span>2 分钟</span></div></div><p>Inventory 是结构化的，不是流量 blob。Garden 记录：页面 URL 和标题、时间戳、API endpoint 和方法、状态码、参数名、sensitivity annotation。</p><h2>采集边界</h2><ul class="check-list"><li>max_pages — 最大页面数</li><li>max_depth — 最大爬取深度</li><li>max_requests — 最大请求数</li><li>delay_ms — 请求间隔</li><li>same-origin 限制</li><li>include/exclude path 前缀</li></ul><h2>CLI 操作</h2><div class="code-block"><code>$ gardenctl inventory build --target garden-demo-web --profile garden-demo-admin\n✓ Pages: 14 | Endpoints: 8 | Parameters: 16 | Annotations: 26\n\n$ gardenctl inventory build --session 1   # 复用已有 session\n$ gardenctl inventory list\n$ gardenctl inventory show 1\n$ gardenctl inventory export --id 1 --format json\n$ gardenctl inventory export --id 1 --format csv</code></div><div class="info-box">inventory 构建可以复用已有 session 或 fresh login。导出支持 JSON 和 CSV（分 pages/endpoints/parameters/annotations 子文件）。</div>`},
-'checks-overview':{b:'安全检查 > 检查器概览',h:`<h1>检查器概览 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>200 字</span></div><div class="meta-item">阅读时间<span>2 分钟</span></div></div><p>Garden 内置 6 个低风险、可解释的安全检查插件，以 plugin 方式注册在 <code>security_checks/registry.py</code>。</p><h2>内置检查器</h2><ul class="check-list"><li><strong>DebugLeakageCheck</strong> — stack trace、debug banner、actuator 诊断</li><li><strong>AuthenticatedHeadersCacheCheck</strong> — 敏感页面缓存策略、cookie 安全属性</li><li><strong>AdministrativeSurfaceCheck</strong> — admin/manage/config/actuator 路径暴露</li><li><strong>IdorIndicatorsCheck</strong> — 含 userId/role/token 参数的敏感 endpoint</li><li><strong>UploadImportCheck</strong> — upload/import 入口标记</li><li><strong>SensitiveDisclosureCheck</strong> — email、内部主机名、版本号泄露</li></ul><h2>CLI 操作</h2><div class="code-block"><code>$ gardenctl checks run --inventory 1</code></div><p>每个检查器输出 severity（low/medium/high）和 confidence（low/medium/high），包含 trigger 解释、复现步骤和修复建议。检查器不做破坏性行为。</p>`},
-'debug-leak':{b:'安全检查 > 调试信息泄露',h:`<h1>DebugLeakageCheck <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>150 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>检测认证后响应中是否存在调试或诊断信息暴露。</p><h2>检测内容</h2><ul class="check-list"><li>HTTP 响应中的 stack trace 标记</li><li>X-Powered-By / Server header 暴露</li><li>页面中的 debug banner 特征</li><li>actuator-style 诊断端点</li><li>异常页面框架/版本信息</li></ul><h2>真实检出示例</h2><div class="code-block"><code>Finding: Debug or diagnostic artifacts are visible\nSeverity: medium | Confidence: medium\nCategory: debug_error_leakage\n\n- endpoint GET /api/actuator/health exposes actuator-style diagnostics\n- endpoint GET /api/manage/config exposes stack trace marker\n- page /admin/users exposes debug banner</code></div>`},
-'admin-exposure':{b:'安全检查 > 后台暴露检测',h:`<h1>AdministrativeSurfaceCheck <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>120 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>检测认证后是否暴露了管理或诊断面。</p><h2>触发关键词</h2><div class="code-block"><code>admin, manage, config, debug, actuator, swagger, graphql</code></div><h2>真实检出示例</h2><div class="code-block"><code>Finding: Administrative or diagnostic surfaces are reachable after login\nSeverity: low | Confidence: high\n\n- endpoint GET /api/actuator/health matched 'actuator'\n- endpoint GET /api/admin/users matched 'admin'\n- endpoint GET /api/manage/config matched 'manage'\n- page /admin/users matched 'admin'</code></div>`},
-idor:{b:'安全检查 > IDOR 线索',h:`<h1>IdorIndicatorsCheck <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>130 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>标记含有 userId、role、token、session 等标识符参数的敏感 endpoint，供人工确认是否存在不安全直接对象引用。</p><h2>真实检出示例</h2><div class="code-block"><code>Finding: Identifier-driven authenticated endpoints merit IDOR review\nSeverity: medium | Confidence: low\n\n- endpoint GET /api/admin/users accepts query:role\n- endpoint GET /api/admin/users accepts query:userId\n- endpoint GET /api/export/download accepts query:session\n- endpoint POST /api/admin/export accepts body:token</code></div>`},
-'upload-import':{b:'安全检查 > 上传/导入入口',h:`<h1>UploadImportCheck <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>100 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>检测认证后流程中暴露的 upload 或 import 入口。</p><h2>真实检出示例</h2><div class="code-block"><code>Finding: Upload or import entrypoints are exposed\nSeverity: low | Confidence: high\n\n- endpoint POST /api/manage/import matched 'import'\n- endpoint POST /api/upload matched 'upload'</code></div><p>标记后需要进一步验证文件校验、内容控制、角色访问和审计覆盖。</p>`},
-'sensitive-disclosure':{b:'安全检查 > 敏感信息泄露',h:`<h1>SensitiveDisclosureCheck <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>130 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>检测认证后页面或端点预览中是否暴露了实现细节。</p><h2>检测内容</h2><ul class="check-list"><li>Email 地址泄露</li><li>内部主机名</li><li>文件路径</li><li>版本字符串</li><li>Trace ID</li><li>非生产环境标记</li></ul><h2>真实检出示例</h2><div class="code-block"><code>Finding: Sensitive implementation details are disclosed after login\nSeverity: medium | Confidence: medium\nEvidence Count: 11\n\n- endpoint /api/export/download reveals email: admin@example.local\n- page / reveals version string: 0.1.0</code></div>`},
-'auth-headers':{b:'安全检查 > 响应头/缓存检查',h:`<h1>AuthenticatedHeadersCacheCheck <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>120 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>检测认证后敏感页面的缓存策略和 cookie 安全属性。</p><h2>真实检出示例</h2><div class="code-block"><code>Finding: Authenticated responses show weak cache or cookie posture\nSeverity: low | Confidence: medium\n\n- endpoint /api/manage/config sets cookies: missing_httponly, missing_secure\n- sensitive page Admin Users has cache-control 'public, max-age=600'\n- sensitive page Export Center has cache-control 'public, max-age=900'</code></div>`},
-evidence:{b:'证据与报告 > 证据采集',h:`<h1>证据采集 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>180 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>Evidence 是结构化、已链接、默认脱敏的。每条 evidence 关联到 target、profile、session、job、inventory，以及可选的 finding。</p><h2>采集内容</h2><ul class="check-list"><li>请求元数据（method、URL、path、参数名）</li><li>响应元数据（status code、headers）</li><li>有界的请求/响应预览（截断 + 脱敏）</li><li>页面标题</li><li>截图元数据与文件位置</li></ul><h2>CLI 操作</h2><div class="code-block"><code>$ gardenctl evidence list\n$ gardenctl evidence list --finding 1\n$ gardenctl evidence show 1\n$ gardenctl evidence export --finding 1 --format json\n$ gardenctl evidence export --finding 1 --format md</code></div><div class="info-box">evidence show 显示的 preview 默认脱敏。导出同样保持脱敏状态。</div>`},
-redaction:{b:'证据与报告 > 脱敏规则',h:`<h1>脱敏规则 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>120 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>脱敏逻辑集中在 <code>app/redaction/</code>，CLI、UI、导出三端共用同一套规则，不会漂移。</p><h2>脱敏示例</h2><div class="code-block"><code>Authorization: Bearer eyJhb***[REDACTED]\nSet-Cookie: session=***[REDACTED]; HttpOnly\nEmail: a**n@example.com\npassword: ***[REDACTED]</code></div><ul class="check-list"><li>Token / Bearer / API Key 自动遮蔽</li><li>Cookie 值自动遮蔽</li><li>密码字段自动遮蔽</li><li>Email 部分遮蔽</li><li>自定义模式扩展</li></ul>`},
-'finding-lifecycle':{b:'证据与报告 > Finding 生命周期',h:`<h1>Finding 生命周期 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>200 字</span></div><div class="meta-item">阅读时间<span>2 分钟</span></div></div><p>Finding 是 Garden 工作流的核心产物。每个 finding 包含 severity、confidence、category、trigger 解释、复现步骤、修复建议、inventory 引用和 evidence 链接。</p><h2>状态流转</h2><div class="code-block"><code>new → triaged → accepted → fixed → retest-pending → closed</code></div><h2>关键特性</h2><ul class="check-list"><li>自动去重 — 保留 first_seen，更新 last_seen</li><li>状态转换集中校验</li><li>已修复的 finding 在复测中重新出现时自动 reopen</li><li>按 status / category 过滤</li><li>每次状态变更记审计日志</li></ul><h2>CLI 操作</h2><div class="code-block"><code>$ gardenctl findings list\n$ gardenctl findings list --status new\n$ gardenctl findings list --category debug_error_leakage\n$ gardenctl findings show 1\n$ gardenctl findings update-status 1 --status fixed</code></div>`},
-retest:{b:'证据与报告 > 复测 Retest',h:`<h1>复测 Retest <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>130 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>Retest 是 Garden 工作流闭环的关键环节。对 fixed 或 retest-pending 状态的 finding 执行复测，验证问题是否真正修复。</p><h2>复测逻辑</h2><ul class="check-list"><li>优先复用先前 session context</li><li>session 失效时自动 fresh login</li><li>复测结果作为一等工作流数据记录</li><li>问题仍然存在 → finding 状态回到 triaged</li><li>问题已修复 → finding 状态变为 closed</li></ul><h2>CLI 操作</h2><div class="code-block"><code>$ gardenctl retest run --finding 1</code></div>`},
-export:{b:'证据与报告 > 导出格式',h:`<h1>导出格式 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>150 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>导出逻辑模块化，Findings / Inventory / Evidence / Report 各有独立的 exporter。</p><h2>Findings 导出</h2><div class="code-block"><code>$ gardenctl findings export --format md\n$ gardenctl findings export --format json\n$ gardenctl findings export --format csv</code></div><h2>Inventory 导出</h2><div class="code-block"><code>$ gardenctl inventory export --id 1 --format json\n$ gardenctl inventory export --id 1 --format csv</code></div><h2>Evidence 导出</h2><div class="code-block"><code>$ gardenctl evidence export --finding 1 --format json\n$ gardenctl evidence export --finding 1 --format md</code></div><p>所有导出默认脱敏，输出到 <code>exports/</code> 目录。</p>`},
-report:{b:'证据与报告 > Report 生成',h:`<h1>Report 生成 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>100 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>为某个 job 生成汇总 Markdown 报告，包含 job 元信息、inventory 摘要、findings 列表和 evidence 引用。</p><h2>CLI 操作</h2><div class="code-block"><code>$ gardenctl report generate --job 2 --format md</code></div><p>报告输出到 <code>exports/reports/job-&lt;id&gt;.md</code>。</p>`},
-'cli-target':{b:'CLI 命令 > gardenctl target',h:`<h1>gardenctl target <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>120 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><div class="code-block"><code>gardenctl target add      --name NAME --base-url URL [--type TYPE] [--owner OWNER] [--tag TAG]\ngardenctl target list     [--status active|archived]\ngardenctl target show     ID\ngardenctl target delete   ID --yes\ngardenctl target import   --file PATH [--on-duplicate skip|update]</code></div><div class="info-box">target import 支持 YAML 和 JSON 格式。示例文件见 examples/targets/。</div>`},
-'cli-cred':{b:'CLI 命令 > gardenctl cred',h:`<h1>gardenctl cred <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>100 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><div class="code-block"><code>gardenctl cred add     --target-id ID --name NAME --role ROLE --auth-type TYPE \\\n                      --username USER --secret-ref REF [--login-config-path PATH]\ngardenctl cred list\ngardenctl cred show    ID\ngardenctl cred delete  ID --yes</code></div>`},
-'cli-login':{b:'CLI 命令 > gardenctl login',h:`<h1>gardenctl login <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>80 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><div class="code-block"><code>gardenctl login test      --target TARGET --profile PROFILE\ngardenctl login validate  --session ID</code></div>`},
-'cli-session':{b:'CLI 命令 > gardenctl session',h:`<h1>gardenctl session <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>60 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><div class="code-block"><code>gardenctl session list\ngardenctl session show     ID\ngardenctl session refresh  ID</code></div>`},
-'cli-inventory':{b:'CLI 命令 > gardenctl inventory',h:`<h1>gardenctl inventory <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>100 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><div class="code-block"><code>gardenctl inventory build   --target TARGET --profile PROFILE\ngardenctl inventory build   --session ID\ngardenctl inventory list\ngardenctl inventory show    ID\ngardenctl inventory export  --id ID --format json|csv</code></div>`},
-'cli-checks':{b:'CLI 命令 > gardenctl checks',h:`<h1>gardenctl checks <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>50 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><div class="code-block"><code>gardenctl checks run  --inventory ID</code></div><p>对某个 inventory run 执行全部已注册的低风险 checks。</p>`},
-'cli-findings':{b:'CLI 命令 > gardenctl findings',h:`<h1>gardenctl findings <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>100 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><div class="code-block"><code>gardenctl findings list            [--status STATUS] [--category CAT]\ngardenctl findings show            ID\ngardenctl findings update-status   ID --status STATUS\ngardenctl findings export          --format md|json|csv</code></div>`},
-'cli-evidence':{b:'CLI 命令 > gardenctl evidence',h:`<h1>gardenctl evidence <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>80 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><div class="code-block"><code>gardenctl evidence list     [--finding ID]\ngardenctl evidence show     ID\ngardenctl evidence export   --finding ID --format json|md</code></div>`},
-'cli-retest':{b:'CLI 命令 > gardenctl retest',h:`<h1>gardenctl retest <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>40 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><div class="code-block"><code>gardenctl retest run  --finding ID</code></div><p>对 fixed 或 retest-pending 状态的 finding 执行复测。</p>`},
-'cli-report':{b:'CLI 命令 > gardenctl report',h:`<h1>gardenctl report <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>40 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><div class="code-block"><code>gardenctl report generate  --job ID --format md</code></div><p>为某个 job 生成 Markdown 格式的汇总报告。</p>`},
-architecture:{b:'进阶 > 架构设计',h:`<h1>架构设计 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>350 字</span></div><div class="meta-item">阅读时间<span>3 分钟</span></div></div><h2>分层架构</h2><div class="code-block"><code>CLI (Typer)  ──→  Services  ──→  Models / DB\nWeb (FastAPI) ──→  Services  ──→  Models / DB\n                    ↓\n              Adapters / Plugins\n              (HTTP Auth, Playwright Auth,\n               Playwright Inventory, Checks)</code></div><h2>End-to-End 组件关系</h2><ul class="check-list"><li>TargetService 管理目标</li><li>CredentialProfileService 管理凭证档案</li><li>AuthSessionService 解析 login config + secret，调用选定的 auth adapter</li><li>InventoryBuildService 创建 ScanJob + InventoryRun，调用采集管线</li><li>InventoryCollectionService 恢复浏览器状态，调用 Playwright 采集器</li><li>CheckRunService 执行注册的低风险 checks</li><li>FindingService upsert 去重 findings，跟踪生命周期状态</li><li>EvidenceService 采集脱敏的可审阅 evidence</li><li>RetestService 对符合条件的 findings 重跑验证</li><li>FindingExportService + ReportService 生成脱敏输出</li></ul><h2>13 个数据实体</h2><div class="code-block"><code>Target, CredentialProfile, ScanJob, AuthSession,\nInventoryRun, InventoryPage, InventoryEndpoint,\nInventoryParameter, InventoryAnnotation,\nFinding, FindingRetestRun, Evidence, AuditEvent</code></div>`},
-guardrails:{b:'进阶 > 安全护栏',h:`<h1>安全护栏 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>150 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>这些限制不是"暂时没做"，而是 Garden 产品身份的一部分。</p><ul class="check-list"><li>默认仅允许本地 / demo 目标</li><li>非本地目标需 <code>GARDEN_ALLOW_NON_LOCAL_TARGETS=true</code></li><li>不做 destructive testing</li><li>不做 exploit execution</li><li>不做 brute-force / fuzzing</li><li>Secrets 不直接存储、不直接打印</li><li>Evidence 和 exports 默认脱敏</li><li>Inventory 必须结构化，不能退化成原始流量堆</li><li>核心逻辑必须在 service 层</li><li>所有关键操作记审计日志（login / validate / refresh / status update / export / retest / report）</li></ul>`},
-outputs:{b:'进阶 > 结构化产出',h:`<h1>结构化产出 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>180 字</span></div><div class="meta-item">阅读时间<span>1 分钟</span></div></div><p>Garden 产出的不是"跑过了什么命令"，而是结构化工作流产物：</p><ul class="check-list"><li>Target 清单</li><li>Credential profile 清单</li><li>Authenticated session 记录</li><li>审计事件（login / validate / refresh / status update / export / retest / report）</li><li>Scan jobs</li><li>结构化 inventory runs（pages / endpoints / parameters / annotations）</li><li>Explainable low-risk findings（severity / confidence / trigger / remediation）</li><li>Linked redacted evidence</li><li>Retest records</li><li>Findings Markdown / JSON / CSV 导出</li><li>Inventory JSON / CSV 导出</li><li>Evidence Markdown / JSON 导出</li><li>Job Markdown report</li></ul><div class="info-box">Garden 的价值不只是"做了扫描"，而是把登录后验证工作真正串成了一条可 review、可复测、可导出的流程。</div>`},
-constraints:{b:'进阶 > 设计约束',h:`<h1>设计约束 <a class="anchor" href="#">¶</a></h1><div class="header-meta"><div class="meta-item">字数<span>200 字</span></div><div class="meta-item">阅读时间<span>2 分钟</span></div></div><p>Garden 刻意保持这些约束，它们是产品身份的一部分：</p><h2>Garden 不是</h2><ul class="check-list"><li>桌面 GUI 应用</li><li>通用匿名漏洞扫描器</li><li>公网扫描工具</li><li>破坏性测试平台 / exploit framework</li><li>Brute-force / fuzzing 引擎</li><li>Burp / ZAP 的替代品</li><li>单纯的 traffic recorder</li><li>只做 API auth testing 的工具</li></ul><h2>为什么不直接用现有工具</h2><p>因为"现有工具都很强"不等于"这条工作流已经被解决了"。Garden 的价值在于把这些能力串起来：</p><ul class="check-list"><li>Burp/ZAP 偏手工代理 → Garden 偏流程编排和结构化 inventory</li><li>录流量 ≠ 结构化资产覆盖 + explainable findings</li><li>Scanner wrapper ≠ 可追踪的 workflow outputs</li><li>API auth testing ≠ 页面态 + 浏览器态 + 证据 + 复测 + 报告</li></ul>`},
+/* ── doc content ── */
+var PAGES={
+intro:{b:'快速开始 > 简介',h:`
+<h1>简介</h1>
+<div class="meta-row"><div>字数<span>450</span></div><div>阅读时间<span>3 min</span></div></div>
+
+<p>Garden is a <strong>CLI-first</strong> security workflow tool for authorized post-login application surface verification. It is not a traditional "scanner" — it is an internal security workflow subsystem for enterprise AppSec teams.</p>
+
+<h2>核心工作流</h2>
+<pre>target &rarr; credential profile &rarr; login &rarr; authenticated session
+      &rarr; inventory &rarr; checks &rarr; findings &rarr; evidence
+      &rarr; triage &rarr; retest &rarr; export</pre>
+
+<p>Garden 产出的不是跑过了什么命令，而是结构化工作流产物：target 清单、credential profile 清单、authenticated session 记录、审计事件、scan jobs、结构化 inventory、可解释的 findings、关联的脱敏 evidence、retest 记录，以及 Markdown / JSON / CSV 导出。</p>
+
+<h2>推荐使用顺序</h2>
+<pre>$ gardenctl healthcheck
+$ gardenctl target add          # or target import
+$ gardenctl cred add
+$ gardenctl login test
+$ gardenctl inventory build
+$ gardenctl checks run
+$ gardenctl findings list
+$ gardenctl evidence list
+$ gardenctl findings update-status
+$ gardenctl retest run
+$ gardenctl findings export      # or report generate</pre>
+
+<div class="tip">Garden 的核心定位不是找更多洞，而是把登录后业务系统的安全验证，做成一个可重复、可审计、可复测、可工程化落地的流程。</div>
+`},
+install:{b:'快速开始 > 安装',h:`
+<h1>安装</h1>
+<div class="meta-row"><div>字数<span>200</span></div><div>阅读时间<span>2 min</span></div></div>
+
+<h2>前置依赖</h2>
+<ul class="check-list"><li>Python 3.10+</li><li>Node.js 18+（用于 Playwright 浏览器自动化）</li></ul>
+
+<h2>克隆与安装</h2>
+<pre>$ git clone https://github.com/Moxxkidd/Garden.git
+$ cd garden
+$ python -m venv .venv && source .venv/bin/activate
+$ pip install -e '.[dev]'
+$ playwright install chromium</pre>
+
+<h2>环境配置</h2>
+<pre>$ cp .env.example .env
+# ensure GARDEN_ALLOW_NON_LOCAL_TARGETS=false</pre>
+
+<h2>启动服务</h2>
+<pre>$ make demo
+# or directly:
+$ uvicorn app.main:app --host 127.0.0.1 --port 8000</pre>
+
+<h2>验证</h2>
+<pre>$ gardenctl healthcheck
+$ gardenctl version</pre>
+`},
+quickstart:{b:'快速开始 > Demo 演练',h:`
+<h1>Demo 演练</h1>
+<div class="meta-row"><div>字数<span>400</span></div><div>阅读时间<span>5 min</span></div></div>
+
+<p>5～10 分钟走完完整 Garden 工作流。使用内置 demo target 演示。</p>
+
+<h2>1. 启动服务</h2>
+<pre>$ make demo</pre>
+
+<h2>2. 添加 Target</h2>
+<pre>$ gardenctl target import --file examples/targets/local-demo-targets.yaml --on-duplicate skip
+# or manually:
+$ gardenctl target add --name garden-demo-web --base-url http://127.0.0.1:8000 --type web --owner appsec</pre>
+
+<h2>3. 添加凭证</h2>
+<pre>$ gardenctl cred add --target-id 1 --name garden-demo-admin --role admin \
+    --auth-type password --username admin@example.local \
+    --secret-ref env://GARDEN_DEMO_ADMIN_PASSWORD \
+    --login-config-path examples/login/demo-http-admin.yaml</pre>
+
+<h2>4. 登录 → Inventory → Checks</h2>
+<pre>$ gardenctl login test --target garden-demo-web --profile garden-demo-admin
+$ gardenctl inventory build --target garden-demo-web --profile garden-demo-admin
+$ gardenctl inventory show 1
+$ gardenctl checks run --inventory 1
+$ gardenctl findings list</pre>
+
+<h2>5. 审阅与复测</h2>
+<pre>$ gardenctl evidence list
+$ gardenctl findings update-status 1 --status fixed
+$ gardenctl retest run --finding 1
+$ gardenctl findings export --format md
+$ gardenctl report generate --job 2 --format md</pre>
+
+<h2>6. Web UI</h2>
+<ul class="check-list">
+  <li>http://127.0.0.1:8000/ — Dashboard</li>
+  <li>http://127.0.0.1:8000/targets — Targets</li>
+  <li>http://127.0.0.1:8000/inventory — Inventory</li>
+  <li>http://127.0.0.1:8000/findings — Findings</li>
+  <li>http://127.0.0.1:8000/evidence — Evidence</li>
+</ul>
+`},
+structure:{b:'快速开始 > 项目结构',h:`
+<h1>项目结构</h1>
+<div class="meta-row"><div>字数<span>300</span></div><div>阅读时间<span>2 min</span></div></div>
+<pre>garden/
+&boxur;   app/
+&boxur;   &boxur;&boxur; api/              # FastAPI routes
+&boxur;   &boxur;&boxur; cli/              # Typer CLI (11 sub-command groups)
+&boxur;   &boxur;&boxur; core/             # Config, logging, guardrails, errors
+&boxur;   &boxur;&boxur; db/               # SQLAlchemy bootstrap
+&boxur;   &boxur;&boxur; models/           # 13 ORM models
+&boxur;   &boxur;&boxur; schemas/          # Pydantic transport schemas
+&boxur;   &boxur;&boxur; services/         # 22 business-logic modules
+&boxur;   &boxur;&boxur; security_checks/  # 6 low-risk check plugins
+&boxur;   &boxur;&boxur; redaction/        # Centralised redaction
+&boxur;   &boxur;&boxur; integrations/     # HTTP / Playwright adapters
+&boxur;   &boxur;&boxur; templates/        # Jinja2 server-rendered HTML
+&boxur;   &boxur;&boxur; static/           # Minimal CSS
+&boxur;   &boxur;&boxur; workers/          # Reserved for background execution
+&boxur;   tests/                # 20 test modules
+&boxur;   docs/                 # Architecture, threat model, walkthroughs
+&boxur;   examples/             # Sample targets + login configs
+&boxur;   exports/              # Export output directory
+&boxur;   pyproject.toml        # hatchling build + dependencies</pre>
+
+<h2>关键设计原则</h2>
+<ul class="check-list">
+  <li>业务逻辑集中在 services/ 层</li>
+  <li>CLI 和 Web 路由共用同一组 service 代码</li>
+  <li>检查器以插件形式注册在 security_checks/registry.py</li>
+  <li>脱敏逻辑集中管理 — CLI / UI / 导出三端不会漂移</li>
+  <li>登录适配器实现同一个 contract（HTTP / Playwright）</li>
+</ul>
+`},
+targets:{b:'核心概念 > 目标管理',h:`
+<h1>目标管理</h1>
+<div class="meta-row"><div>字数<span>200</span></div><div>阅读时间<span>2 min</span></div></div>
+
+<p>每个安全验证的起点都是一个 Target。Garden 要求所有操作都绑定在明确的目标上，包含 name、base_url、type、owner、tags、status。</p>
+
+<h2>安全护栏</h2>
+<p>默认只允许 localhost / 127.0.0.1 / Docker 网络地址。非本地目标需要显式设置 <code>GARDEN_ALLOW_NON_LOCAL_TARGETS=true</code>。</p>
+
+<h2>CLI 操作</h2>
+<pre>$ gardenctl target add --name my-app --base-url http://127.0.0.1:8080 --type web --owner appsec
+$ gardenctl target import --file examples/targets/local-demo-targets.yaml --on-duplicate skip
+$ gardenctl target list
+$ gardenctl target show 1
+$ gardenctl target delete 1 --yes</pre>
+
+<div class="tip">支持从 YAML / JSON 批量导入 target，适合团队统一管理。</div>
+`},
+credentials:{b:'核心概念 > 凭证档案',h:`
+<h1>凭证档案</h1>
+<div class="meta-row"><div>字数<span>180</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>凭证档案管理登录凭证，支持多角色. 使用 <code>secret_ref</code>（如 <code>env://GARDEN_DEMO_ADMIN_PASSWORD</code>）引用密码，不直接存储明文。</p>
+
+<h2>CLI 操作</h2>
+<pre>$ gardenctl cred add \
+    --target-id 1 --name garden-demo-admin \
+    --role admin --auth-type password \
+    --username admin@example.local \
+    --secret-ref env://GARDEN_DEMO_ADMIN_PASSWORD \
+    --login-config-path examples/login/demo-http-admin.yaml
+
+$ gardenctl cred list
+$ gardenctl cred show 1
+$ gardenctl cred delete 1 --yes</pre>
+
+<div class="tip">login-config-path 指定登录配置 YAML，支持 HTTP 和 Playwright 两种适配器。示例配置见 examples/login/ 目录。</div>
+`},
+login:{b:'核心概念 > 登录编排',h:`
+<h1>登录编排</h1>
+<div class="meta-row"><div>字数<span>180</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>Garden 使用 adapter 策略执行登录。配置解析与执行解耦，HTTP 和 Playwright UI 流程实现同一个 contract，登录结果统一为 AuthSession。</p>
+
+<h2>Two adapters</h2>
+<ul class="check-list">
+  <li><strong>HTTP Adapter</strong> — API logins, cookie/token endpoints</li>
+  <li><strong>Playwright Adapter</strong> — browser-based UI login flows</li>
+</ul>
+
+<h2>CLI 操作</h2>
+<pre>$ gardenctl login test --target garden-demo-web --profile garden-demo-admin
+$ gardenctl login validate --session 1</pre>
+
+<p>登录成功后自动创建可复用的 AuthSession，原始敏感材料存储在 storage_ref 后面，不会在显示模型中暴露。</p>
+`},
+sessions:{b:'核心概念 > 会话管理',h:`
+<h1>会话管理</h1>
+<div class="meta-row"><div>字数<span>150</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>AuthSession 是登录成功后的可复用凭据容器，inventory 构建和 retest 都可以复用已有 session。</p>
+
+<h2>生命周期</h2>
+<ul class="check-list">
+  <li>创建 — 登录成功后自动创建</li>
+  <li>Validate — <code>gardenctl login validate --session &lt;id&gt;</code></li>
+  <li>Refresh — <code>gardenctl session refresh &lt;id&gt;</code></li>
+  <li>归档 — 过期后保留审计记录</li>
+</ul>
+
+<h2>CLI 操作</h2>
+<pre>$ gardenctl session list
+$ gardenctl session show 1
+$ gardenctl session refresh 1</pre>
+
+<p>session show 仅显示 redacted 元数据，不暴露原始 token/cookie。</p>
+`},
+inventory:{b:'核心概念 > Inventory 盘点',h:`
+<h1>Inventory 盘点</h1>
+<div class="meta-row"><div>字数<span>250</span></div><div>阅读时间<span>2 min</span></div></div>
+
+<p>Inventory 是结构化的，不是流量 blob。Garden 记录：页面 URL 和标题、时间戳、API endpoint 和方法、状态码、参数名、sensitivity annotation。</p>
+
+<h2>Collection bounds</h2>
+<ul class="check-list">
+  <li>max_pages — 最大页面数</li>
+  <li>max_depth — 最大爬取深度</li>
+  <li>max_requests — 最大请求数</li>
+  <li>delay_ms — 请求间隔</li>
+  <li>same-origin restriction</li>
+  <li>include/exclude path 前缀过滤</li>
+</ul>
+
+<h2>CLI 操作</h2>
+<pre>$ gardenctl inventory build --target garden-demo-web --profile garden-demo-admin
+$ gardenctl inventory build --session 1   # reuse existing session
+$ gardenctl inventory list
+$ gardenctl inventory show 1
+$ gardenctl inventory export --id 1 --format json
+$ gardenctl inventory export --id 1 --format csv</pre>
+
+<div class="tip">inventory 构建可以复用已有 session 或 fresh login。导出支持 JSON 和 CSV（分 pages/endpoints/parameters/annotations 子文件）。</div>
+`},
+'checks-overview':{b:'Security Checks > Overview',h:`
+<h1>安全检查概览</h1>
+<div class="meta-row"><div>字数<span>200</span></div><div>阅读时间<span>2 min</span></div></div>
+
+<p>Garden ships with 6 low-risk, explainable check plugins registered in <code>security_checks/registry.py</code>.</p>
+
+<h2>Built-in checks</h2>
+<ul class="check-list">
+  <li><strong>DebugLeakageCheck</strong> — stack traces, debug banners, actuator diagnostics</li>
+  <li><strong>AuthenticatedHeadersCacheCheck</strong> — sensitive page cache policies, cookie attributes</li>
+  <li><strong>AdministrativeSurfaceCheck</strong> — admin / manage / config / actuator path exposure</li>
+  <li><strong>IdorIndicatorsCheck</strong> — endpoints with userId / role / token parameters</li>
+  <li><strong>UploadImportCheck</strong> — upload / import entry-point markers</li>
+  <li><strong>SensitiveDisclosureCheck</strong> — email, internal hostnames, version strings</li>
+</ul>
+
+<h2>CLI 操作</h2>
+<pre>$ gardenctl checks run --inventory 1</pre>
+
+<p>每个检查器输出 severity（low/medium/high）和 confidence（low/medium/high），包含 trigger 解释、复现步骤和修复建议。检查器不做破坏性行为。</p>
+`},
+'debug-leak':{b:'安全检查 > 调试泄露',h:`
+<h1>DebugLeakageCheck</h1>
+<div class="meta-row"><div>字数<span>150</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>检测认证后响应中是否存在调试或诊断信息暴露。</p>
+
+<h2>Detection</h2>
+<ul class="check-list">
+  <li>HTTP 响应中的 stack trace 标记</li>
+  <li>X-Powered-By / Server header 暴露</li>
+  <li>页面中的 debug banner 特征</li>
+  <li>actuator-style 诊断端点</li>
+  <li>异常页面框架/版本信息</li>
+</ul>
+
+<h2>Example finding</h2>
+<pre>Finding: Debug or diagnostic artifacts are visible
+Severity: medium | Confidence: medium
+Category: debug_error_leakage
+
+- endpoint GET /api/actuator/health exposes actuator-style diagnostics
+- endpoint GET /api/manage/config exposes stack trace markers
+- page /admin/users exposes debug banner</pre>
+`},
+'admin-exposure':{b:'安全检查 > 后台暴露检测',h:`
+<h1>AdministrativeSurfaceCheck</h1>
+<div class="meta-row"><div>字数<span>120</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>检测认证后是否暴露了管理或诊断面。</p>
+
+<h2>Trigger keywords</h2>
+<pre>admin, manage, config, debug, actuator, swagger, graphql</pre>
+
+<h2>Example finding</h2>
+<pre>Finding: Administrative or diagnostic surfaces are reachable after login
+Severity: low | Confidence: high
+
+- endpoint GET /api/actuator/health matched 'actuator'
+- endpoint GET /api/admin/users matched 'admin'
+- endpoint GET /api/manage/config matched 'manage'
+- page /admin/users matched 'admin'</pre>
+`},
+idor:{b:'安全检查 > IDOR 线索',h:`
+<h1>IdorIndicatorsCheck</h1>
+<div class="meta-row"><div>字数<span>130</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>标记含有 userId、role、token、session 等标识符参数的敏感 endpoint，供人工确认是否存在 IDOR。</p>
+
+<h2>Example finding</h2>
+<pre>Finding: Identifier-driven authenticated endpoints merit IDOR review
+Severity: medium | Confidence: low
+
+- endpoint GET /api/admin/users accepts query:role
+- endpoint GET /api/admin/users accepts query:userId
+- endpoint GET /api/export/download accepts query:session
+- endpoint POST /api/admin/export accepts body:token</pre>
+`},
+'upload-import':{b:'Security Checks > Upload / Import',h:`
+<h1>UploadImportCheck</h1>
+<div class="meta-row"><div>字数<span>100</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>检测认证后流程中暴露的 upload 或 import 入口。</p>
+
+<h2>Example finding</h2>
+<pre>Finding: Upload or import entrypoints are exposed
+Severity: low | Confidence: high
+
+- endpoint POST /api/manage/import matched 'import'
+- endpoint POST /api/upload matched 'upload'</pre>
+
+<p>标记后需要进一步验证文件校验、内容控制、角色访问和审计覆盖。</p>
+`},
+'sensitive-disclosure':{b:'安全检查 > 敏感信息泄露',h:`
+<h1>SensitiveDisclosureCheck</h1>
+<div class="meta-row"><div>字数<span>130</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>检测认证后页面或端点预览中是否泄露了实现细节。</p>
+
+<h2>Detection</h2>
+<ul class="check-list">
+  <li>Email 地址</li>
+  <li>内部主机名</li>
+  <li>文件路径</li>
+  <li>版本字符串</li>
+  <li>Trace ID</li>
+  <li>非生产环境标记</li>
+</ul>
+
+<h2>Example finding</h2>
+<pre>Finding: Sensitive implementation details are disclosed after login
+Severity: medium | Confidence: medium
+Evidence Count: 11
+
+- endpoint /api/export/download reveals email: admin@example.local
+- page / reveals version string: 0.1.0</pre>
+`},
+'auth-headers':{b:'Security Checks > Headers &amp; Cache',h:`
+<h1>AuthenticatedHeadersCacheCheck</h1>
+<div class="meta-row"><div>字数<span>120</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>检测认证后敏感页面的缓存策略和 cookie 安全属性。</p>
+
+<h2>Example finding</h2>
+<pre>Finding: Authenticated responses show weak cache or cookie posture
+Severity: low | Confidence: medium
+
+- endpoint /api/manage/config sets cookies: missing_httponly, missing_secure
+- sensitive page Admin Users has cache-control 'public, max-age=600'
+- sensitive page Export Center has cache-control 'public, max-age=900'</pre>
+`},
+evidence:{b:'证据与报告 > 证据采集',h:`
+<h1>证据采集</h1>
+<div class="meta-row"><div>字数<span>180</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>Evidence 是结构化、已链接、默认脱敏的。每条 evidence 关联到 target、profile、session、job、inventory，以及可选的 finding。</p>
+
+<h2>Captured data</h2>
+<ul class="check-list">
+  <li>请求元数据（method、URL、path、参数名）</li>
+  <li>响应元数据（status code、headers）</li>
+  <li>有界的请求/响应预览（截断 + 脱敏）</li>
+  <li>页面标题</li>
+  <li>截图元数据与文件位置</li>
+</ul>
+
+<h2>CLI 操作</h2>
+<pre>$ gardenctl evidence list
+$ gardenctl evidence list --finding 1
+$ gardenctl evidence show 1
+$ gardenctl evidence export --finding 1 --format json
+$ gardenctl evidence export --finding 1 --format md</pre>
+
+<div class="tip">evidence show 显示的是脱敏后的预览。导出同样保持脱敏状态。</div>
+`},
+redaction:{b:'证据与报告 > 脱敏规则',h:`
+<h1>脱敏规则</h1>
+<div class="meta-row"><div>字数<span>120</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>Redaction logic is centralized in <code>app/redaction/</code>. CLI output, Web UI display, and export files all share the same redaction rules — they never drift apart.</p>
+
+<h2>Redaction examples</h2>
+<pre>Authorization: Bearer eyJhb***[REDACTED]
+Set-Cookie: session=***[REDACTED]; HttpOnly
+Email: a**n@example.com
+password: ***[REDACTED]</pre>
+
+<ul class="check-list">
+  <li>Token / Bearer / API Key — 自动遮蔽</li>
+  <li>Cookie 值自动遮蔽</li>
+  <li>密码字段自动遮蔽</li>
+  <li>Email 部分遮蔽</li>
+  <li>支持自定义模式扩展</li>
+</ul>
+`},
+'finding-lifecycle':{b:'Evidence & Reports > Finding 生命周期',h:`
+<h1>Finding 生命周期</h1>
+<div class="meta-row"><div>字数<span>200</span></div><div>阅读时间<span>2 min</span></div></div>
+
+<p>Finding 是 Garden 工作流的核心产物。每个 finding 包含 severity、confidence、category、trigger 解释、复现步骤、修复建议、inventory 引用和 evidence 链接。</p>
+
+<h2>State transitions</h2>
+<pre>new &rarr; triaged &rarr; accepted &rarr; fixed &rarr; retest-pending &rarr; closed</pre>
+
+<h2>Key features</h2>
+<ul class="check-list">
+  <li>自动去重 — 保留 first_seen，更新 last_seen</li>
+  <li>状态转换集中校验</li>
+  <li>已修复的 finding 在复测中重新出现时自动 reopen</li>
+  <li>按 status / category 过滤</li>
+  <li>每次状态变更记审计日志</li>
+</ul>
+
+<h2>CLI 操作</h2>
+<pre>$ gardenctl findings list
+$ gardenctl findings list --status new
+$ gardenctl findings list --category debug_error_leakage
+$ gardenctl findings show 1
+$ gardenctl findings update-status 1 --status fixed</pre>
+`},
+retest:{b:'证据与报告 > 复测',h:`
+<h1>复测</h1>
+<div class="meta-row"><div>字数<span>130</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>Retest 是 Garden 工作流闭环的关键环节。对 fixed 或 retest-pending 状态的 finding 执行复测，验证问题是否修复。</p>
+
+<h2>Retest logic</h2>
+<ul class="check-list">
+  <li>优先复用先前 session context</li>
+  <li>session 失效时自动 fresh login</li>
+  <li>复测结果作为一等工作流数据记录</li>
+  <li>问题仍存在 → finding 回到 triaged</li>
+  <li>问题已修复 → finding 变为 closed</li>
+</ul>
+
+<h2>CLI 操作</h2>
+<pre>$ gardenctl retest run --finding 1</pre>
+`},
+export:{b:'证据与报告 > 导出格式',h:`
+<h1>导出格式</h1>
+<div class="meta-row"><div>字数<span>150</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>导出逻辑模块化，Findings、Inventory、Evidence、Report 各有独立的 exporter。</p>
+
+<h2>Findings export</h2>
+<pre>$ gardenctl findings export --format md
+$ gardenctl findings export --format json
+$ gardenctl findings export --format csv</pre>
+
+<h2>Inventory export</h2>
+<pre>$ gardenctl inventory export --id 1 --format json
+$ gardenctl inventory export --id 1 --format csv</pre>
+
+<h2>Evidence export</h2>
+<pre>$ gardenctl evidence export --finding 1 --format json
+$ gardenctl evidence export --finding 1 --format md</pre>
+
+<p>All exports are redacted by default and written to <code>exports/</code>.</p>
+`},
+report:{b:'证据与报告 > 报告生成',h:`
+<h1>报告生成</h1>
+<div class="meta-row"><div>字数<span>100</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>为某个 job 生成汇总 Markdown 报告，包含 job 元信息、inventory 摘要、findings 列表和 evidence 引用。</p>
+
+<h2>CLI 操作</h2>
+<pre>$ gardenctl report generate --job 2 --format md</pre>
+
+<p>Reports are written to <code>exports/reports/job-&lt;id&gt;.md</code>.</p>
+`},
+'cli-target':{b:'CLI 参考 > gardenctl target',h:`
+<h1>gardenctl target</h1>
+<div class="meta-row"><div>字数<span>120</span></div><div>阅读时间<span>1 min</span></div></div>
+<pre>gardenctl target add      --name NAME --base-url URL [--type TYPE] [--owner OWNER] [--tag TAG]
+gardenctl target list     [--status active|archived]
+gardenctl target show     ID
+gardenctl target delete   ID --yes
+gardenctl target import   --file PATH [--on-duplicate skip|update]</pre>
+<div class="tip">target import 支持 YAML 和 JSON 格式。示例文件见 examples/targets/。</div>
+`},
+'cli-cred':{b:'CLI 参考 > gardenctl cred',h:`
+<h1>gardenctl cred</h1>
+<div class="meta-row"><div>字数<span>100</span></div><div>阅读时间<span>1 min</span></div></div>
+<pre>gardenctl cred add     --target-id ID --name NAME --role ROLE --auth-type TYPE \\
+                     --username USER --secret-ref REF [--login-config-path PATH]
+gardenctl cred list
+gardenctl cred show    ID
+gardenctl cred delete  ID --yes</pre>
+`},
+'cli-login':{b:'CLI 参考 > gardenctl login',h:`
+<h1>gardenctl login</h1>
+<div class="meta-row"><div>字数<span>80</span></div><div>阅读时间<span>1 min</span></div></div>
+<pre>gardenctl login test      --target TARGET --profile PROFILE
+gardenctl login validate  --session ID</pre>
+`},
+'cli-session':{b:'CLI 参考 > gardenctl session',h:`
+<h1>gardenctl session</h1>
+<div class="meta-row"><div>字数<span>60</span></div><div>阅读时间<span>1 min</span></div></div>
+<pre>gardenctl session list
+gardenctl session show     ID
+gardenctl session refresh  ID</pre>
+`},
+'cli-inventory':{b:'CLI 参考 > gardenctl inventory',h:`
+<h1>gardenctl inventory</h1>
+<div class="meta-row"><div>字数<span>100</span></div><div>阅读时间<span>1 min</span></div></div>
+<pre>gardenctl inventory build   --target TARGET --profile PROFILE
+gardenctl inventory build   --session ID
+gardenctl inventory list
+gardenctl inventory show    ID
+gardenctl inventory export  --id ID --format json|csv</pre>
+`},
+'cli-checks':{b:'CLI 参考 > gardenctl checks',h:`
+<h1>gardenctl checks</h1>
+<div class="meta-row"><div>字数<span>50</span></div><div>阅读时间<span>1 min</span></div></div>
+<pre>gardenctl checks run  --inventory ID</pre>
+<p>对某个 inventory run 执行全部已注册的低风险 checks。</p>
+`},
+'cli-findings':{b:'CLI 参考 > gardenctl findings',h:`
+<h1>gardenctl findings</h1>
+<div class="meta-row"><div>字数<span>100</span></div><div>阅读时间<span>1 min</span></div></div>
+<pre>gardenctl findings list            [--status STATUS] [--category CAT]
+gardenctl findings show            ID
+gardenctl findings update-status   ID --status STATUS
+gardenctl findings export          --format md|json|csv</pre>
+`},
+'cli-evidence':{b:'CLI 参考 > gardenctl evidence',h:`
+<h1>gardenctl evidence</h1>
+<div class="meta-row"><div>字数<span>80</span></div><div>阅读时间<span>1 min</span></div></div>
+<pre>gardenctl evidence list     [--finding ID]
+gardenctl evidence show     ID
+gardenctl evidence export   --finding ID --format json|md</pre>
+`},
+'cli-retest':{b:'CLI 参考 > gardenctl retest',h:`
+<h1>gardenctl retest</h1>
+<div class="meta-row"><div>字数<span>40</span></div><div>阅读时间<span>1 min</span></div></div>
+<pre>gardenctl retest run  --finding ID</pre>
+<p>对 fixed 或 retest-pending 状态的 finding 执行复测。</p>
+`},
+'cli-report':{b:'CLI 参考 > gardenctl report',h:`
+<h1>gardenctl report</h1>
+<div class="meta-row"><div>字数<span>40</span></div><div>阅读时间<span>1 min</span></div></div>
+<pre>gardenctl report generate  --job ID --format md</pre>
+<p>为某个 job 生成 Markdown 格式的汇总报告。</p>
+`},
+architecture:{b:'进阶 > 架构设计',h:`
+<h1>架构设计</h1>
+<div class="meta-row"><div>字数<span>350</span></div><div>阅读时间<span>3 min</span></div></div>
+
+<h2>Layered design</h2>
+<pre>CLI (Typer)  &mdash;&rarr;  Services  &mdash;&rarr;  Models / DB
+Web (FastAPI) &mdash;&rarr;  Services  &mdash;&rarr;  Models / DB
+                   &darr;
+             Adapters / Plugins
+             (HTTP Auth, Playwright Auth,
+              Playwright Inventory, Checks)</pre>
+
+<h2>端到端组件关系</h2>
+<ul class="check-list">
+  <li>TargetService 管理目标</li>
+  <li>CredentialProfileService 管理凭证档案</li>
+  <li>AuthSessionService 解析 login config + secret，调用选定的 auth adapter</li>
+  <li>InventoryBuildService 创建 ScanJob + InventoryRun，驱动采集管线</li>
+  <li>InventoryCollectionService 恢复浏览器状态，调用 Playwright 采集器</li>
+  <li>CheckRunService 执行注册的低风险 checks</li>
+  <li>FindingService upsert 去重 findings，跟踪生命周期状态</li>
+  <li>EvidenceService 采集脱敏的可审阅 evidence</li>
+  <li>RetestService 对符合条件的 findings 重跑验证</li>
+  <li>FindingExportService + ReportService 生成脱敏输出</li>
+</ul>
+
+<h2>Data entities</h2>
+<pre>Target, CredentialProfile, ScanJob, AuthSession,
+InventoryRun, InventoryPage, InventoryEndpoint,
+InventoryParameter, InventoryAnnotation,
+Finding, FindingRetestRun, Evidence, AuditEvent</pre>
+`},
+guardrails:{b:'进阶 > 安全护栏',h:`
+<h1>安全护栏</h1>
+<div class="meta-row"><div>字数<span>150</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>这些限制不是暂时没做，而是 Garden 产品身份的一部分。</p>
+
+<ul class="check-list">
+  <li>默认仅允许本地 / demo 目标</li>
+  <li>非本地目标需 GARDEN_ALLOW_NON_LOCAL_TARGETS=true</li>
+  <li>不做破坏性测试</li>
+  <li>不做 exploit execution</li>
+  <li>不做 brute-force / fuzzing</li>
+  <li>Secrets 不直接存储、不直接打印</li>
+  <li>Evidence 和 exports 默认脱敏</li>
+  <li>Inventory 必须结构化，不能退化成原始流量堆</li>
+  <li>核心逻辑必须在 service 层</li>
+  <li>所有关键操作记审计日志</li>
+</ul>
+`},
+outputs:{b:'进阶 > 结构化产出',h:`
+<h1>结构化产出</h1>
+<div class="meta-row"><div>字数<span>180</span></div><div>阅读时间<span>1 min</span></div></div>
+
+<p>Garden 产出的不是跑过了什么命令，而是结构化工作流产物：</p>
+
+<ul class="check-list">
+  <li>Target manifests</li>
+  <li>Credential profile 清单</li>
+  <li>Authenticated session 记录</li>
+  <li>Audit events</li>
+  <li>Scan jobs</li>
+  <li>结构化 inventory runs（pages / endpoints / parameters / annotations）</li>
+  <li>可解释的 low-risk findings</li>
+  <li>关联的脱敏 evidence</li>
+  <li>Retest records</li>
+  <li>Findings Markdown / JSON / CSV 导出</li>
+  <li>Inventory JSON / CSV 导出</li>
+  <li>Evidence Markdown / JSON 导出</li>
+  <li>Job Markdown 报告</li>
+</ul>
+
+<div class="tip">Garden 的价值不是做了扫描，而是把登录后验证工作变成了可审阅、可复测、可导出的流程。</div>
+`},
+constraints:{b:'进阶 > 设计约束',h:`
+<h1>设计约束</h1>
+<div class="meta-row"><div>字数<span>200</span></div><div>阅读时间<span>2 min</span></div></div>
+
+<p>这些约束是有意保持的。它们定义了 Garden 是什么、不是什么。</p>
+
+<h2>Garden is not</h2>
+<ul class="check-list">
+  <li>桌面 GUI 应用</li>
+  <li>通用匿名漏洞扫瞄器</li>
+  <li>公网扫描工具</li>
+  <li>破坏性测试平台 / exploit framework</li>
+  <li>Brute-force / fuzzing 引擎</li>
+  <li>Burp / ZAP 的替代品</li>
+  <li>单纯的 traffic recorder</li>
+  <li>只做 API 权限测试的工具</li>
+</ul>
+
+<h2>为什么不直接用现有工具</h2>
+<p>因为现有工具都很强不等于这条工作流已经被解决了。Garden 的价值在于把这些能力串起来：</p>
+<ul class="check-list">
+  <li>Burp/ZAP 强在手工代理测试 → Garden 强在工作流编排和结构化 inventory</li>
+  <li>录流量 ≠ 结构化资产覆盖 + 可解释的 findings</li>
+  <li>扫瞄器套壳 ≠ 可追踪、可审计的工作流产物</li>
+  <li>API 权限测试 ≠ 页面面 + 浏览器态 + 证据 + 复测 + 报告</li>
+</ul>
+`}
 };
 
+/* ── app logic ── */
 function buildSidebar(){
-  const sb=document.getElementById('sidebar');
-  sb.innerHTML=docs.map((cat,ci)=>{
-    const isOpen=ci===0;
-    return `<div class="group"><div class="group-title ${isOpen?'open':''}" onclick="toggleGroup(this)">${cat.cat}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg></div><div class="group-items ${isOpen?'open':''}">${cat.items.map(i=>`<div class="group-link ${i.mono?'mono':''}" data-id="${i.id}" onclick="nav('${i.id}')">${i.title}</div>`).join('')}</div></div>`;
+  var sb=document.getElementById('sidebar');
+  sb.innerHTML=TREE.map(function(cat,ci){
+    var open=ci===0;
+    return '<div class="group">'+
+      '<div class="group-head'+(open?' open':'')+'" onclick="toggleCat(this)">'+
+        cat.cat+
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>'+
+      '</div>'+
+      '<div class="group-items'+(open?' open':'')+'">'+
+        cat.items.map(function(i){
+          return '<div class="link'+(i.mono?' mono':'')+'" data-id="'+i.id+'" onclick="nav(\''+i.id+'\')">'+i.title+'</div>';
+        }).join('')+
+      '</div>'+
+    '</div>';
   }).join('');
 }
 
-function toggleGroup(el){el.classList.toggle('open');el.nextElementSibling.classList.toggle('open')}
+function toggleCat(el){el.classList.toggle('open');el.nextElementSibling.classList.toggle('open')}
 
 function nav(id){
   document.getElementById('home').style.display='none';
-  const dp=document.getElementById('docpage');
-  dp.classList.add('active');dp.style.display='block';
+  var dp=document.getElementById('docs');
+  dp.classList.add('open');dp.style.display='flex';
 
-  document.querySelectorAll('.group-link').forEach(e=>e.classList.remove('active'));
-  const a=document.querySelector(`.group-link[data-id="${id}"]`);
+  document.querySelectorAll('.link').forEach(function(l){l.classList.remove('active')});
+  var a=document.querySelector('.link[data-id="'+id+'"]');
   if(a){
     a.classList.add('active');
-    const gi=a.closest('.group-items'),gt=gi.previousElementSibling;
+    var gi=a.closest('.group-items'),gt=gi.previousElementSibling;
     if(!gi.classList.contains('open')){gi.classList.add('open');gt.classList.add('open')}
   }
 
-  const d=C[id];
-  if(d){
-    const all=docs.flatMap(c=>c.items.map(i=>i.id)),idx=all.indexOf(id);
-    const prev=idx>0?all[idx-1]:null,next=idx<all.length-1?all[idx+1]:null;
+  var p=PAGES[id];
+  if(p){
+    var all=TREE.flatMap(function(c){return c.items.map(function(i){return i.id})});
+    var idx=all.indexOf(id);
+    var prev=idx>0?all[idx-1]:null,next=idx<all.length-1?all[idx+1]:null;
     document.getElementById('docContent').innerHTML=
-      `<div class="breadcrumb">${d.b}</div>${d.h}`+
-      `<div class="doc-pagination">`+
-      (prev?`<div class="page-link" onclick="nav('${prev}')"><div class="label">上一页</div><div class="title">${C[prev]?.b?.split(' > ')[1]||''}</div></div>`:'<div></div>')+
-      (next?`<div class="page-link next" onclick="nav('${next}')"><div class="label">下一页</div><div class="title">${C[next]?.b?.split(' > ')[1]||''}</div></div>`:'<div></div>')+
-      `</div>`;
+      '<div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">'+p.b+'</div>'+p.h+
+      '<div class="doc-pager">'+
+        (prev?'<div class="pg" onclick="nav(\''+prev+'\')"><div class="pg-label">&larr; Previous</div><div>'+PAGES[prev].b.split(' > ')[1]+'</div></div>':'<div></div>')+
+        (next?'<div class="pg next" onclick="nav(\''+next+'\')"><div class="pg-label">Next &rarr;</div><div>'+PAGES[next].b.split(' > ')[1]+'</div></div>':'<div></div>')+
+      '</div>';
     window.scrollTo(0,0);
   }
   history.replaceState(null,'','#docs/'+id);
-  closeMobileSidebar();
+  closeSidebar();
 }
 
-function showDocs(id){id=id||'intro';nav(id)}
+function showDocs(id){nav(id||'intro')}
 
-function showLanding(){
+function showHome(){
   document.getElementById('home').style.display='block';
-  const dp=document.getElementById('docpage');
-  dp.classList.remove('active');dp.style.display='none';
-  document.querySelectorAll('.group-link').forEach(e=>e.classList.remove('active'));
+  var dp=document.getElementById('docs');
+  dp.classList.remove('open');dp.style.display='none';
+  document.querySelectorAll('.link').forEach(function(l){l.classList.remove('active')});
   history.replaceState(null,'','#');
   window.scrollTo(0,0);
-  closeMobileSidebar();
+  closeSidebar();
 }
 
-function toggleMobileSidebar(){
+function toggleSidebar(){
   document.getElementById('sidebar').classList.toggle('mobile-open');
-  document.getElementById('mobileOverlay').classList.toggle('active');
 }
-function closeMobileSidebar(){
+function closeSidebar(){
   document.getElementById('sidebar').classList.remove('mobile-open');
-  document.getElementById('mobileOverlay').classList.remove('active');
 }
 
-document.addEventListener('DOMContentLoaded',()=>{
+document.addEventListener('DOMContentLoaded',function(){
   buildSidebar();
-  const h=location.hash;
+  var h=location.hash;
   if(h.startsWith('#docs/')){
-    const id=h.replace('#docs/','');
-    if(C[id])nav(id);
+    var id=h.replace('#docs/','');
+    if(PAGES[id])nav(id);
+  }
+
+  /* scroll-triggered fade-in */
+  var targets=document.querySelectorAll('.feat .item, .card, .extra');
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.style.opacity='1';
+        e.target.style.transform='translateY(0)';
+      }
+    });
+  },{threshold:.15});
+  targets.forEach(function(el){
+    el.style.opacity='0';
+    el.style.transform='translateY(16px)';
+    el.style.transition='opacity .5s ease,transform .5s ease';
+    obs.observe(el);
+  });
+
+  /* pipeline flow animation */
+  var bar=document.getElementById('pipeline-bar');
+  if(bar){
+    var spans=bar.querySelectorAll('span');
+    var step=0;
+    setInterval(function(){
+      spans.forEach(function(s,i){s.classList.toggle('highlight',i===step%spans.length)});
+      step++;
+    },800);
   }
 });
 
-document.getElementById('searchInput')?.addEventListener('input',function(e){
-  const q=e.target.value.toLowerCase();
+document.getElementById('searchInput').addEventListener('input',function(e){
+  var q=e.target.value.toLowerCase();
   if(document.getElementById('home').style.display!=='none')showDocs();
-  document.querySelectorAll('.group-link').forEach(i=>{
-    i.style.display=!q||i.textContent.toLowerCase().includes(q)?'':'none';
+  document.querySelectorAll('.link').forEach(function(i){
+    i.style.display=!q||i.textContent.toLowerCase().indexOf(q)>-1?'':'none';
   });
-  if(q)document.querySelectorAll('.group-items').forEach(e=>{
+  if(q)document.querySelectorAll('.group-items').forEach(function(e){
     e.classList.add('open');e.previousElementSibling.classList.add('open');
   });
 });
