@@ -2,6 +2,7 @@
 
 import typer
 
+from app.cli.baseline import app as baseline_app
 from app.cli.checks import app as checks_app
 from app.cli.credentials import app as credential_app
 from app.cli.evidence import app as evidence_app
@@ -61,6 +62,7 @@ app.add_typer(findings_app, name="findings")
 app.add_typer(evidence_app, name="evidence")
 app.add_typer(retest_app, name="retest")
 app.add_typer(report_app, name="report")
+app.add_typer(baseline_app, name="baseline")
 
 
 if __name__ == "__main__":

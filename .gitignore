@@ -16,4 +16,5 @@ build/
 htmlcov/
 data/
 exports/
+baselines/
 PLANS.md
