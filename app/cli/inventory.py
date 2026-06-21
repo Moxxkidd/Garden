@@ -97,15 +97,17 @@ def list_inventory() -> None:
                 f"p={inv.pages_count}/e={inv.endpoints_count}/"
                 f"pa={inv.parameters_count}/a={inv.annotations_count}"
             )
-            rows.append([
-                str(inv.id),
-                target_name,
-                profile_name,
-                str(inv.auth_session_id),
-                str(inv.scan_job_id),
-                styled_status(inv.status),
-                counts,
-            ])
+            rows.append(
+                [
+                    str(inv.id),
+                    target_name,
+                    profile_name,
+                    str(inv.auth_session_id),
+                    str(inv.scan_job_id),
+                    styled_status(inv.status),
+                    counts,
+                ]
+            )
         render_table(headers, rows, title="Inventory Runs")
 
 
@@ -232,8 +234,7 @@ def export_inventory(
                 else:
                     result = service.export_csv(session, inventory_run_id)
         console.print(
-            f"[green]Exported inventory run {inventory_run_id} to[/green]"
-            f" {result.output_path}"
+            f"[green]Exported inventory run {inventory_run_id} to[/green] {result.output_path}"
         )
     except GardenError as error:
         handle_cli_error(error)

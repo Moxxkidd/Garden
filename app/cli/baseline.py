@@ -237,9 +237,7 @@ def _render_persisting_table(changes: list[PersistingChange]) -> None:
     for change in changes:
         drift_parts: list[str] = []
         if change.status_changed:
-            drift_parts.append(
-                f"status {change.previous_status}→{change.record.get('status')}"
-            )
+            drift_parts.append(f"status {change.previous_status}→{change.record.get('status')}")
         if change.severity_changed:
             drift_parts.append(
                 f"severity {change.previous_severity}→{change.record.get('severity')}"
@@ -316,10 +314,7 @@ def save_baseline(name: str) -> None:
                 records = snapshot_findings(findings)
         document = build_snapshot_document(name, records)
         path.write_text(json.dumps(document, indent=2), encoding="utf-8")
-        console.print(
-            f"[green]Saved baseline[/green] '{name}' "
-            f"({len(records)} findings) to {path}"
-        )
+        console.print(f"[green]Saved baseline[/green] '{name}' ({len(records)} findings) to {path}")
     except GardenError as error:
         handle_cli_error(error)
 
@@ -397,9 +392,7 @@ def diff_baseline(
         )
 
         if output_format == "json":
-            console.print_json(
-                json.dumps(diff_to_dict(diff, baseline_label=baseline_label))
-            )
+            console.print_json(json.dumps(diff_to_dict(diff, baseline_label=baseline_label)))
         else:
             render_diff(diff, baseline_label=baseline_label)
 

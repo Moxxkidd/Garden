@@ -8,7 +8,6 @@ from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
-import app.cli.baseline as baseline_cli
 from app.cli.baseline import (
     build_snapshot_document,
     diff_findings,
