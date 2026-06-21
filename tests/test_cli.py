@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -270,7 +269,10 @@ refresh_request:
     session_show_result = runner.invoke(app, ["session", "show", "1"])
     assert session_show_result.exit_code == 0
     assert "Session #1" in session_show_result.stdout
-    assert "cookie_names" in session_show_result.stdout or "cookie" in session_show_result.stdout.lower()
+    assert (
+        "cookie_names" in session_show_result.stdout
+        or "cookie" in session_show_result.stdout.lower()
+    )
 
     validate_result = runner.invoke(app, ["login", "validate", "--session", "1"])
     assert validate_result.exit_code == 0

@@ -60,10 +60,7 @@ def list_targets() -> None:
         return
 
     headers = ["ID", "Name", "Type", "Status", "Owner"]
-    rows = [
-        [str(t.id), t.name, t.type, styled_status(t.status), t.owner]
-        for t in targets
-    ]
+    rows = [[str(t.id), t.name, t.type, styled_status(t.status), t.owner] for t in targets]
     render_table(headers, rows, title="Targets")
 
 

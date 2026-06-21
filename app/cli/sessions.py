@@ -40,13 +40,15 @@ def list_sessions() -> None:
         for auth_session in sessions:
             target_name = target_service.get(session, auth_session.target_id).name
             profile_name = credential_service.get(session, auth_session.credential_profile_id).name
-            rows.append([
-                str(auth_session.id),
-                target_name,
-                profile_name,
-                auth_session.session_type,
-                styled_status(auth_session.status),
-            ])
+            rows.append(
+                [
+                    str(auth_session.id),
+                    target_name,
+                    profile_name,
+                    auth_session.session_type,
+                    styled_status(auth_session.status),
+                ]
+            )
         render_table(headers, rows, title="Authenticated Sessions")
 
 

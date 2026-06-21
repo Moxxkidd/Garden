@@ -62,10 +62,7 @@ def list_credentials() -> None:
         return
 
     headers = ["ID", "Target", "Name", "Auth Type", "Username"]
-    rows = [
-        [str(c.id), str(c.target_id), c.name, c.auth_type, c.username]
-        for c in credentials
-    ]
+    rows = [[str(c.id), str(c.target_id), c.name, c.auth_type, c.username] for c in credentials]
     render_table(headers, rows, title="Credential Profiles")
 
 
