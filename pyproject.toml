@@ -35,6 +35,7 @@ dev = [
 ]
 
 [project.scripts]
+garden = "app.cli.main:app"
 gardenctl = "app.cli.main:app"
 
 [tool.hatch.build.targets.wheel]

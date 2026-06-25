@@ -13,7 +13,7 @@ class CredentialProfileCreate(BaseModel):
     auth_type: AuthType
     username: str = Field(min_length=1, max_length=255)
     secret_ref: str = Field(min_length=1, max_length=255)
-    login_config_path: str = Field(min_length=1, max_length=500)
+    login_config_path: str = Field(min_length=1, max_length=4000)
 
     @field_validator("name", "role", "username", "secret_ref", "login_config_path")
     @classmethod

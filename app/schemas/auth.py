@@ -45,14 +45,15 @@ class PlaywrightLoginConfig(BaseModel):
     retry_attempts: int = Field(default=1, ge=1, le=2)
     login_url: str = Field(min_length=1)
     validate_url: str = Field(min_length=1)
-    username_selector: str = Field(min_length=1)
-    password_selector: str = Field(min_length=1)
-    submit_selector: str = Field(min_length=1)
+    username_selector: str = Field(default="auto", min_length=1)
+    password_selector: str = Field(default="auto", min_length=1)
+    submit_selector: str = Field(default="auto", min_length=1)
     success_selector: str | None = None
     success_text: str | None = None
     success_url_contains: str | None = None
     error_selector: str | None = None
     refresh_via_relogin: bool = False
+    auto_detect_selectors: bool = False
 
     @field_validator(
         "login_url", "validate_url", "username_selector", "password_selector", "submit_selector"

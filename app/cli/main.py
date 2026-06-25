@@ -12,6 +12,7 @@ from app.cli.jobs import app as job_app
 from app.cli.login import app as login_app
 from app.cli.report import app as report_app
 from app.cli.retest import app as retest_app
+from app.cli.scan import scan as scan_command
 from app.cli.sessions import app as session_app
 from app.cli.targets import app as target_app
 from app.cli.utils import console, render_json
@@ -51,6 +52,7 @@ def healthcheck() -> None:
     render_json(response.model_dump(), title="Health Check")
 
 
+app.command("scan")(scan_command)
 app.add_typer(target_app, name="target")
 app.add_typer(credential_app, name="cred")
 app.add_typer(job_app, name="job")
