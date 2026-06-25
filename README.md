@@ -61,6 +61,38 @@ Garden 的主命令是：
 gardenctl
 ```
 
+一键终端工作流（不需要配置文件）：
+
+```bash
+gardenctl scan --url http://127.0.0.1:8888/ --username test@123.com
+```
+
+如果没有传 `--password`，命令会在终端里隐藏输入密码。它会自动完成：
+
+`login -> authenticated inventory -> checks -> findings -> markdown report`
+
+常见登录页会自动识别用户名、密码和提交按钮；特殊 SPA 页面可以用 selector 和成功条件兜底。下面是 crAPI 本地靶场的完整实测命令：
+
+```bash
+gardenctl scan \
+  --url http://127.0.0.1:8888/ \
+  --username 'test@123.com' \
+  --password 'Test12345678!' \
+  --username-selector '#basic_email' \
+  --password-selector '#basic_password' \
+  --submit-selector 'button:has-text("Login") >> nth=1' \
+  --success-text 'Dashboard' \
+  --max-pages 10 \
+  --max-depth 1 \
+  --max-requests 50
+```
+
+默认仍保留安全 guardrail：只允许本地/demo 目标。授权环境下扫描非本地目标时，需要显式设置：
+
+```bash
+GARDEN_ALLOW_NON_LOCAL_TARGETS=true gardenctl scan --url https://example.test/login --username user
+```
+
 最常用的全局命令：**见[garden-ctl.com](https://garden-ctl.com/)**
 
 
@@ -185,4 +217,3 @@ Garden 的价值就在于：它不是单点能力，而是把这些能力串起�
 
 - 真实企业系统的登录后面不只有 API
 - 还有页面、管理面、配置页、导出页、import/upload 入口、浏览器态 evidence
-

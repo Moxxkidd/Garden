@@ -63,7 +63,12 @@ class InventoryBuildService:
     ) -> InventoryBuildSummary:
         login_result = self.auth_session_service.login_test(session, target_name, profile_name)
         if not login_result.success or login_result.created_session_id is None:
-            raise ConflictError(login_result.message)
+            detail = (
+                f"{login_result.message} Last error: {login_result.last_error}"
+                if login_result.last_error
+                else login_result.message
+            )
+            raise ConflictError(detail)
         return self.build_from_session(session, login_result.created_session_id, controls)
 
     def build_from_session(

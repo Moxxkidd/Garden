@@ -312,7 +312,7 @@ pre{
     <div class="item">
       <div class="label">End-to-end</div>
       <h3>完整工作流闭环</h3>
-      <p>target → credential → login → session → inventory → checks → findings → evidence → retest → export，11 个 CLI 子命令组全链路贯通。</p>
+      <p>从一条 <code>gardenctl scan</code> 到完整分步流程都能覆盖：target → credential → login → session → inventory → checks → findings → evidence → retest → export，12 个 CLI 子命令组全链路贯通。</p>
     </div>
     <div class="item">
       <div class="label">Safe by default</div>
@@ -375,14 +375,14 @@ $ pip install -e '.[dev]'
 $ playwright install chromium
 $ cp .env.example .env
 
-$ gardenctl target add --name demo --base-url http://127.0.0.1:8080 --type web --owner appsec
-$ gardenctl cred add --target-id 1 --name admin --role admin \
-    --auth-type password --username admin@local --secret-ref env://PASS --login-config-path login.yaml
-$ gardenctl login test --target demo --profile admin
-$ gardenctl inventory build --target demo --profile admin
-$ gardenctl checks run --inventory 1
-$ gardenctl findings list
-$ gardenctl findings export --format md</pre>
+$ gardenctl scan \
+    --url http://127.0.0.1:8888/ \
+    --username 'test@123.com' \
+    --password 'Test12345678!' \
+    --username-selector '#basic_email' \
+    --password-selector '#basic_password' \
+    --submit-selector 'button:has-text("Login") >> nth=1' \
+    --success-text 'Dashboard'</pre>
 </div>
 
 <footer class="home-footer">
@@ -432,6 +432,7 @@ const TREE=[
     {id:'report',title:'报告生成'}
   ]},
   {cat:'CLI 参考',items:[
+    {id:'cli-scan',title:'gardenctl scan',mono:true},
     {id:'cli-target',title:'gardenctl target',mono:true},
     {id:'cli-cred',title:'gardenctl cred',mono:true},
     {id:'cli-login',title:'gardenctl login',mono:true},
@@ -459,6 +460,8 @@ intro:{b:'快速开始 > 简介',h:`
 
 <p>Garden is a <strong>CLI-first</strong> security workflow tool for authorized post-login application surface verification. It is not a traditional "scanner" — it is an internal security workflow subsystem for enterprise AppSec teams.</p>
 
+<p>For terminal-only use, <code>gardenctl scan</code> accepts a URL, username, and password, then drives login, authenticated inventory, checks, findings, evidence, and a Markdown report without requiring a YAML login config.</p>
+
 <h2>核心工作流</h2>
 <pre>target &rarr; credential profile &rarr; login &rarr; authenticated session
       &rarr; inventory &rarr; checks &rarr; findings &rarr; evidence
@@ -467,7 +470,10 @@ intro:{b:'快速开始 > 简介',h:`
 <p>Garden 产出的不是跑过了什么命令，而是结构化工作流产物：target 清单、credential profile 清单、authenticated session 记录、审计事件、scan jobs、结构化 inventory、可解释的 findings、关联的脱敏 evidence、retest 记录，以及 Markdown / JSON / CSV 导出。</p>
 
 <h2>推荐使用顺序</h2>
-<pre>$ gardenctl healthcheck
+<pre>$ gardenctl scan --url http://127.0.0.1:8888/ --username test@123.com
+
+# or run the explicit workflow:
+$ gardenctl healthcheck
 $ gardenctl target add          # or target import
 $ gardenctl cred add
 $ gardenctl login test
@@ -514,35 +520,50 @@ quickstart:{b:'快速开始 > Demo 演练',h:`
 
 <p>5～10 分钟走完完整 Garden 工作流。使用内置 demo target 演示。</p>
 
-<h2>1. 启动服务</h2>
+<h2>1. 一条命令扫描本地 crAPI</h2>
+<pre>$ gardenctl scan \
+    --url http://127.0.0.1:8888/ \
+    --username 'test@123.com' \
+    --password 'Test12345678!' \
+    --username-selector '#basic_email' \
+    --password-selector '#basic_password' \
+    --submit-selector 'button:has-text("Login") >> nth=1' \
+    --success-text 'Dashboard' \
+    --max-pages 10 \
+    --max-depth 1 \
+    --max-requests 50</pre>
+
+<p>该命令会自动完成登录、authenticated inventory、checks、findings、evidence capture，并输出 <code>exports/reports/job-&lt;id&gt;.md</code> 报告路径。</p>
+
+<h2>2. 或启动内置 demo 服务</h2>
 <pre>$ make demo</pre>
 
-<h2>2. 添加 Target</h2>
+<h2>3. 添加 Target</h2>
 <pre>$ gardenctl target import --file examples/targets/local-demo-targets.yaml --on-duplicate skip
 # or manually:
 $ gardenctl target add --name garden-demo-web --base-url http://127.0.0.1:8000 --type web --owner appsec</pre>
 
-<h2>3. 添加凭证</h2>
+<h2>4. 添加凭证</h2>
 <pre>$ gardenctl cred add --target-id 1 --name garden-demo-admin --role admin \
     --auth-type password --username admin@example.local \
     --secret-ref env://GARDEN_DEMO_ADMIN_PASSWORD \
     --login-config-path examples/login/demo-http-admin.yaml</pre>
 
-<h2>4. 登录 → Inventory → Checks</h2>
+<h2>5. 登录 → Inventory → Checks</h2>
 <pre>$ gardenctl login test --target garden-demo-web --profile garden-demo-admin
 $ gardenctl inventory build --target garden-demo-web --profile garden-demo-admin
 $ gardenctl inventory show 1
 $ gardenctl checks run --inventory 1
 $ gardenctl findings list</pre>
 
-<h2>5. 审阅与复测</h2>
+<h2>6. 审阅与复测</h2>
 <pre>$ gardenctl evidence list
 $ gardenctl findings update-status 1 --status fixed
 $ gardenctl retest run --finding 1
 $ gardenctl findings export --format md
 $ gardenctl report generate --job 2 --format md</pre>
 
-<h2>6. Web UI</h2>
+<h2>7. Web UI</h2>
 <ul class="check-list">
   <li>http://127.0.0.1:8000/ — Dashboard</li>
   <li>http://127.0.0.1:8000/targets — Targets</li>
@@ -936,6 +957,24 @@ report:{b:'证据与报告 > 报告生成',h:`
 <pre>$ gardenctl report generate --job 2 --format md</pre>
 
 <p>Reports are written to <code>exports/reports/job-&lt;id&gt;.md</code>.</p>
+`},
+'cli-scan':{b:'CLI 参考 > gardenctl scan',h:`
+<h1>gardenctl scan</h1>
+<div class="meta-row"><div>字数<span>160</span></div><div>阅读时间<span>1 min</span></div></div>
+<pre>gardenctl scan --url URL --username USER [--password PASSWORD]
+               [--username-selector CSS] [--password-selector CSS]
+               [--submit-selector CSS] [--success-text TEXT]
+               [--max-pages N] [--max-depth N] [--max-requests N]</pre>
+<p><code>scan</code> 是终端一键工作流：输入 URL、账号和密码后，自动创建 target / credential profile，完成登录、inventory、checks、findings、evidence 和 Markdown report。</p>
+<pre>gardenctl scan \\
+  --url http://127.0.0.1:8888/ \\
+  --username 'test@123.com' \\
+  --password 'Test12345678!' \\
+  --username-selector '#basic_email' \\
+  --password-selector '#basic_password' \\
+  --submit-selector 'button:has-text("Login") >> nth=1' \\
+  --success-text 'Dashboard'</pre>
+<div class="tip">密码可以通过隐藏交互输入或 <code>GARDEN_QUICKSCAN_PASSWORD</code> 环境变量传入；非本地授权目标仍需显式设置 <code>GARDEN_ALLOW_NON_LOCAL_TARGETS=true</code>。</div>
 `},
 'cli-target':{b:'CLI 参考 > gardenctl target',h:`
 <h1>gardenctl target</h1>
