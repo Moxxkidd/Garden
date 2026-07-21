@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from app.models.scan_run import ScanRun
 
 class ScanReportService:
     """Render persisted domain records; CLI text is never an input."""
+
+    _control_character_pattern = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 
     def __init__(self, output_root: Path | None = None) -> None:
         self.output_root = output_root or (Path.cwd() / "exports" / "scan-reports")
@@ -180,7 +183,10 @@ class ScanReportService:
         return lines
 
     def _cell(self, value: str) -> str:
-        return value.replace("|", "\\|").replace("\n", " ")
+        return self._clean(value).replace("|", "\\|").replace("\n", " ")
 
     def _inline(self, value: str) -> str:
-        return " ".join(value.replace("|", "\\|").split())
+        return " ".join(self._clean(value).replace("|", "\\|").split())
+
+    def _clean(self, value: str) -> str:
+        return self._control_character_pattern.sub(" ", value)

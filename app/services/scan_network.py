@@ -244,7 +244,8 @@ class HttpScanGateway:
                 redirects.append(current)
                 continue
             content_type = response.headers.get("content-type")
-            text = self._decode(body, response.encoding)
+            body_is_text = self._is_text_body(content_type, body)
+            text = self._decode(body, response.encoding) if body_is_text else ""
             title, links = self._parse_html(current, text, content_type)
             return FetchResult(
                 requested_url=url,
@@ -253,6 +254,8 @@ class HttpScanGateway:
                 headers={key.lower(): value for key, value in response.headers.items()},
                 content_type=content_type,
                 body_text=text,
+                body_size_bytes=len(body),
+                body_is_text=body_is_text,
                 title=title,
                 discovered_urls=links,
                 redirects=redirects,
@@ -312,6 +315,15 @@ class HttpScanGateway:
 
     def _decode(self, body: bytes, encoding: str | None) -> str:
         return body.decode(encoding or "utf-8", errors="replace")
+
+    def _is_text_body(self, content_type: str | None, body: bytes) -> bool:
+        media_type = (content_type or "").split(";", 1)[0].strip().lower()
+        if media_type:
+            return media_type.startswith("text/") or any(
+                marker in media_type
+                for marker in ("json", "xml", "javascript", "x-www-form-urlencoded")
+            )
+        return b"\x00" not in body
 
     def _parse_html(
         self, base_url: str, text: str, content_type: str | None

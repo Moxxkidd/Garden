@@ -316,6 +316,8 @@ class ScanPipeline:
         now = datetime.now(timezone.utc)
         attributes = {
             "content_type": result.content_type,
+            "body_size_bytes": result.body_size_bytes,
+            "body_is_text": result.body_is_text,
             "elapsed_ms": result.elapsed_ms,
             "attempts": result.attempts,
             "depth": depth,
@@ -336,7 +338,14 @@ class ScanPipeline:
             session.add(asset)
             session.flush()
         headers = self.redaction_service.redact_mapping(result.headers)
-        preview = self.redaction_service.redact_text(result.body_text, limit=1200)
+        if result.body_is_text:
+            preview = self.redaction_service.redact_text(result.body_text, limit=1200)
+        else:
+            preview = (
+                "[non-text response omitted; "
+                f"content-type={result.content_type or 'unknown'}; "
+                f"size={result.body_size_bytes} bytes]"
+            )
         session.add(
             ScanEvidence(
                 scan_run_id=run.id,

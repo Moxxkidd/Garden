@@ -153,6 +153,31 @@ def test_complete_pipeline_persists_structured_data_and_report(tmp_path) -> None
     assert "E" in report
 
 
+def test_binary_response_is_described_without_polluting_markdown(tmp_path) -> None:
+    binary_body = b"\x00\x01\x02binary\x7f\x80data"
+
+    def handler(request):
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<a href="/favicon.ico">Icon</a>',
+            )
+        return httpx.Response(
+            200,
+            headers={"content-type": "image/x-icon"},
+            content=binary_body,
+        )
+
+    service = _service(tmp_path, handler)
+    scan = service.start_scan("http://127.0.0.1/", ScanOptions(max_pages=2, retry_attempts=0))
+    report = service.read_report(scan.id)
+    assert "non-text response omitted" in report
+    assert "content-type=image/x-icon" in report
+    assert f"size={len(binary_body)} bytes" in report
+    assert "\x00" not in report
+
+
 def test_partial_page_failure_completes_with_warning_and_diagnostic_report(tmp_path) -> None:
     def handler(request):
         if request.url.path == "/":

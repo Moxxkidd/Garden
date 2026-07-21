@@ -93,6 +93,8 @@ class FetchResult(BaseModel):
     headers: dict[str, str]
     content_type: str | None = None
     body_text: str = ""
+    body_size_bytes: int = 0
+    body_is_text: bool = True
     title: str | None = None
     discovered_urls: list[str] = Field(default_factory=list)
     redirects: list[str] = Field(default_factory=list)
