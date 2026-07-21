@@ -17,6 +17,7 @@ class RedactionService:
         r"(?i)([\"']?)(session(?:id)?|password|secret|token|api[_-]?key|key)([\"']?\s*[:=]\s*)(['\"]?)([^\"'\s,;}{]+)"
     )
     _token_like_pattern = re.compile(r"\b[A-Za-z0-9_\-]{24,}\b")
+    _control_character_pattern = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
     _sensitive_key_names = {
         "cookie",
         "set-cookie",
@@ -37,7 +38,7 @@ class RedactionService:
     def redact_text(self, value: str | None, *, limit: int = 400) -> str:
         if not value:
             return ""
-        redacted = value
+        redacted = self._control_character_pattern.sub(" ", value)
         redacted = self._email_pattern.sub(self._mask_email, redacted)
         redacted = self._bearer_pattern.sub(r"\1***", redacted)
         redacted = self._cookie_pattern.sub(lambda match: f"{match.group(1)}: ***", redacted)

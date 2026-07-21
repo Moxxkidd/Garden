@@ -18,7 +18,8 @@ def test_index_page_loads(app) -> None:
     assert response.status_code == 200
     assert "Garden" in response.text
     assert "Dashboard" in response.text
-    assert "CLI-First Authenticated Verification" in response.text
+    assert "One URL to a structured report" in response.text
+    assert "Start scan" in response.text
 
 
 def test_management_pages_render(app, seeded_findings) -> None:

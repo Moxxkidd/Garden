@@ -46,6 +46,18 @@ Remote targets require:
 - an explicit configuration change such as `GARDEN_ALLOW_NON_LOCAL_TARGETS=true`
 - a consciously authorized environment
 
+Private RFC1918/ULA targets require the separate
+`GARDEN_ALLOW_PRIVATE_TARGETS=true` opt-in. URL scans resolve and classify DNS
+answers before connecting and repeat admission checks for redirects. Embedded
+URL credentials, link-local/cloud-metadata destinations, multicast, unspecified
+addresses, mixed allowed/denied DNS answers, unsupported schemes, and unbounded
+redirects are rejected. Environment proxy variables are ignored unless a scan
+proxy is explicitly configured.
+
+Passive collection is bounded by per-request and overall timeouts, response-size,
+page/depth, redirect, retry, and concurrent-task limits. Only GET requests are
+issued by the automatic URL pipeline.
+
 ## Non-Destructive Behavior
 
 Garden's checks are marker-based and review-oriented. They are not meant to alter state or exploit vulnerabilities.

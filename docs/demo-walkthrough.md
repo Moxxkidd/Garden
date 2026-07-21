@@ -1,5 +1,10 @@
 # Demo Walkthrough
 
+> This is the optional advanced authenticated-workflow walkthrough. The primary
+> product flow now starts from the Web home page, `POST /api/scans`, or
+> `gardenctl scan --url URL` and requires no commands below. See
+> `docs/legacy-cli-migration.md` for the boundary between the two flows.
+
 ## Goal
 
 Demonstrate a complete safe local Garden workflow in 5 to 10 minutes:

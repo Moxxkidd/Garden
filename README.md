@@ -1,8 +1,8 @@
 # Garden
 
-> **[garden-ctl.com](https://garden-ctl.com/)**  —  登录态安全验证工作流平台
+> **[garden-ctl.com](https://garden-ctl.com/)**  —  一次提交 URL，自动生成资产与证据报告
 
-Garden 是一个 **Python、FastAPI、Typer、SQLAlchemy、Jinja2、HTMX、Playwright ** 的安全工作流工具，面向**授权场景下的登录后应用面验证**。
+Garden 是一个 **Python、FastAPI、Typer、SQLAlchemy、Jinja2、HTMX、Playwright** 的安全资产工作流工具。普通用户只提交一个已授权的入口 URL，系统自动完成网络预检、发现、采集、标准化、被动分析和结构化报告生成。
 
 
 
@@ -34,6 +34,12 @@ Garden 是一个 **Python、FastAPI、Typer、SQLAlchemy、Jinja2、HTMX、Playw
 
 
 
+面向普通用户的核心链路：
+
+`URL -> validate/preflight -> discover -> collect -> normalize -> analyze -> report`
+
+原有登录后精细工作流继续保留，供需要凭据和人工复测的高级场景使用：
+
 `target -> credential profile -> login -> authenticated session -> inventory -> checks -> findings -> evidence -> triage -> retest -> export`
 
 具体链路收获：
@@ -61,37 +67,35 @@ Garden 的主命令是：
 gardenctl
 ```
 
-一键终端工作流（不需要配置文件）：
+自动终端工作流（只需一个 URL，不需要配置文件、凭据或后续命令）：
 
 ```bash
-gardenctl scan --url http://127.0.0.1:8888/ --username test@123.com
+gardenctl scan --url http://127.0.0.1:8888/
 ```
 
-如果没有传 `--password`，命令会在终端里隐藏输入密码。它会自动完成：
+它调用与 Web、HTTP API 完全相同的核心服务并自动完成：
 
-`login -> authenticated inventory -> checks -> findings -> markdown report`
+`网络预检 -> 同源发现与采集 -> 标准化资产/证据 -> 被动分析 -> Markdown 报告`
 
-常见登录页会自动识别用户名、密码和提交按钮；特殊 SPA 页面可以用 selector 和成功条件兜底。下面是 crAPI 本地靶场的完整实测命令：
+可选边界参数：
 
 ```bash
 gardenctl scan \
   --url http://127.0.0.1:8888/ \
-  --username 'test@123.com' \
-  --password 'Test12345678!' \
-  --username-selector '#basic_email' \
-  --password-selector '#basic_password' \
-  --submit-selector 'button:has-text("Login") >> nth=1' \
-  --success-text 'Dashboard' \
   --max-pages 10 \
   --max-depth 1 \
-  --max-requests 50
+  --request-timeout 5 \
+  --overall-timeout 90 \
+  --retries 1
 ```
 
 默认仍保留安全 guardrail：只允许本地/demo 目标。授权环境下扫描非本地目标时，需要显式设置：
 
 ```bash
-GARDEN_ALLOW_NON_LOCAL_TARGETS=true gardenctl scan --url https://example.test/login --username user
+GARDEN_ALLOW_NON_LOCAL_TARGETS=true gardenctl scan --url https://example.test/
 ```
+
+RFC1918/ULA 内网地址需要额外、明确设置 `GARDEN_ALLOW_PRIVATE_TARGETS=true`。链路本地地址、组播、未指定地址和云元数据常用的 link-local 地址始终拒绝。
 
 最常用的全局命令：**见[garden-ctl.com](https://garden-ctl.com/)**
 
@@ -103,6 +107,9 @@ GARDEN_ALLOW_NON_LOCAL_TARGETS=true gardenctl scan --url https://example.test/lo
 
 Garden 产出结构化工作流产物：
 
+- URL scan parent run、阶段、真实进度、重试与失败诊断
+- 统一的 URL scan 资产、脱敏证据、被动 findings 与覆盖缺口
+- 从结构化数据生成的完整 Markdown 资产报告
 - target 清单
 - credential profile 清单
 - authenticated session 记录
@@ -116,7 +123,7 @@ Garden 产出结构化工作流产物：
 - findings Markdown / JSON / CSV 导出
 - job Markdown report
 
-也就是说，Garden 的价值不只是“做了扫描”，而是把登录后验证工作真正串成了一条可 review、可复测、可导出的流程。
+也就是说，普通用户不需要理解或手动传递内部 ID；高级用户仍可继续使用登录后验证、review、复测和导出流程。
 
 ## DVWA 实战展示
 
@@ -177,8 +184,8 @@ Garden 的定位是补位，而不是全替代。
 
 Garden 刻意保持这些约束：
 
-- CLI-first
-- minimal server-rendered Web UI
+- application-service-first；CLI、Web、HTTP API 都是薄适配层
+- server-rendered Web URL 提交、真实进度、报告阅读与下载
 - 默认只允许本地 / demo 目标
 - 非本地目标必须显式放开
 - 不做 destructive testing

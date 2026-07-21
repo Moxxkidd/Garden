@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Garden — 登录态安全验证工作流</title>
+<title>Garden — 一个 URL 到资产报告</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231e5f48'/%3E%3Cpath d='M18 34c0-11 8-19 22-20-1 13-8 22-20 22m0 0c7 1 13 5 16 12M20 36v14' fill='none' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E"/>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -293,8 +294,8 @@ pre{
   <div class="orb orb-2"></div>
   <div class="orb orb-3"></div>
 <section class="hero">
-  <h1>Garden: 登录后的<em>安全验证</em>工作流</h1>
-  <p class="lead">CLI-first 的内部工具，把授权场景下的登录、盘点、检查、取证、复测串成一条可重复、可审计的管线。</p>
+  <h1>Garden: 一个 URL 到<em>资产报告</em></h1>
+  <p class="lead">提交一次已授权入口，自动完成预检、发现、采集、分析和证据报告；Web、API、CLI 共用同一核心服务。</p>
   <div class="btns">
     <button class="btn pri" onclick="showDocs('intro')">Read the docs</button>
     <a class="btn" href="https://github.com/Moxxkidd/Garden" target="_blank">View on GitHub</a>
@@ -305,14 +306,14 @@ pre{
 <section class="feat">
   <div class="grid">
     <div class="item">
-      <div class="label">Login-driven</div>
-      <h3>登录态驱动</h3>
-      <p>HTTP / Playwright 适配器执行真实登录，创建可复用的 AuthSession，覆盖匿名扫瞄器无法进入的 OA、ERP、管理后台。</p>
+      <div class="label">One URL</div>
+      <h3>一次提交</h3>
+      <p>普通用户只需输入 HTTP(S) URL；不需要创建 target、复制任务 ID 或手动运行中间 CLI。</p>
     </div>
     <div class="item">
       <div class="label">End-to-end</div>
       <h3>完整工作流闭环</h3>
-      <p>从一条 <code>gardenctl scan</code> 到完整分步流程都能覆盖：target → credential → login → session → inventory → checks → findings → evidence → retest → export，12 个 CLI 子命令组全链路贯通。</p>
+      <p><code>validate → discover → collect → normalize → analyze → report</code> 六阶段持久化执行，进度、失败、覆盖缺口和报告位置均可查询。</p>
     </div>
     <div class="item">
       <div class="label">Safe by default</div>
@@ -325,18 +326,14 @@ pre{
 <div class="extra" style="margin-bottom:48px">
   <div class="tag">Pipeline</div>
   <h2>工作流</h2>
-  <p class="sub">10 个阶段，每个阶段产出结构化数据，不是纯文本日志。</p>
+  <p class="sub">6 个自动阶段，每个阶段产出结构化数据，不是纯文本日志。</p>
   <div class="pipeline" id="pipeline-bar">
-    <span>target</span> <b>&rarr;</b>
-    <span>credential</span> <b>&rarr;</b>
-    <span>login</span> <b>&rarr;</b>
-    <span>session</span> <b>&rarr;</b>
-    <span>inventory</span> <b>&rarr;</b>
-    <span>checks</span> <b>&rarr;</b>
-    <span>findings</span> <b>&rarr;</b>
-    <span>evidence</span> <b>&rarr;</b>
-    <span>retest</span> <b>&rarr;</b>
-    <span>export</span>
+    <span>validate</span> <b>&rarr;</b>
+    <span>discover</span> <b>&rarr;</b>
+    <span>collect</span> <b>&rarr;</b>
+    <span>normalize</span> <b>&rarr;</b>
+    <span>analyze</span> <b>&rarr;</b>
+    <span>report</span>
   </div>
 </div>
 
@@ -362,7 +359,7 @@ pre{
     <li>evidence 和导出默认脱敏</li>
     <li>inventory 结构化，不退化流量堆</li>
     <li>所有关键操作记审计日志</li>
-    <li>CLI-first，Web UI 最小化</li>
+    <li>application-service-first，CLI / Web / API 是薄适配层</li>
   </ul>
 </div>
 
@@ -372,17 +369,13 @@ pre{
   <pre>$ git clone https://github.com/Moxxkidd/Garden.git
 $ cd garden
 $ pip install -e '.[dev]'
-$ playwright install chromium
 $ cp .env.example .env
 
-$ gardenctl scan \
-    --url http://127.0.0.1:8888/ \
-    --username 'test@123.com' \
-    --password 'Test12345678!' \
-    --username-selector '#basic_email' \
-    --password-selector '#basic_password' \
-    --submit-selector 'button:has-text("Login") >> nth=1' \
-    --success-text 'Dashboard'</pre>
+$ make demo
+# open http://127.0.0.1:8000 and submit one URL
+
+# or use the same core service from CLI:
+$ gardenctl scan --url http://127.0.0.1:8888/</pre>
 </div>
 
 <footer class="home-footer">
@@ -458,19 +451,18 @@ intro:{b:'快速开始 > 简介',h:`
 <h1>简介</h1>
 <div class="meta-row"><div>字数<span>450</span></div><div>阅读时间<span>3 min</span></div></div>
 
-<p>Garden is a <strong>CLI-first</strong> security workflow tool for authorized post-login application surface verification. It is not a traditional "scanner" — it is an internal security workflow subsystem for enterprise AppSec teams.</p>
+<p>Garden is an <strong>application-service-first</strong> asset workflow for authorized targets. A user submits one URL and receives persisted progress, structured evidence, findings, coverage, failures, and a readable report.</p>
 
-<p>For terminal-only use, <code>gardenctl scan</code> accepts a URL, username, and password, then drives login, authenticated inventory, checks, findings, evidence, and a Markdown report without requiring a YAML login config.</p>
+<p>Web, HTTP API, and <code>gardenctl scan</code> all call the same <code>ScanApplicationService.start_scan</code>; no adapter owns hidden orchestration.</p>
 
 <h2>核心工作流</h2>
-<pre>target &rarr; credential profile &rarr; login &rarr; authenticated session
-      &rarr; inventory &rarr; checks &rarr; findings &rarr; evidence
-      &rarr; triage &rarr; retest &rarr; export</pre>
+<pre>URL &rarr; validate/network preflight &rarr; discover &rarr; collect
+    &rarr; normalize &rarr; analyze &rarr; report</pre>
 
-<p>Garden 产出的不是跑过了什么命令，而是结构化工作流产物：target 清单、credential profile 清单、authenticated session 记录、审计事件、scan jobs、结构化 inventory、可解释的 findings、关联的脱敏 evidence、retest 记录，以及 Markdown / JSON / CSV 导出。</p>
+<p>核心 URL 流程持久化 ScanRun、六阶段状态、资产、脱敏证据、被动 findings、失败与覆盖缺口，并直接生成 Markdown 资产报告。原有 target、credential、session、inventory 和 retest 数据继续服务高级认证工作流。</p>
 
 <h2>推荐使用顺序</h2>
-<pre>$ gardenctl scan --url http://127.0.0.1:8888/ --username test@123.com
+<pre>$ gardenctl scan --url http://127.0.0.1:8888/
 
 # or run the explicit workflow:
 $ gardenctl healthcheck
@@ -485,7 +477,7 @@ $ gardenctl findings update-status
 $ gardenctl retest run
 $ gardenctl findings export      # or report generate</pre>
 
-<div class="tip">Garden 的核心定位不是找更多洞，而是把登录后业务系统的安全验证，做成一个可重复、可审计、可复测、可工程化落地的流程。</div>
+<div class="tip">普通用户只提交一次 URL；需要登录态和人工复测时，才进入保留的高级认证工作流。</div>
 `},
 install:{b:'快速开始 > 安装',h:`
 <h1>安装</h1>
@@ -520,20 +512,16 @@ quickstart:{b:'快速开始 > Demo 演练',h:`
 
 <p>5～10 分钟走完完整 Garden 工作流。使用内置 demo target 演示。</p>
 
-<h2>1. 一条命令扫描本地 crAPI</h2>
+<h2>1. 一条命令扫描已授权本地目标</h2>
 <pre>$ gardenctl scan \
     --url http://127.0.0.1:8888/ \
-    --username 'test@123.com' \
-    --password 'Test12345678!' \
-    --username-selector '#basic_email' \
-    --password-selector '#basic_password' \
-    --submit-selector 'button:has-text("Login") >> nth=1' \
-    --success-text 'Dashboard' \
     --max-pages 10 \
     --max-depth 1 \
-    --max-requests 50</pre>
+    --request-timeout 5 \
+    --overall-timeout 90 \
+    --retries 1</pre>
 
-<p>该命令会自动完成登录、authenticated inventory、checks、findings、evidence capture，并输出 <code>exports/reports/job-&lt;id&gt;.md</code> 报告路径。</p>
+<p>该命令会自动完成网络预检、同源发现与采集、结果标准化、结构化分析和 Markdown 报告生成，并输出 <code>exports/scan-reports/scan-&lt;id&gt;.md</code> 路径。</p>
 
 <h2>2. 或启动内置 demo 服务</h2>
 <pre>$ make demo</pre>
@@ -961,20 +949,14 @@ report:{b:'证据与报告 > 报告生成',h:`
 'cli-scan':{b:'CLI 参考 > gardenctl scan',h:`
 <h1>gardenctl scan</h1>
 <div class="meta-row"><div>字数<span>160</span></div><div>阅读时间<span>1 min</span></div></div>
-<pre>gardenctl scan --url URL --username USER [--password PASSWORD]
-               [--username-selector CSS] [--password-selector CSS]
-               [--submit-selector CSS] [--success-text TEXT]
-               [--max-pages N] [--max-depth N] [--max-requests N]</pre>
-<p><code>scan</code> 是终端一键工作流：输入 URL、账号和密码后，自动创建 target / credential profile，完成登录、inventory、checks、findings、evidence 和 Markdown report。</p>
+<pre>gardenctl scan --url URL [--max-pages N] [--max-depth N]
+               [--request-timeout SECONDS] [--overall-timeout SECONDS]
+               [--retries 0|1|2]</pre>
+<p><code>scan</code> 是核心 URL 流水线的终端适配器：只输入一个 URL，自动完成预检、发现、采集、标准化、分析和 Markdown 报告。</p>
 <pre>gardenctl scan \\
   --url http://127.0.0.1:8888/ \\
-  --username 'test@123.com' \\
-  --password 'Test12345678!' \\
-  --username-selector '#basic_email' \\
-  --password-selector '#basic_password' \\
-  --submit-selector 'button:has-text("Login") >> nth=1' \\
-  --success-text 'Dashboard'</pre>
-<div class="tip">密码可以通过隐藏交互输入或 <code>GARDEN_QUICKSCAN_PASSWORD</code> 环境变量传入；非本地授权目标仍需显式设置 <code>GARDEN_ALLOW_NON_LOCAL_TARGETS=true</code>。</div>
+  --max-pages 10 --max-depth 1 --retries 1</pre>
+<div class="tip">非本地公网目标需显式设置 <code>GARDEN_ALLOW_NON_LOCAL_TARGETS=true</code>；RFC1918/ULA 内网还需 <code>GARDEN_ALLOW_PRIVATE_TARGETS=true</code>。</div>
 `},
 'cli-target':{b:'CLI 参考 > gardenctl target',h:`
 <h1>gardenctl target</h1>
@@ -1054,33 +1036,32 @@ architecture:{b:'进阶 > 架构设计',h:`
 <h1>架构设计</h1>
 <div class="meta-row"><div>字数<span>350</span></div><div>阅读时间<span>3 min</span></div></div>
 
-<h2>Layered design</h2>
-<pre>CLI (Typer)  &mdash;&rarr;  Services  &mdash;&rarr;  Models / DB
-Web (FastAPI) &mdash;&rarr;  Services  &mdash;&rarr;  Models / DB
-                   &darr;
-             Adapters / Plugins
-             (HTTP Auth, Playwright Auth,
-              Playwright Inventory, Checks)</pre>
+<h2>Core execution model</h2>
+<pre>Web / HTTP API / CLI
+          &darr;
+ScanApplicationService.start_scan(url, options)
+          &darr;
+validate &rarr; discover &rarr; collect &rarr; normalize &rarr; analyze &rarr; report
+          &darr;
+ScanRun + assets + evidence + findings + failures</pre>
 
 <h2>端到端组件关系</h2>
 <ul class="check-list">
-  <li>TargetService 管理目标</li>
-  <li>CredentialProfileService 管理凭证档案</li>
-  <li>AuthSessionService 解析 login config + secret，调用选定的 auth adapter</li>
-  <li>InventoryBuildService 创建 ScanJob + InventoryRun，驱动采集管线</li>
-  <li>InventoryCollectionService 恢复浏览器状态，调用 Playwright 采集器</li>
-  <li>CheckRunService 执行注册的低风险 checks</li>
-  <li>FindingService upsert 去重 findings，跟踪生命周期状态</li>
-  <li>EvidenceService 采集脱敏的可审阅 evidence</li>
-  <li>RetestService 对符合条件的 findings 重跑验证</li>
-  <li>FindingExportService + ReportService 生成脱敏输出</li>
+  <li>ScanApplicationService 是 CLI、Web、API 无关的唯一用例入口</li>
+  <li>持久化 ScanRun 记录状态、进度、阶段、重试、错误和报告位置</li>
+  <li>TargetNetworkPolicy 在连接和每次重定向前执行 DNS / SSRF 校验</li>
+  <li>ScanPipeline 自动执行六阶段，并显式记录部分失败与覆盖上限</li>
+  <li>PassiveScanAnalyzer 只分析统一资产和证据结构</li>
+  <li>ScanReportService 从持久化结构直接生成报告，不解析 CLI 文本</li>
+  <li>原有认证 service 保留为高级工作流，不是 URL 扫描隐藏前置步骤</li>
 </ul>
 
 <h2>Data entities</h2>
-<pre>Target, CredentialProfile, ScanJob, AuthSession,
-InventoryRun, InventoryPage, InventoryEndpoint,
-InventoryParameter, InventoryAnnotation,
-Finding, FindingRetestRun, Evidence, AuditEvent</pre>
+<pre>ScanRun, ScanRunStage, ScanAsset, ScanEvidence,
+ScanFinding, ScanFailure
+
+Advanced: Target, CredentialProfile, ScanJob, AuthSession,
+InventoryRun, Finding, Evidence, FindingRetestRun</pre>
 `},
 guardrails:{b:'进阶 > 安全护栏',h:`
 <h1>安全护栏</h1>
@@ -1091,6 +1072,9 @@ guardrails:{b:'进阶 > 安全护栏',h:`
 <ul class="check-list">
   <li>默认仅允许本地 / demo 目标</li>
   <li>非本地目标需 GARDEN_ALLOW_NON_LOCAL_TARGETS=true</li>
+  <li>RFC1918 / ULA 内网目标需额外设置 GARDEN_ALLOW_PRIVATE_TARGETS=true</li>
+  <li>每个连接与重定向都执行 DNS / SSRF 策略检查</li>
+  <li>请求、整体任务、页面、深度、响应体和并发均有上限</li>
   <li>不做破坏性测试</li>
   <li>不做 exploit execution</li>
   <li>不做 brute-force / fuzzing</li>
@@ -1108,6 +1092,9 @@ outputs:{b:'进阶 > 结构化产出',h:`
 <p>Garden 产出的不是跑过了什么命令，而是结构化工作流产物：</p>
 
 <ul class="check-list">
+  <li>ScanRun 父任务、六阶段进度、错误与报告位置</li>
+  <li>统一的 ScanAsset / ScanEvidence / ScanFinding / ScanFailure</li>
+  <li>包含摘要、范围、资产、证据、风险、覆盖和失败的 Markdown 资产报告</li>
   <li>Target manifests</li>
   <li>Credential profile 清单</li>
   <li>Authenticated session 记录</li>
@@ -1123,7 +1110,7 @@ outputs:{b:'进阶 > 结构化产出',h:`
   <li>Job Markdown 报告</li>
 </ul>
 
-<div class="tip">Garden 的价值不是做了扫描，而是把登录后验证工作变成了可审阅、可复测、可导出的流程。</div>
+<div class="tip">普通用户无需理解内部 job ID；所有自动步骤和缺口都由同一个父任务串联并持久化。</div>
 `},
 constraints:{b:'进阶 > 设计约束',h:`
 <h1>设计约束</h1>

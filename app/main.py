@@ -11,6 +11,7 @@ from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.settings import get_settings
 from app.db.bootstrap import init_database
+from app.services.scan_application import ScanApplicationService
 
 
 @asynccontextmanager
@@ -20,8 +21,12 @@ async def lifespan(app: FastAPI):
     logger = get_logger(__name__)
     logger.info("Starting Garden application", extra={"environment": settings.environment})
     init_database(settings.database_url)
-    yield
-    logger.info("Shutting down Garden application")
+    app.state.scan_service = ScanApplicationService(settings=settings)
+    try:
+        yield
+    finally:
+        app.state.scan_service.shutdown()
+        logger.info("Shutting down Garden application")
 
 
 def create_app() -> FastAPI:

@@ -6,20 +6,18 @@
     <div class="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
       <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
         <p class="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">
-          CLI-First Authenticated Verification
+          One URL to a structured report
         </p>
-        <h1 class="mt-3 text-4xl font-semibold tracking-tight">{{ project_name }} Dashboard</h1>
+        <h1 class="mt-3 text-4xl font-semibold tracking-tight">Start an asset scan</h1>
         <p class="mt-4 max-w-3xl text-base leading-7 text-slate-600">
-          Garden is a safe-by-default internal security workflow for authorized post-login verification.
-          The CLI stays primary for repeatable execution, while this dashboard keeps recent workflow state,
-          findings, and retest outcomes easy to review during demos and triage.
+          Submit one authorized HTTP or HTTPS entry URL. Garden validates the network destination,
+          discovers and normalizes assets, analyzes passive evidence, and produces a readable report.
         </p>
-        <div class="mt-6 flex flex-wrap gap-3 text-sm">
-          <a href="/targets" class="rounded-full bg-slate-900 px-4 py-2 text-white">Targets</a>
-          <a href="/inventory" class="rounded-full border border-black/10 px-4 py-2">Inventory</a>
-          <a href="/findings" class="rounded-full border border-black/10 px-4 py-2">Findings</a>
-          <a href="/evidence" class="rounded-full border border-black/10 px-4 py-2">Evidence</a>
-        </div>
+        <form action="/scans" method="post" class="mt-6 grid gap-3 sm:grid-cols-[1fr_auto]">
+          <label class="sr-only" for="scan-url">Entry URL</label>
+          <input id="scan-url" name="url" type="url" required placeholder="http://127.0.0.1:8080/" class="rounded-2xl border border-black/15 bg-white px-4 py-3 outline-none focus:border-emerald-600" />
+          <button class="rounded-2xl bg-slate-900 px-6 py-3 font-medium text-white" type="submit">Start scan</button>
+        </form>
       </div>
       <aside class="rounded-3xl border border-black/10 bg-stone-50 p-6 shadow-sm">
         <h2 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Runtime</h2>
@@ -38,7 +36,7 @@
           </div>
           <div>
             <dt class="text-slate-500">UI Scope</dt>
-            <dd class="mt-1 font-medium">Browse, triage, and review only</dd>
+            <dd class="mt-1 font-medium">Start, track, read, and download</dd>
           </div>
         </dl>
       </aside>
