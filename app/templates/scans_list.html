@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
+
+{% block content %}
+  <section class="space-y-6">
+    <div class="flex items-end justify-between">
+      <div>
+        <p class="text-sm uppercase tracking-[0.18em] text-emerald-700">Automatic pipeline</p>
+        <h1 class="text-3xl font-semibold tracking-tight">URL Scans</h1>
+      </div>
+      <a href="/" class="rounded-full bg-slate-900 px-4 py-2 text-sm text-white">New scan</a>
+    </div>
+    <div class="overflow-hidden rounded-3xl border border-black/10 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-black/5 text-sm">
+        <thead class="bg-stone-50 text-left text-slate-500">
+          <tr><th class="px-5 py-3">ID</th><th class="px-5 py-3">URL</th><th class="px-5 py-3">Status</th><th class="px-5 py-3">Stage</th><th class="px-5 py-3">Progress</th></tr>
+        </thead>
+        <tbody class="divide-y divide-black/5">
+          {% for scan in scans %}
+            <tr class="hover:bg-stone-50">
+              <td class="px-5 py-4 font-medium"><a href="/scans/{{ scan.id }}">#{{ scan.id }}</a></td>
+              <td class="max-w-xl truncate px-5 py-4">{{ scan.normalized_url }}</td>
+              <td class="px-5 py-4">{{ status_badge(scan.status) }}</td>
+              <td class="px-5 py-4">{{ scan.current_stage }}</td>
+              <td class="px-5 py-4">{{ scan.progress }}%</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="px-5 py-8 text-center text-slate-500">No URL scans yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

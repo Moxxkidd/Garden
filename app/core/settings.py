@@ -29,6 +29,39 @@ class Settings(BaseSettings):
         default=False,
         alias="GARDEN_ALLOW_NON_LOCAL_TARGETS",
     )
+    allow_private_targets: bool = Field(
+        default=False,
+        alias="GARDEN_ALLOW_PRIVATE_TARGETS",
+    )
+    scan_proxy_url: str | None = Field(default=None, alias="GARDEN_SCAN_PROXY_URL")
+    scan_no_proxy: str = Field(
+        default="localhost,127.0.0.1,::1",
+        alias="GARDEN_SCAN_NO_PROXY",
+    )
+    scan_request_timeout_seconds: float = Field(
+        default=5.0,
+        gt=0,
+        le=60,
+        alias="GARDEN_SCAN_REQUEST_TIMEOUT_SECONDS",
+    )
+    scan_overall_timeout_seconds: float = Field(
+        default=90.0,
+        gt=0,
+        le=1800,
+        alias="GARDEN_SCAN_OVERALL_TIMEOUT_SECONDS",
+    )
+    scan_retry_attempts: int = Field(
+        default=1,
+        ge=0,
+        le=2,
+        alias="GARDEN_SCAN_RETRY_ATTEMPTS",
+    )
+    scan_max_concurrent_tasks: int = Field(
+        default=2,
+        ge=1,
+        le=8,
+        alias="GARDEN_SCAN_MAX_CONCURRENT_TASKS",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

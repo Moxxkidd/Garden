@@ -2,7 +2,7 @@
 
 ## 说明
 
-这份文档是 Garden 的部署与运行草稿，重点覆盖：
+这份文档覆盖从全新环境安装到“一次提交 URL，自动得到报告”的完整运行方式：
 
 - 本地开发部署
 - Docker 方式运行
@@ -93,6 +93,18 @@ curl -s http://127.0.0.1:8000/healthz
 
 - `http://127.0.0.1:8000/`
 
+首页输入一个已授权 URL 后即可查看六阶段真实进度，并在完成后直接阅读或下载报告。
+
+也可以只调用一次 HTTP 接口：
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/scans \
+  -H 'content-type: application/json' \
+  -d '{"url":"http://127.0.0.1:8080/"}'
+```
+
+响应中的 `id` 可用于 Web/API 查看进度；不需要执行 inventory、checks 或 report 命令。
+
 ## 三、CLI 基础验证
 
 激活虚拟环境后执行：
@@ -101,6 +113,7 @@ curl -s http://127.0.0.1:8000/healthz
 gardenctl --help
 gardenctl version
 gardenctl healthcheck
+gardenctl scan --url http://127.0.0.1:8080/
 ```
 
 ## 四、Docker 方式运行
@@ -116,6 +129,7 @@ docker build -t garden:local .
 ```bash
 docker run --rm -it \
   -p 8000:8000 \
+  -v "$(pwd)/exports:/app/exports" \
   -e GARDEN_DATABASE_URL=sqlite+pysqlite:///./data/garden.db \
   -e GARDEN_ALLOW_NON_LOCAL_TARGETS=false \
   -e GARDEN_DEMO_ADMIN_PASSWORD=demo-admin-password \
@@ -141,7 +155,9 @@ docker run --rm -it \
 docker compose up --build
 ```
 
-## 五、推荐的本地演示流程
+## 五、旧版登录后高级工作流（可选）
+
+下面这些命令只用于需要登录态、人工 triage 或 retest 的高级流程；它们不是 URL 自动扫描的前置或后置步骤。
 
 ### 1. 导入 target
 
@@ -331,6 +347,14 @@ Garden 默认只允许本地目标。
 ```bash
 export GARDEN_ALLOW_NON_LOCAL_TARGETS=true
 ```
+
+公网域名只需要上述开关；RFC1918/ULA 内网目标还需要：
+
+```bash
+export GARDEN_ALLOW_PRIVATE_TARGETS=true
+```
+
+link-local/云元数据、组播和未指定地址始终拒绝。默认每个请求首次失败后最多重试一次，且仅限连接/读取瞬断或 502/503/504。可通过 `GARDEN_SCAN_RETRY_ATTEMPTS=0` 完全关闭重试。
 
 ### 3. Playwright 无法运行
 

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "garden"
 version = "0.1.0"
-description = "CLI-first authenticated application surface verification workflow tool."
+description = "One-URL automated asset discovery, analysis, and evidence reporting service."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Proprietary" }

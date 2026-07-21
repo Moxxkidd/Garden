@@ -24,8 +24,8 @@ from app.services.health import build_health_response
 app = typer.Typer(
     name="gardenctl",
     help=(
-        "CLI for Garden authenticated verification workflows: target, login, "
-        "session, inventory, checks, findings, evidence, retest, and report."
+        "CLI for Garden's one-URL automatic asset reports and advanced authenticated "
+        "verification workflows."
     ),
     no_args_is_help=True,
 )
