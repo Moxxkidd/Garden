@@ -277,9 +277,7 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
         )
         if not isinstance(result, dict) or not result.get("ok"):
             reason = (
-                result.get("reason")
-                if isinstance(result, dict)
-                else "Unknown detection error."
+                result.get("reason") if isinstance(result, dict) else "Unknown detection error."
             )
             raise TimeoutError(str(reason))
         page.fill("[data-garden-autologin='username']", username)
