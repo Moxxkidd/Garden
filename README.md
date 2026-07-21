@@ -1,226 +1,162 @@
 # Garden
 
-> **[garden-ctl.com](https://garden-ctl.com/)**  —  一次提交 URL，自动生成资产与证据报告
+> 提交一个入口 URL，自动完成资产发现、证据归纳和报告生成。
 
-Garden 是一个 **Python、FastAPI、Typer、SQLAlchemy、Jinja2、HTMX、Playwright** 的安全资产工作流工具。普通用户只提交一个已授权的入口 URL，系统自动完成网络预检、发现、采集、标准化、被动分析和结构化报告生成。
+[garden-ctl.com](https://garden-ctl.com/) · [架构说明](docs/architecture.md) · [部署文档](docs/deployment.md)
 
+Garden 是一个面向已授权目标的被动资产扫描与报告系统。用户不需要手动串联登录、inventory、checks 或 report 命令；Web、HTTP API 和 CLI 都调用同一个核心应用服务。
 
-
-## 界面预览
-
-![Garden Dashboard](images/dashboard.png)
-
-## 仓库结构
-
-- `app/`：核心应用代码
-- `design-output/`：展示页静态产物
-- `docs/`：架构与使用文档
-- `examples/`：安全示例配置
-- `images/`：README 展示图片
-- `scripts/`：辅助脚本目录
-- `tests/`：测试代码
-- `.env.example`：环境变量示例
-- `.gitignore`：Git 忽略规则
-- `.pre-commit-config.yaml`：预提交检查配置
-- `Dockerfile`：容器镜像构建文件
-- `Makefile`：常用开发命令
-- `README.md`：项目总览说明
-- `docker-compose.yml`：本地编排启动配置
-- `pyproject.toml`：Python 项目与依赖配置
-
-
-
-## Workflow（工作流）
-
-
-
-面向普通用户的核心链路：
-
-`URL -> validate/preflight -> discover -> collect -> normalize -> analyze -> report`
-
-原有登录后精细工作流继续保留，供需要凭据和人工复测的高级场景使用：
-
-`target -> credential profile -> login -> authenticated session -> inventory -> checks -> findings -> evidence -> triage -> retest -> export`
-
-具体链路收获：
-
-- 管理 target，包含 owner、tags、status 和默认安全 guardrail
-- 管理 credential profile，保存 `secret_ref` 而不是原始 secret
-- 通过 HTTP / Playwright login adapter 执行登录
-- 保存可复用的 authenticated session
-- 对 session 做 validate / refresh
-- 构建结构化的 authenticated inventory
-- 记录 page、endpoint、parameter、annotation，而不是只保存流量 blob
-- 在 inventory 上执行低风险、可解释的 checks
-- 生成带 severity / confidence 的 findings
-- 为 findings 关联默认脱敏的 evidence
-- 支持 findings 生命周期状态流转
-- 支持 retest
-- 支持 findings/report 导出
-
-
-### CLI 命令
-
-Garden 的主命令是：
-
-```bash
-gardenctl
+```text
+URL
+  → 输入与网络校验
+  → 同源目标发现
+  → 资产与证据收集
+  → 结果标准化
+  → 被动分析
+  → Markdown 报告
 ```
 
-自动终端工作流（只需一个 URL，不需要配置文件、凭据或后续命令）：
+## 快速开始
+
+环境要求：Python 3.10+。
 
 ```bash
-gardenctl scan --url http://127.0.0.1:8888/
+git clone https://github.com/Moxxkidd/Garden.git
+cd Garden
+
+python3 -m venv .venv
+source .venv/bin/activate
+make install
+
+cp .env.example .env
+make dev
 ```
 
-它调用与 Web、HTTP API 完全相同的核心服务并自动完成：
+打开 [http://127.0.0.1:8000](http://127.0.0.1:8000)，输入一个已授权的 HTTP/HTTPS URL，然后点击 **Start scan**。
 
-`网络预检 -> 同源发现与采集 -> 标准化资产/证据 -> 被动分析 -> Markdown 报告`
+页面会自动展示：
 
-可选边界参数：
+- 当前阶段和真实进度
+- 已发现的资产、证据和关注项数量
+- 重试、部分失败和未覆盖原因
+- 最终报告的在线阅读与下载入口
+
+使用 Docker：
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+## 一次提交的三种入口
+
+### Web
+
+访问 `http://127.0.0.1:8000/`，只需填写 URL。后续流程由系统自动执行。
+
+### CLI
+
+```bash
+gardenctl scan --url http://127.0.0.1:13000/
+```
+
+可以用边界参数控制扫描规模：
 
 ```bash
 gardenctl scan \
-  --url http://127.0.0.1:8888/ \
+  --url http://127.0.0.1:13000/ \
   --max-pages 10 \
-  --max-depth 1 \
+  --max-depth 2 \
   --request-timeout 5 \
   --overall-timeout 90 \
   --retries 1
 ```
 
-默认仍保留安全 guardrail：只允许本地/demo 目标。授权环境下扫描非本地目标时，需要显式设置：
+### HTTP API
 
 ```bash
-GARDEN_ALLOW_NON_LOCAL_TARGETS=true gardenctl scan --url https://example.test/
+curl -X POST http://127.0.0.1:8000/api/scans \
+  -H 'content-type: application/json' \
+  -d '{"url":"http://127.0.0.1:13000/"}'
 ```
 
-RFC1918/ULA 内网地址需要额外、明确设置 `GARDEN_ALLOW_PRIVATE_TARGETS=true`。链路本地地址、组播、未指定地址和云元数据常用的 link-local 地址始终拒绝。
+相关接口：
 
-最常用的全局命令：**见[garden-ctl.com](https://garden-ctl.com/)**
+- `POST /api/scans`：提交 URL
+- `GET /api/scans/{id}`：读取进度、阶段和失败信息
+- `GET /api/scans/{id}/report`：阅读或下载报告
 
+## 报告内容
 
+报告由持久化的结构化数据生成，不解析或拼接 CLI 日志，包含：
 
+- 执行摘要与扫描范围
+- 发现的资产及关键属性
+- 来源明确且默认脱敏的证据
+- 风险或关注项
+- 阶段完成情况和扫描覆盖范围
+- 失败、重试及未覆盖部分
+- 报告生成时间
 
+默认输出目录：
 
-## Outputs（输出）
+```text
+exports/scan-reports/scan-<id>.md
+```
 
-Garden 产出结构化工作流产物：
+## 安全边界
 
-- URL scan parent run、阶段、真实进度、重试与失败诊断
-- 统一的 URL scan 资产、脱敏证据、被动 findings 与覆盖缺口
-- 从结构化数据生成的完整 Markdown 资产报告
-- target 清单
-- credential profile 清单
-- authenticated session 记录
-- 审计事件（login / validate / refresh / status update / export / retest / report）
-- scan jobs
-- authenticated inventory runs
-- page / endpoint / parameter / annotation 结构化数据
-- explainable low-risk findings
-- linked redacted evidence
-- retest records
-- findings Markdown / JSON / CSV 导出
-- job Markdown report
+Garden 只应用于已获得授权的目标，并默认采用保守策略：
 
-也就是说，普通用户不需要理解或手动传递内部 ID；高级用户仍可继续使用登录后验证、review、复测和导出流程。
+- 仅允许 `http` 和 `https`
+- 只执行有界、同源的被动 `GET` 请求
+- 每次连接和重定向都会重新校验目标地址
+- 默认只允许本机回环目标
+- 公网目标需要显式设置 `GARDEN_ALLOW_NON_LOCAL_TARGETS=true`
+- RFC1918/ULA 内网目标还需要设置 `GARDEN_ALLOW_PRIVATE_TARGETS=true`
+- link-local、云元数据常用地址、组播和未指定地址始终拒绝
+- 请求超时、整体超时、并发、重试、页面数和深度均有限制
+- 非文本响应只记录类型和大小，不把二进制内容写入报告
 
-## DVWA 实战展示
+## 核心架构
 
-下面这组截图来自一次真实的 DVWA 登录后验证流程，展示的是 Garden 在受控靶场中的典型输出，而不是匿名扫描结果。
+```text
+Web / API / CLI
+       ↓
+ScanApplicationService.start_scan(url, options)
+       ↓
+Persisted ScanRun + six-stage ScanPipeline
+       ↓
+Assets / Evidence / Findings / Failures
+       ↓
+ScanReportService
+```
 
-- 登录方式：Playwright UI login
-- 目标类型：授权的本地 DVWA 靶场
-- 展示重点：登录后 inventory、低风险 findings、redacted evidence
+CLI、路由和页面模板只是适配层，核心业务流程位于应用服务和流水线中。单个阶段或页面失败会被持久化并显示在任务和报告中，不会静默伪装成完整结果。
 
-DVWA findings 示例：
+需要登录态、人工 triage、retest 或高级证据生命周期时，原有高级工作流仍然可用，但它们不是 URL 自动扫描的前置步骤。迁移说明见 [docs/legacy-cli-migration.md](docs/legacy-cli-migration.md)。
 
-![DVWA Finding 2](images/DVWA%20finding2.png)
-![DVWA Finding 3](images/DVWA%20finding3.png)
-![DVWA Finding 4](images/DVWA%20finding4.png)
+## 测试
 
-DVWA evidence 示例：
+```bash
+make test
+make lint
+```
 
-![DVWA Evidence](images/DVWA%20evidence.png)
+端到端测试脚本：
 
-## Problem（问题）
+```bash
+.venv/bin/python scripts/e2e_url_scan.py
+```
 
-企业 AppSec 团队、内部安全测试团队在真实工作中经常会遇到一个很典型的断层：
+## 文档
 
-- 匿名扫描器进不去登录后的业务系统
-- 手工登录后测试很难复用、量化和持续执行
-- inventory、finding、evidence、retest、export 往往散落在不同工具里
-- “录一段流量、记几条笔记”并不能形成可审阅、可复测、可交付的工作流产物
+- [架构与执行链路](docs/architecture.md)
+- [安装与部署](docs/deployment.md)
+- [威胁模型与网络策略](docs/threat-model.md)
+- [旧 CLI 迁移说明](docs/legacy-cli-migration.md)
+- [重构验收清单](docs/url-scan-refactor-checklist.md)
 
-Garden 的目标，就是补上这条断层，但**不**把自己做成 exploit framework、破坏性测试平台或者公网扫描器。
+## License
 
-
-
-## Integration（与现有工具的关系）
-
-Garden 的定位是补位，而不是全替代。
-
-它**不是**“就是 Burp/ZAP”：
-
-- Burp/ZAP 非常适合手工代理测试
-- Garden 补的是登录编排、authenticated inventory、findings lifecycle、redacted evidence、retest/export
-
-它**不是**“就是一个 recorder”：
-
-- recorder 解决的是“录下来”
-- Garden 解决的是“录下来之后如何形成 inventory、findings、evidence、retest-ready state”
-
-它**不是**“就是一个 scanner wrapper”：
-
-- 把别的扫描器包一层并不会自然得到工作流闭环
-- Garden 的重点是结构化输出和流程完整性
-
-它**不是**“就是 API auth testing”：
-
-- 登录后验证不只有 API
-- 还包括页面、会话、浏览器上下文、证据、复测和报告
-
-## Constraints（约束）
-
-Garden 刻意保持这些约束：
-
-- application-service-first；CLI、Web、HTTP API 都是薄适配层
-- server-rendered Web URL 提交、真实进度、报告阅读与下载
-- 默认只允许本地 / demo 目标
-- 非本地目标必须显式放开
-- 不做 destructive testing
-- 不做 exploit execution
-- 登录、inventory、checks、evidence、exports 默认都走保守路径
-- secrets 不直接存储、不直接打印
-- evidence 和 exports 默认脱敏
-- inventory 必须结构化，不能退化成原始流量堆
-- 核心逻辑必须在 service 层
-- route handler / CLI 输出 / template 不承载核心业务逻辑
-
-这些限制是 Garden 产品身份的一部分。
-
-## Why not just use existing tools（为什么不直接用现有工具）
-
-因为“现有工具都很强”这件事，并不等于“这条工作流已经被解决了”。
-
-Garden 的价值就在于：它不是单点能力，而是把这些能力串起来。
-
-为什么它不是“只用 Burp/ZAP 就够了”：
-
-- Burp/ZAP 更偏手工测试与代理分析
-- Garden 更偏授权场景下的流程编排、结构化 inventory、workflow state 和 evidence lifecycle
-
-为什么它不是“录流量就好了”：
-
-- 录流量不等于结构化资产覆盖
-- 录流量也不等于 explainable findings、默认脱敏 evidence、retest 或 export
-
-为什么它不是“套壳调别的 scanner”：
-
-- scanner wrapper 更容易得到一堆零散结果
-- Garden 更强调可解释、可追踪、可复用的 workflow outputs
-
-为什么它不是“只做 API 权限测试”：
-
-- 真实企业系统的登录后面不只有 API
-- 还有页面、管理面、配置页、导出页、import/upload 入口、浏览器态 evidence
+Garden 当前未声明开源许可证。复用或分发前请先联系仓库所有者。
