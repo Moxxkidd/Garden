@@ -14,12 +14,23 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
 )
 from sqlalchemy.ext.mutable import MutableDict
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.mixins import TimestampMixin
+
+TERMINAL_SCAN_RUN_STATUSES = frozenset(
+    {
+        "completed",
+        "completed_with_warnings",
+        "failed",
+        "incomplete",
+        "interrupted",
+    }
+)
 
 
 class ScanRun(TimestampMixin, Base):
@@ -206,3 +217,12 @@ class ScanFailure(Base):
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     scan_run = relationship("ScanRun", back_populates="failures")
+
+
+@event.listens_for(Session, "before_flush")
+def clear_terminal_scan_run_active_keys(session: Session, _flush_context, _instances) -> None:
+    """Enforce the active-key invariant at the shared ORM persistence boundary."""
+
+    for instance in session.new.union(session.dirty):
+        if isinstance(instance, ScanRun) and instance.status in TERMINAL_SCAN_RUN_STATUSES:
+            instance.active_key = None

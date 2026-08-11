@@ -20,7 +20,7 @@ from app.db.bootstrap import session_scope
 from app.models.credential_profile import CredentialProfile
 from app.models.enums import AssessmentMode, CompletenessStatus, ContextKind
 from app.models.scan_context import ScanContext
-from app.models.scan_run import ScanRun, ScanRunStage
+from app.models.scan_run import TERMINAL_SCAN_RUN_STATUSES, ScanRun, ScanRunStage
 from app.models.target import Target
 from app.schemas.assessment import AssessmentRunView, AssessmentStartRequest
 from app.schemas.scan import (
@@ -33,14 +33,6 @@ from app.schemas.scan import (
 )
 from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_pipeline import STAGES, ScanPipeline
-
-TERMINAL_RUN_STATUSES = {
-    ScanRunStatus.COMPLETED.value,
-    ScanRunStatus.COMPLETED_WITH_WARNINGS.value,
-    ScanRunStatus.FAILED.value,
-    ScanRunStatus.INCOMPLETE.value,
-    ScanRunStatus.INTERRUPTED.value,
-}
 
 
 def create_assessment_stages(session: Session, run: ScanRun) -> None:
@@ -225,9 +217,7 @@ class ScanApplicationService:
         )
         while time.monotonic() < deadline:
             run = self.get_scan(scan_run_id)
-            if run.status in TERMINAL_RUN_STATUSES:
-                self._clear_active_key(scan_run_id)
-                run = self.get_scan(scan_run_id)
+            if run.status in TERMINAL_SCAN_RUN_STATUSES:
                 return run
             time.sleep(0.05)
         return self.get_scan(scan_run_id)
@@ -362,6 +352,7 @@ class ScanApplicationService:
                 "user_profile_id": request.user_profile_id,
                 "admin_profile_id": request.admin_profile_id,
                 "active_checks_enabled": request.active_checks_enabled,
+                "source_run_id": request.source_run_id,
                 "options": options.model_dump(),
             },
             sort_keys=True,
@@ -403,7 +394,7 @@ class ScanApplicationService:
             raise ResourceNotFoundError(f"Scan run {request.source_run_id} was not found.")
         if (
             source.mode != AssessmentMode.QUICK.value
-            or source.status not in TERMINAL_RUN_STATUSES
+            or source.status not in TERMINAL_SCAN_RUN_STATUSES
             or source.target_id != target_id
         ):
             raise InputValidationError("source_run_id 必须引用同一 target 的已终态 quick run。")
@@ -436,9 +427,3 @@ class ScanApplicationService:
                 ]
             )
         return contexts
-
-    def _clear_active_key(self, scan_run_id: int) -> None:
-        with session_scope() as session:
-            run = session.get(ScanRun, scan_run_id)
-            if run is not None and run.status in TERMINAL_RUN_STATUSES:
-                run.active_key = None

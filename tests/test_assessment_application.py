@@ -189,6 +189,42 @@ def test_authenticated_assessment_can_reference_quick_source_run(
     assert view.asset_count == 0
 
 
+def test_authenticated_assessments_keep_distinct_quick_source_runs(
+    inline_service, completed_quick_run, assessment_profiles
+):
+    second_quick_run = inline_service.start_assessment(
+        AssessmentStartRequest(
+            url=assessment_profiles.url,
+            mode="quick",
+            target_id=assessment_profiles.target_id,
+        )
+    )
+
+    first_upgrade = inline_service.start_assessment(
+        AssessmentStartRequest(
+            url=assessment_profiles.url,
+            mode="authenticated_coverage",
+            source_run_id=completed_quick_run.id,
+            user_profile_id=assessment_profiles.user_id,
+            admin_profile_id=assessment_profiles.admin_id,
+        )
+    )
+    second_upgrade = inline_service.start_assessment(
+        AssessmentStartRequest(
+            url=assessment_profiles.url,
+            mode="authenticated_coverage",
+            source_run_id=second_quick_run.id,
+            user_profile_id=assessment_profiles.user_id,
+            admin_profile_id=assessment_profiles.admin_id,
+        )
+    )
+
+    assert completed_quick_run.id != second_quick_run.id
+    assert first_upgrade.id != second_upgrade.id
+    assert first_upgrade.source_run_id == completed_quick_run.id
+    assert second_upgrade.source_run_id == second_quick_run.id
+
+
 def test_source_run_must_be_terminal_quick_run_for_same_target(tmp_path, assessment_profiles):
     service, _dispatcher = build_holding_service(tmp_path)
     queued_quick = service.start_assessment(
@@ -327,8 +363,11 @@ def test_active_key_distinguishes_mode_profiles_active_flag_and_full_options(
     assert dispatcher.ids == [quick.id]
 
 
-@pytest.mark.parametrize("terminal_status", ["incomplete", "interrupted"])
-def test_wait_for_completion_accepts_new_terminal_status_and_clears_active_key(
+@pytest.mark.parametrize(
+    "terminal_status",
+    ["completed", "completed_with_warnings", "failed", "incomplete", "interrupted"],
+)
+def test_committing_new_terminal_status_clears_active_key_and_allows_retry(
     tmp_path, terminal_status
 ):
     service, _dispatcher = build_holding_service(tmp_path)
@@ -339,8 +378,8 @@ def test_wait_for_completion_accepts_new_terminal_status_and_clears_active_key(
         run.finished_at = datetime.now(timezone.utc)
         session.commit()
 
-    terminal = service.wait_for_completion(view.id, timeout_seconds=0.2)
+    retry = service.start_scan("http://127.0.0.1:8080/")
 
-    assert terminal.status == terminal_status
+    assert retry.id != view.id
     with get_session() as session:
         assert session.get(ScanRun, view.id).active_key is None
