@@ -13,6 +13,7 @@ authors = [
   { name = "Garden Contributors" }
 ]
 dependencies = [
+  "alembic>=1.14.0,<2.0.0",
   "fastapi>=0.116.0,<1.0.0",
   "httpx>=0.28.0,<1.0.0",
   "jinja2>=3.1.0,<4.0.0",

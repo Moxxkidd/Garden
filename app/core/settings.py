@@ -17,6 +17,10 @@ class Settings(BaseSettings):
         default="sqlite+pysqlite:///./data/garden.db",
         alias="GARDEN_DATABASE_URL",
     )
+    database_auto_migrate: bool = Field(
+        default=False,
+        alias="GARDEN_DATABASE_AUTO_MIGRATE",
+    )
     demo_admin_password: str = Field(
         default="demo-admin-password",
         alias="GARDEN_DEMO_ADMIN_PASSWORD",

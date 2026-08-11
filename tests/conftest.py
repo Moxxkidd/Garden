@@ -6,7 +6,12 @@ import httpx
 import pytest
 
 from app.core.settings import clear_settings_cache, get_settings
-from app.db.bootstrap import init_database, reset_database_state, session_scope
+from app.db.bootstrap import (
+    init_database,
+    reset_database_state,
+    session_scope,
+    upgrade_database,
+)
 from app.integrations.evidence.playwright_capture import PageCaptureArtifact
 from app.integrations.inventory.playwright_gateway import (
     InventoryCollectionResult,
@@ -160,6 +165,7 @@ def isolated_database(tmp_path, monkeypatch):
     clear_settings_cache()
     reset_database_state()
     init_database(get_settings().database_url)
+    upgrade_database(get_settings().database_url)
     yield
     reset_database_state()
     clear_settings_cache()

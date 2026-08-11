@@ -10,7 +10,7 @@ from app.api.router import api_router
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.settings import get_settings
-from app.db.bootstrap import init_database
+from app.db.bootstrap import ensure_database_at_head, init_database
 from app.services.scan_application import ScanApplicationService
 
 
@@ -20,6 +20,11 @@ async def lifespan(app: FastAPI):
     configure_logging(settings.log_level)
     logger = get_logger(__name__)
     logger.info("Starting Garden application", extra={"environment": settings.environment})
+    ensure_database_at_head(
+        settings.database_url,
+        environment=settings.environment,
+        auto_migrate=settings.database_auto_migrate,
+    )
     init_database(settings.database_url)
     app.state.scan_service = ScanApplicationService(settings=settings)
     try:
