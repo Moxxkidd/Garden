@@ -88,6 +88,7 @@ class AuditEventType(str, Enum):
     LOGIN_ATTEMPT = "login_attempt"
     SESSION_VALIDATION = "session_validation"
     SESSION_REFRESH = "session_refresh"
+    CONTEXT_ESTABLISHMENT = "context_establishment"
     FINDING_STATUS_UPDATE = "finding_status_update"
     EVIDENCE_EXPORT = "evidence_export"
     RETEST_RUN = "retest_run"

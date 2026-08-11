@@ -148,6 +148,18 @@ def test_start_scan_delegates_to_quick_assessment(tmp_path):
     assert [context.kind for context in view.contexts] == ["anonymous"]
 
 
+def test_completed_quick_context_reflects_real_collection(completed_quick_run):
+    context = completed_quick_run.contexts[0]
+
+    assert context.status == "completed"
+    assert context.login_status == "not_applicable"
+    assert context.session_validation_status == "not_applicable"
+    assert context.collection_status == "completed"
+    assert context.asset_count == completed_quick_run.asset_count
+    assert context.request_count == 0
+    assert context.failure_count == len(completed_quick_run.failures)
+
+
 def test_start_assessment_creates_three_contexts(assessment_profiles, inline_service):
     request = AssessmentStartRequest(
         url=assessment_profiles.url,

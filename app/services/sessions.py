@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.errors import ConflictError, ResourceNotFoundError
+from app.core.errors import ConflictError, GardenError, ResourceNotFoundError
 from app.integrations.auth.http_adapter import HttpLoginAdapter
 from app.integrations.auth.playwright_adapter import PlaywrightLoginAdapter
 from app.models.auth_session import AuthSession
@@ -62,6 +62,43 @@ class AuthSessionService:
         credential = self.credential_service.get_by_target_and_name(
             session, target.id, profile_name
         )
+        result, _auth_session = self._login_profile(session, credential)
+        return result
+
+    def ensure_valid_for_profile(self, session: Session, profile_id: int) -> AuthSession:
+        """Return a storage-backed session after adapter validation, logging in if needed."""
+
+        credential = self.credential_service.get(session, profile_id)
+        candidates = list(
+            session.scalars(
+                select(AuthSession)
+                .where(AuthSession.credential_profile_id == profile_id)
+                .order_by(AuthSession.id.desc())
+            )
+        )
+        for candidate in candidates:
+            try:
+                validation = self.validate(session, candidate.id)
+                if validation.valid:
+                    return candidate
+                if candidate.refresh_supported:
+                    refreshed = self.refresh(session, candidate.id)
+                    if refreshed.success and self.validate(session, candidate.id).valid:
+                        return candidate
+            except GardenError:
+                continue
+
+        login_result, auth_session = self._login_profile(session, credential)
+        if not login_result.success or auth_session is None:
+            raise ConflictError("Authentication login failed for the credential profile.")
+        if not self.validate(session, auth_session.id).valid:
+            raise ConflictError("The newly created authentication session was not valid.")
+        return auth_session
+
+    def _login_profile(
+        self, session: Session, credential: CredentialProfile
+    ) -> tuple[LoginExecutionResult, AuthSession | None]:
+        target = self.target_service.get(session, credential.target_id)
         config = self.login_config_service.load(credential.login_config_path)
         secret_value = self.secret_resolver.resolve(credential.secret_ref)
         adapter = self._get_adapter(config)
@@ -92,7 +129,7 @@ class AuthSessionService:
             credential_profile_id=credential.id,
             auth_session_id=auth_session.id if auth_session else None,
         )
-        return result
+        return result, auth_session
 
     def list(self, session: Session) -> list[AuthSession]:
         return list(session.scalars(select(AuthSession).order_by(AuthSession.id.desc())))
