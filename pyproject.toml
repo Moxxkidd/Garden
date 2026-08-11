@@ -13,6 +13,7 @@ authors = [
   { name = "Garden Contributors" }
 ]
 dependencies = [
+  "alembic>=1.14.0,<2.0.0",
   "fastapi>=0.116.0,<1.0.0",
   "httpx>=0.28.0,<1.0.0",
   "jinja2>=3.1.0,<4.0.0",
@@ -40,6 +41,10 @@ gardenctl = "app.cli.main:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"alembic.ini" = "app/db/migration_assets/alembic.ini"
+"migrations" = "app/db/migration_assets/migrations"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

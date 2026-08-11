@@ -3,18 +3,90 @@
 from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from alembic import command
+from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.logging import get_logger
-from app.db.base import Base
 
 logger = get_logger(__name__)
 
 _DATABASE_URL: str | None = None
 _ENGINE: Engine | None = None
 _SESSION_FACTORY: sessionmaker[Session] | None = None
+
+
+def _migration_assets_root() -> Path:
+    package_root = Path(__file__).resolve().parent / "migration_assets"
+    if package_root.is_dir():
+        return package_root
+    return Path(__file__).resolve().parents[2]
+
+
+def _alembic_config(database_url: str) -> Config:
+    config = Config(str(_migration_assets_root() / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+    return config
+
+
+def upgrade_database(database_url: str, revision: str = "head") -> None:
+    _ensure_sqlite_directory(database_url)
+    command.upgrade(_alembic_config(database_url), revision)
+
+
+def stamp_existing_database(database_url: str, revision: str = "0001") -> None:
+    _ensure_sqlite_directory(database_url)
+    command.stamp(_alembic_config(database_url), revision)
+
+
+def get_database_revision(database_url: str) -> str | None:
+    engine = create_engine(database_url, future=True)
+    try:
+        with engine.connect() as connection:
+            return MigrationContext.configure(connection).get_current_revision()
+    finally:
+        engine.dispose()
+
+
+def ensure_database_at_head(
+    database_url: str,
+    *,
+    environment: str,
+    auto_migrate: bool,
+) -> None:
+    if auto_migrate and environment.lower() != "development":
+        raise RuntimeError("GARDEN_DATABASE_AUTO_MIGRATE=true is only allowed in development.")
+
+    _ensure_sqlite_directory(database_url)
+    config = _alembic_config(database_url)
+    head_revision = ScriptDirectory.from_config(config).get_current_head()
+    engine = create_engine(database_url, future=True)
+    try:
+        table_names = set(inspect(engine).get_table_names())
+        with engine.connect() as connection:
+            current_revision = MigrationContext.configure(connection).get_current_revision()
+    finally:
+        engine.dispose()
+
+    if current_revision is None and table_names - {"alembic_version"}:
+        raise RuntimeError(
+            "Database contains an unversioned existing schema. "
+            "Run `gardenctl db stamp-existing` before starting Garden."
+        )
+
+    if current_revision == head_revision:
+        return
+    if auto_migrate:
+        upgrade_database(database_url)
+        return
+    raise RuntimeError(
+        "Database schema is not at the current migration head. "
+        "Run `gardenctl db upgrade` before starting Garden."
+    )
 
 
 def init_database(database_url: str) -> None:
@@ -27,8 +99,6 @@ def init_database(database_url: str) -> None:
         _SESSION_FACTORY = None
 
     _ensure_sqlite_directory(database_url)
-    import app.models  # noqa: F401
-
     connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
     _ENGINE = create_engine(
         database_url,
@@ -43,7 +113,6 @@ def init_database(database_url: str) -> None:
         expire_on_commit=False,
         future=True,
     )
-    Base.metadata.create_all(_ENGINE)
     _DATABASE_URL = database_url
     logger.info("Database initialized")
 
