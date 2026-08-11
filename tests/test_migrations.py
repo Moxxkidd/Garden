@@ -1,6 +1,13 @@
+import os
+import subprocess
+import sys
+import zipfile
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import NoSuchModuleError
 from sqlalchemy.orm import Session
 from typer.testing import CliRunner
 
@@ -17,6 +24,7 @@ from app.main import create_app
 from app.models.target import Target
 
 runner = CliRunner()
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_upgrade_database_creates_current_schema(tmp_path):
@@ -150,3 +158,98 @@ def test_database_cli_stamp_existing_preserves_legacy_rows(tmp_path, monkeypatch
 
 def test_database_auto_migrate_defaults_to_false():
     assert get_settings().database_auto_migrate is False
+
+
+def test_built_wheel_installs_with_loadable_migration_assets(tmp_path):
+    wheel_dir = tmp_path / "wheelhouse"
+    wheel_dir.mkdir()
+    build = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "wheel",
+            "--no-deps",
+            "--no-build-isolation",
+            "--wheel-dir",
+            str(wheel_dir),
+            str(PROJECT_ROOT),
+        ],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert build.returncode == 0, build.stderr
+
+    wheel_path = next(wheel_dir.glob("garden-*.whl"))
+    with zipfile.ZipFile(wheel_path) as wheel:
+        packaged_paths = set(wheel.namelist())
+    expected_paths = {
+        "app/db/migration_assets/alembic.ini",
+        "app/db/migration_assets/migrations/env.py",
+        "app/db/migration_assets/migrations/script.py.mako",
+        "app/db/migration_assets/migrations/versions/0001_existing_schema_baseline.py",
+    }
+    assert expected_paths <= packaged_paths
+
+    install_target = tmp_path / "installed"
+    install = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "--target",
+            str(install_target),
+            str(wheel_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert install.returncode == 0, install.stderr
+
+    database_path = tmp_path / "installed-wheel.db"
+    verify_script = """
+import sys
+from pathlib import Path
+
+import app
+from sqlalchemy import create_engine, inspect
+
+from app.db.bootstrap import upgrade_database
+
+install_target = Path(sys.argv[1]).resolve()
+assert Path(app.__file__).resolve().is_relative_to(install_target)
+database_url = f"sqlite+pysqlite:///{sys.argv[2]}"
+upgrade_database(database_url)
+assert "alembic_version" in inspect(create_engine(database_url)).get_table_names()
+"""
+    verify_environment = os.environ.copy()
+    verify_environment["PYTHONPATH"] = str(install_target)
+    verify = subprocess.run(
+        [sys.executable, "-c", verify_script, str(install_target), str(database_path)],
+        cwd=tmp_path,
+        env=verify_environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert verify.returncode == 0, verify.stderr
+
+
+def test_percent_encoded_non_sqlite_url_fails_without_leaking_credentials(capsys):
+    encoded_password = "encoded-secret%40value%2Fpart"
+    database_url = (
+        f"postgresql+gardenmissing://garden:{encoded_password}@db.example.invalid/garden"
+    )
+
+    with pytest.raises(NoSuchModuleError) as exc_info:
+        upgrade_database(database_url)
+
+    captured = capsys.readouterr()
+    assert encoded_password not in str(exc_info.value)
+    assert encoded_password not in captured.out
+    assert encoded_password not in captured.err

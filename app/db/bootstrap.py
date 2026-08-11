@@ -20,9 +20,16 @@ _ENGINE: Engine | None = None
 _SESSION_FACTORY: sessionmaker[Session] | None = None
 
 
+def _migration_assets_root() -> Path:
+    package_root = Path(__file__).resolve().parent / "migration_assets"
+    if package_root.is_dir():
+        return package_root
+    return Path(__file__).resolve().parents[2]
+
+
 def _alembic_config(database_url: str) -> Config:
-    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
-    config.set_main_option("sqlalchemy.url", database_url)
+    config = Config(str(_migration_assets_root() / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
     return config
 
 
