@@ -29,6 +29,10 @@ class ObservedEndpoint:
     set_cookie_names: list[str] = field(default_factory=list)
     cookie_issue_flags: list[str] = field(default_factory=list)
     parameters: dict[str, list[str]] = field(default_factory=dict)
+    request_url: str | None = None
+    request_headers: dict[str, str] = field(default_factory=dict)
+    request_body: bytes | None = None
+    response_headers: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -132,10 +136,19 @@ class SyncPlaywrightInventoryGateway:
                     request_counter += 1
                     set_cookie_names, cookie_issue_flags = self._extract_cookie_metadata(response)
                     content_type = response.header_value("content-type")
+                    try:
+                        request_body = request.post_data_buffer
+                    except Exception:
+                        request_body = None
+                    try:
+                        response_headers = response.all_headers()
+                    except Exception:
+                        response_headers = {}
                     endpoints.append(
                         ObservedEndpoint(
                             method=request.method.upper(),
                             url=self._normalize_endpoint_url(request.url),
+                            request_url=request.url,
                             path=urlparse(request.url).path or "/",
                             status_code=response.status,
                             observed_at=datetime.now(timezone.utc),
@@ -145,6 +158,9 @@ class SyncPlaywrightInventoryGateway:
                             set_cookie_names=set_cookie_names,
                             cookie_issue_flags=cookie_issue_flags,
                             parameters=self._extract_parameters(request),
+                            request_headers=dict(request.headers),
+                            request_body=request_body,
+                            response_headers=response_headers,
                         )
                     )
 

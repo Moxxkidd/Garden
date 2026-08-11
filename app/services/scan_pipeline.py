@@ -22,7 +22,13 @@ from app.models.scan_run import (
 )
 from app.redaction.service import RedactionService
 from app.schemas.scan import FetchResult, ScanOptions, ScanRunStatus, ScanStageName
+from app.services.context_collection import (
+    ContextCollectionService,
+    ContextCollectionSummary,
+    DefaultContextCollectionGateway,
+)
 from app.services.context_establishment import ContextEstablishmentService
+from app.services.coverage_identity import canonical_asset_identity, redacted_observed_url
 from app.services.scan_analysis import PassiveScanAnalyzer
 from app.services.scan_network import FetchError, HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_reporting import ScanReportService
@@ -52,6 +58,7 @@ class ScanPipeline:
         report_service: ScanReportService | None = None,
         redaction_service: RedactionService | None = None,
         context_service: ContextEstablishmentService | None = None,
+        context_collection_service: ContextCollectionService | None = None,
         clock=time.monotonic,
     ) -> None:
         self.policy = policy
@@ -60,6 +67,9 @@ class ScanPipeline:
         self.report_service = report_service or ScanReportService()
         self.redaction_service = redaction_service or RedactionService()
         self.context_service = context_service or ContextEstablishmentService()
+        self.context_collection_service = context_collection_service or ContextCollectionService(
+            gateway=DefaultContextCollectionGateway(http_gateway=gateway)
+        )
         self.clock = clock
 
     def establish_contexts(self, session: Session, scan_run_id: int) -> list[ScanContext]:
@@ -111,6 +121,77 @@ class ScanPipeline:
         stage.finished_at = datetime.now(timezone.utc)
         session.commit()
         return contexts
+
+    def collect_contexts(
+        self,
+        session: Session,
+        scan_run_id: int,
+    ) -> list[ContextCollectionSummary]:
+        """Execute context collection independently so one failure retains other results."""
+
+        run = session.get(ScanRun, scan_run_id)
+        if run is None:
+            raise InputValidationError(f"Scan run {scan_run_id} was not found.")
+        if run.mode != AssessmentMode.AUTHENTICATED_COVERAGE.value:
+            raise InputValidationError("Only authenticated coverage runs collect three contexts.")
+        stage = self._stage(session, run.id, ScanStageName.COLLECT.value)
+        if stage is None:
+            raise RuntimeError("Missing persisted stage 'collect'.")
+        stage.status = "running"
+        stage.attempt += 1
+        stage.started_at = datetime.now(timezone.utc)
+        run.current_stage = ScanStageName.COLLECT.value
+        session.flush()
+
+        summaries: list[ContextCollectionSummary] = []
+        failed_kinds: set[str] = set()
+        contexts = list(
+            session.scalars(
+                select(ScanContext)
+                .where(ScanContext.scan_run_id == run.id)
+                .order_by(ScanContext.id)
+            )
+        )
+        for context in contexts:
+            if context.status == "failed":
+                failed_kinds.add(context.kind)
+                continue
+            try:
+                with session.begin_nested():
+                    summaries.append(self.context_collection_service.collect(session, run, context))
+            except Exception:  # noqa: BLE001 - context boundary persists only a safe diagnostic
+                context = session.get(ScanContext, context.id)
+                context.status = "failed"
+                context.collection_status = "failed"
+                context.completeness = CompletenessStatus.INCOMPLETE.value
+                context.failure_count += 1
+                context.error_code = "context_collection_failed"
+                context.error_message = "Collection failed for this context."
+                context.finished_at = datetime.now(timezone.utc)
+                failed_kinds.add(context.kind)
+
+        if failed_kinds:
+            run.status = ScanRunStatus.INCOMPLETE.value
+            if failed_kinds == {ContextKind.USER.value}:
+                run.completeness = CompletenessStatus.MISSING_USER_CONTEXT.value
+            elif failed_kinds == {ContextKind.ADMIN.value}:
+                run.completeness = CompletenessStatus.MISSING_ADMIN_CONTEXT.value
+            else:
+                run.completeness = CompletenessStatus.INCOMPLETE.value
+            run.error_code = "context_collection_incomplete"
+            run.error_message = "One or more contexts could not be collected completely."
+            stage.status = "completed_with_warnings"
+            stage.summary = (
+                f"Collected {len(summaries)} context(s); "
+                f"{len(failed_kinds)} context(s) were incomplete."
+            )
+        else:
+            stage.status = "completed"
+            stage.summary = f"Collected {len(summaries)} context(s)."
+            run.progress = PROGRESS_AFTER_STAGE[ScanStageName.COLLECT.value]
+        stage.finished_at = datetime.now(timezone.utc)
+        session.commit()
+        return summaries
 
     def execute(self, session: Session, scan_run_id: int) -> None:
         run = session.get(ScanRun, scan_run_id)
@@ -366,11 +447,20 @@ class ScanPipeline:
     def _persist_fetch(
         self, session: Session, run: ScanRun, result: FetchResult, *, depth: int
     ) -> None:
+        context = session.scalar(
+            select(ScanContext).where(
+                ScanContext.scan_run_id == run.id,
+                ScanContext.kind == ContextKind.ANONYMOUS.value,
+            )
+        )
+        if context is None:
+            raise RuntimeError("Missing persisted anonymous quick-scan context.")
+        identity_key = canonical_asset_identity("GET", result.final_url)
         asset = session.scalar(
             select(ScanAsset).where(
                 ScanAsset.scan_run_id == run.id,
-                ScanAsset.asset_type == "page",
-                ScanAsset.url == result.final_url,
+                ScanAsset.context_id == context.id,
+                ScanAsset.identity_key == identity_key,
             )
         )
         now = datetime.now(timezone.utc)
@@ -387,8 +477,10 @@ class ScanPipeline:
         if asset is None:
             asset = ScanAsset(
                 scan_run_id=run.id,
+                context_id=context.id,
+                identity_key=identity_key,
                 asset_type="page",
-                url=result.final_url,
+                url=redacted_observed_url(result.final_url),
                 method="GET",
                 status_code=result.status_code,
                 title=result.title,

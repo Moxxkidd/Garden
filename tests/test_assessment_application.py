@@ -5,12 +5,13 @@ from datetime import datetime, timezone
 
 import httpx
 import pytest
+from sqlalchemy import select
 
 from app.core.errors import InputValidationError
 from app.core.settings import get_settings
 from app.db.bootstrap import get_session
 from app.models.credential_profile import CredentialProfile
-from app.models.scan_run import ScanRun
+from app.models.scan_run import ScanAsset, ScanRun
 from app.models.target import Target
 from app.schemas.assessment import AssessmentStartRequest
 from app.schemas.scan import ScanOptions
@@ -158,6 +159,15 @@ def test_completed_quick_context_reflects_real_collection(completed_quick_run):
     assert context.asset_count == completed_quick_run.asset_count
     assert context.request_count == 0
     assert context.failure_count == len(completed_quick_run.failures)
+    with get_session() as session:
+        assets = list(
+            session.scalars(
+                select(ScanAsset).where(ScanAsset.scan_run_id == completed_quick_run.id)
+            )
+        )
+    assert assets
+    assert all(asset.context_id == context.id for asset in assets)
+    assert all(asset.identity_key for asset in assets)
 
 
 def test_start_assessment_creates_three_contexts(assessment_profiles, inline_service):
