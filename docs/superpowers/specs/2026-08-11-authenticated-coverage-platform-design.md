@@ -1,71 +1,71 @@
-# Authenticated Coverage Platform Design
+# 认证覆盖差异平台设计
 
-**Date:** 2026-08-11
-**Status:** Approved design
-**Product decision:** Authenticated application-surface verification is Garden's core capability. One-URL passive scanning remains the low-friction entry. The next product expansion is a fixed three-context coverage-difference platform with opt-in active authorization replay.
+**日期：** 2026-08-11
+**状态：** 已批准
+**产品决策：** 认证后应用面验证是 Garden 的核心能力；单 URL 被动扫描保留为低门槛入口；下一阶段扩展为固定三上下文的认证覆盖差异平台，并重点实现显式开启的主动权限重放。
 
-## 1. Purpose
+## 1. 目标
 
-Garden will answer three related questions for an authorized application:
+Garden 要针对一个已授权应用回答三个相互关联的问题：
 
-1. What can an anonymous visitor, a normal user, and an administrator observe?
-2. How do the discovered pages, endpoints, parameters, and passive response properties differ?
-3. Can a lower-privilege context replay a request observed in a higher-privilege context and obtain equivalent access?
+1. 匿名访客、普通用户和管理员分别能够观察到什么？
+2. 三种上下文发现的页面、接口、参数及被动响应属性有何差异？
+3. 低权限上下文能否重放高权限上下文观察到的请求，并获得等价访问？
 
-The product must keep the current one-URL workflow, but the primary value proposition becomes authenticated coverage, explainable differences, redacted evidence, triage, and retest rather than generic vulnerability scanning.
+产品继续保留现有的单 URL 工作流，但核心价值从通用漏洞扫描转向认证覆盖、可解释差异、脱敏证据、人工分流和复测。
 
-## 2. Scope
+## 2. 范围
 
-### 2.1 MVP scope
+### 2.1 MVP 范围
 
-- One unified persisted run model for quick and authenticated assessments.
-- A fixed context set: `anonymous`, `user`, and `admin`.
-- Passive comparison of pages, endpoints, parameters, status codes, redirects, content types, titles, and redacted response signatures.
-- Opt-in cross-role replay from higher privilege to lower privilege.
-- Replay of captured `GET`, `HEAD`, and `OPTIONS` requests only.
-- Structured, redacted evidence for every comparison and replay verdict.
-- Findings lifecycle, manual triage, retest, and report export.
-- Web, HTTP API, and CLI entry points over the same application service.
-- Backward-compatible one-URL quick scan entry points during migration.
+- quick 和 authenticated-coverage 共用一个持久化运行模型。
+- 固定比较 `anonymous`、`user`、`admin` 三种上下文。
+- 被动比较页面、接口、参数、状态码、重定向、内容类型、标题和脱敏响应指纹。
+- 显式开启后，执行从高权限到低权限的跨角色重放。
+- 只重放本次运行实际捕获的 `GET`、`HEAD`、`OPTIONS` 请求。
+- 每个差异和重放判定都有结构化、默认脱敏的证据。
+- 保留 finding 生命周期、人工 triage、复测和报告导出。
+- Web、HTTP API 和 CLI 调用同一应用服务。
+- 迁移期保持现有单 URL quick 入口向后兼容。
 
-### 2.2 Out of scope for the MVP
+### 2.2 MVP 不包含
 
-- Automatic identifier substitution or ID enumeration.
-- Replay of request bodies or `POST`, `PUT`, `PATCH`, `DELETE`, or other state-changing methods.
-- Destructive verification, exploit payloads, brute force, or broad fuzzing.
-- Arbitrary N-role comparison in the UI or public contract.
-- Automatic declaration of a confirmed vulnerability without explicit access policy or human triage.
-- Replacing Burp, ZAP, Nuclei, or other execution engines.
+- 自动替换标识符或枚举 ID。
+- 重放请求体，以及 `POST`、`PUT`、`PATCH`、`DELETE` 等可能修改状态的方法。
+- 破坏性验证、利用载荷、暴力尝试或大范围模糊测试。
+- 在首版 UI 或公共协议中支持任意 N 角色矩阵。
+- 在没有显式访问策略或人工确认时，自动宣称已确认漏洞。
+- 替代 Burp、ZAP、Nuclei 等执行引擎。
 
-The internal context model must not prevent a later N-role extension, but the first user-facing contract remains fixed to three contexts.
+内部上下文模型不得阻碍未来扩展到 N 角色，但首版用户协议固定为三种上下文。
 
-## 3. Product experience
+## 3. 产品体验
 
 ### 3.1 Quick scan
 
-A user submits one authorized HTTP or HTTPS URL. Garden creates a `quick` run containing only the anonymous context and executes bounded passive collection, analysis, and reporting.
+用户提交一个已授权的 HTTP 或 HTTPS URL。Garden 创建 `quick` 运行，仅包含匿名上下文，执行有界的被动采集、分析和报告。
 
-The existing `gardenctl scan --url URL` and `/api/scans` contract remain compatibility aliases for this mode during migration.
+迁移期间，现有 `gardenctl scan --url URL` 和 `/api/scans` 保留为 quick 模式兼容入口。
 
 ### 3.2 Authenticated coverage
 
-A user submits:
+用户提交：
 
-- the authorized entry URL;
-- one normal-user credential profile;
-- one administrator credential profile;
-- bounded collection controls; and
-- an optional active-replay switch.
+- 已授权入口 URL；
+- 一个普通用户凭证档案；
+- 一个管理员凭证档案；
+- 有界采集参数；
+- 可选的主动重放开关。
 
-Garden creates one run with anonymous, user, and admin contexts. It validates both authenticated sessions, collects each context under equivalent limits, calculates coverage differences, optionally performs bounded replay, creates review candidates, and generates one report.
+Garden 创建一次包含 anonymous、user、admin 三种上下文的运行，验证两个认证会话，在相同边界下分别采集，计算覆盖差异，按配置执行主动重放，生成授权审查候选，并输出统一报告。
 
-### 3.3 Quick-to-coverage transition
+### 3.3 从 quick 升级到 authenticated coverage
 
-Completed runs are immutable. Starting authenticated coverage from a quick result creates a new run with `source_run_id` pointing to the quick run. Garden may reuse target configuration, but it does not silently reuse old observations as if they were collected in the new three-context snapshot.
+已完成运行保持不可变。从 quick 结果发起认证覆盖时创建新运行，并通过 `source_run_id` 指向来源 quick 运行。系统可以复用目标配置，但不能把旧观察结果静默当作新三上下文快照的一部分。
 
-## 4. Unified architecture
+## 4. 统一架构
 
-`ScanRun` becomes the single product-level assessment record. UI and documentation call it an assessment; the first migration retains the existing class and table name to reduce migration risk.
+`ScanRun` 升级为唯一的产品级 assessment 记录。UI 和文档统一称为“验证运行”或 assessment；第一轮迁移保留现有类名和表名，降低数据库迁移风险。
 
 ```text
 Web / API / CLI
@@ -80,14 +80,14 @@ ScanRun (quick | authenticated_coverage)
        +-- ScanContext: user
        +-- ScanContext: admin
        |
-       +-- context-scoped assets and captured requests
-       +-- coverage differences
-       +-- replay executions
-       +-- evidence and findings
-       +-- one unified report
+       +-- 按上下文归属的资产和请求
+       +-- 覆盖差异
+       +-- 主动重放记录
+       +-- 证据和 findings
+       +-- 统一报告
 ```
 
-The unified pipeline is:
+统一流水线为：
 
 ```text
 validate
@@ -100,202 +100,202 @@ validate
 -> report
 ```
 
-`replay_authorization` is persisted as `skipped` when active replay is not enabled. It must never disappear silently from progress or reports.
+未开启主动重放时，`replay_authorization` 必须持久化为 `skipped`，不能从进度和报告中静默消失。
 
-The current `ScanJob` model becomes a legacy execution record. Its inventory, check, and retest responsibilities move into `ScanRunStage`, `ScanContext`, and dedicated replay/retest records. The old table remains readable during the migration window and is removed only after data migration and adapter compatibility are verified.
+现有 `ScanJob` 降级为旧执行记录。其 inventory、checks、retest 职责迁入 `ScanRunStage`、`ScanContext` 及专门的重放/复测记录。旧表在迁移窗口内保持只读，只有在数据迁移和适配器兼容均验证后才能删除。
 
-## 5. Domain model
+## 5. 领域模型
 
 ### 5.1 ScanRun
 
-The unified parent record adds or formalizes:
+统一父记录新增或明确以下字段：
 
-- `mode`: `quick` or `authenticated_coverage`;
-- `source_run_id`: optional reference to the quick run that led to this assessment;
-- `active_checks_enabled`;
-- authorization-confirmation metadata;
-- immutable execution-option snapshot;
-- overall status, completeness, stage, progress, timing, and report metadata.
+- `mode`：`quick` 或 `authenticated_coverage`；
+- `source_run_id`：可选，指向引导本次运行的 quick run；
+- `active_checks_enabled`；
+- 授权确认元数据；
+- 不可变的执行参数快照；
+- 总体状态、完整性、阶段、进度、时间和报告元数据。
 
 ### 5.2 ScanContext
 
-Each context belongs to one run and stores:
+每个上下文属于一个 `ScanRun`，包含：
 
-- `kind`: `anonymous`, `user`, or `admin`;
-- optional credential-profile and auth-session references;
-- login and session-validation status;
-- collection status, timing, error code, and error message;
-- context-specific collection counts and completeness.
+- `kind`：`anonymous`、`user` 或 `admin`；
+- 可选的凭证档案和认证会话引用；
+- 登录与会话验证状态；
+- 采集状态、时间、错误码和错误信息；
+- 上下文级采集数量与完整性。
 
-A quick run has exactly one anonymous context. An authenticated-coverage run has exactly one context of each fixed kind.
+quick run 只有一个 anonymous context；authenticated-coverage run 必须且只能各有一个 anonymous、user、admin context。
 
 ### 5.3 ScanAsset
 
-`ScanAsset` becomes the context-scoped representation of pages, endpoints, and parameters. It stores:
+`ScanAsset` 统一表示页面、接口和参数，包含：
 
-- `scan_run_id` and `context_id`;
-- asset type;
-- canonical identity key;
-- URL, method, status, title, and structured redacted attributes;
-- discovery source and timestamp.
+- `scan_run_id` 和 `context_id`；
+- 资产类型；
+- 规范化身份键；
+- URL、方法、状态、标题和结构化脱敏属性；
+- 发现来源和时间。
 
-Existing inventory page, endpoint, and parameter data migrate into this structure. Until migration completes, old inventory models are read-only compatibility sources.
+现有 inventory page、endpoint、parameter 数据逐步迁入该结构。迁移完成前，旧 inventory 模型只作为兼容读取来源。
 
 ### 5.4 ScanRequest
 
-A captured request stores:
+捕获请求包含：
 
-- source context and asset;
-- method, normalized URL, header-name metadata, and request fingerprint;
-- replay eligibility and the reason for inclusion or exclusion;
-- a protected-storage reference for sensitive exact values;
-- a redacted display form for UI, logs, and reports.
+- 来源上下文和资产；
+- 方法、规范化 URL、请求头名称元数据和请求指纹；
+- 是否允许重放及纳入/排除原因；
+- 敏感精确值的受保护存储引用；
+- 用于 UI、日志和报告的脱敏展示形式。
 
-Database fields and ordinary exports must not contain raw cookies, authorization headers, or other reusable session material.
+普通数据库字段和常规导出不能包含原始 Cookie、Authorization 或其他可复用会话材料。
 
 ### 5.5 CoverageDifference
 
-A difference record contains:
+差异记录包含：
 
-- canonical asset identity;
-- presence in anonymous, user, and admin contexts;
-- per-context status, redirect, content-type, title, and redacted-content signatures;
-- a classification such as shared, user-only, admin-only, unexpectedly anonymous, or inconsistent;
-- comparison confidence and explanatory diagnostics.
+- 规范化资产身份；
+- 是否存在于 anonymous、user、admin；
+- 各上下文的状态、重定向、内容类型、标题和脱敏内容指纹；
+- shared、user-only、admin-only、unexpectedly-anonymous、inconsistent 等分类；
+- 比较置信度和解释性诊断。
 
 ### 5.6 ReplayExecution
 
-A replay record contains:
+重放记录包含：
 
-- source request and source context;
-- target context;
-- exact replay-policy snapshot;
-- status, timing, redirect chain, response signature, and redacted evidence;
-- verdict: `blocked`, `equivalent_access`, `changed_response`, or `inconclusive`;
-- an explanation of the evidence used for the verdict.
+- 来源请求和来源上下文；
+- 目标上下文；
+- 精确的重放策略快照；
+- 状态、时间、重定向链、响应指纹和脱敏证据；
+- `blocked`、`equivalent_access`、`changed_response` 或 `inconclusive` 判定；
+- 判定依据说明。
 
-### 5.7 Finding and evidence consolidation
+### 5.7 Finding 与 Evidence 收敛
 
-One finding model links to passive differences, replay executions, assets, and evidence. Findings retain severity, confidence, status, deduplication, first/last seen, retest, and export behavior.
+统一 finding 模型关联被动差异、重放执行、资产和证据，并保留严重性、置信度、状态、去重、首次/最后发现时间、复测和导出能力。
 
-One evidence model stores structured redacted previews and protected-storage references. Parallel quick-scan and authenticated-workflow evidence/finding/report implementations are removed after migration.
+统一 evidence 模型保存结构化脱敏预览和受保护存储引用。迁移完成后删除 quick scan 与旧认证流程中并行的 evidence、finding 和 report 实现。
 
-## 6. Canonical identity and passive comparison
+## 6. 规范化身份与被动比较
 
-The passive identity key uses:
+被动资产身份键使用：
 
 ```text
-HTTP method + normalized path + sorted parameter-name set
+HTTP 方法 + 规范化路径 + 排序后的参数名称集合
 ```
 
-Parameter values do not participate in passive identity. Normalization must remove fragments, normalize default ports, preserve meaningful path structure, and apply an explicit policy for trailing slashes and repeated query keys.
+参数值不参与被动身份匹配。规范化需要移除 fragment、统一默认端口、保留有意义的路径结构，并对尾部斜杠和重复查询键采用明确策略。
 
-For each identity, Garden compares:
+针对每个身份，Garden 比较：
 
-- context presence;
-- HTTP status;
-- final URL and redirect class;
-- content type;
-- page title;
-- stable redacted-content signature;
-- discovered parameter names and response markers.
+- 上下文存在性；
+- HTTP 状态；
+- 最终 URL 与重定向类别；
+- 内容类型；
+- 页面标题；
+- 稳定的脱敏内容指纹；
+- 已发现参数名称和响应标记。
 
-Dynamic values such as timestamps, nonces, request identifiers, and session-specific text must be normalized or excluded from the stable signature. A missing or failed context is recorded as unknown, not absent.
+时间戳、nonce、请求 ID、会话相关文本等动态值必须在稳定指纹中规范化或排除。上下文缺失或执行失败时，结果是 unknown，不是 absent。
 
-## 7. Active authorization replay protocol
+## 7. 主动权限重放协议
 
-### 7.1 Activation
+### 7.1 启用条件
 
-Active replay is disabled by default. A run must persist an explicit opt-in and authorization confirmation. Candidate selection, skips, executions, and verdicts are audited.
+主动重放默认关闭。运行必须持久化显式 opt-in 和授权确认。候选选择、跳过、执行和判定均写入审计记录。
 
-Until Garden has application-level operator authentication and an active-replay permission, network-exposed Web/API surfaces must not enable active replay. Local CLI execution may enable it only with an explicit confirmation flag.
+在 Garden 具备应用级操作者认证和主动重放权限前，面向网络的 Web/API 不得启用主动重放。本地 CLI 仅能通过明确确认参数开启。
 
-### 7.2 Candidate directions
+### 7.2 候选方向
 
-The MVP generates lower-privilege replay candidates for:
+MVP 仅生成以下从高权限到低权限的候选：
 
-- `user -> anonymous`;
-- `admin -> user`;
-- `admin -> anonymous`.
+- `user -> anonymous`；
+- `admin -> user`；
+- `admin -> anonymous`。
 
-Anonymous-to-authenticated and user-to-admin requests are covered by passive comparison and are not active authorization candidates.
+anonymous 到认证上下文、user 到 admin 的差异由被动比较覆盖，不生成主动授权候选。
 
-### 7.3 Eligibility
+### 7.3 候选资格
 
-A replay candidate must:
+重放候选必须：
 
-- originate from the current run;
-- use `GET`, `HEAD`, or `OPTIONS`;
-- target the admitted origin;
-- have passed URL, DNS, redirect, and target-policy checks;
-- remain within configured candidate, request, concurrency, response-size, and time budgets;
-- contain no request body;
-- require no identifier mutation.
+- 来源于本次运行；
+- 方法为 `GET`、`HEAD` 或 `OPTIONS`；
+- 指向已准入的同源目标；
+- 已通过 URL、DNS、重定向和目标策略校验；
+- 位于候选数量、请求次数、并发、响应大小和总时间限制内；
+- 不包含请求体；
+- 不要求修改标识符。
 
-Garden does not accept an arbitrary user-supplied replay URL through this protocol.
+该协议不接受用户任意输入的重放 URL。
 
-### 7.4 Request construction
+### 7.4 请求构造
 
-Garden preserves the captured method, path, and query values. It discards source-context cookies, authorization headers, proxy credentials, and hop-by-hop headers, then applies the target context's validated session. Safe representation headers may be copied through an explicit allowlist.
+Garden 保留捕获请求的方法、路径和查询值，丢弃来源上下文的 Cookie、Authorization、代理认证和 hop-by-hop headers，再应用目标上下文已验证的会话。只有显式 allowlist 中的安全表示性请求头可以复制。
 
-Redirects are followed manually. Every destination is revalidated, and a cross-origin or disallowed redirect terminates the replay as blocked or inconclusive according to the observed response.
+重定向由系统手动跟随，每个目的地址都重新校验。跨源或被拒绝的重定向会根据已观察到的响应终止为 blocked 或 inconclusive。
 
-The default is one replay per source-target pair. Automatic retries are disabled unless a future policy explicitly limits retries to transport failures and records every attempt.
+默认每个来源—目标角色对只重放一次。自动重试关闭；未来若允许，也只能针对传输失败，并记录每次尝试。
 
-### 7.5 Verdicts
+### 7.5 判定
 
-- `blocked`: 401/403, a recognized login redirect, an authentication-failure marker, or another explicit denial.
-- `equivalent_access`: the lower-privilege context receives a successful response with high similarity to the higher-privilege response.
-- `changed_response`: the request succeeds, but authorization-relevant response properties differ materially.
-- `inconclusive`: session loss, timeout, unstable content, policy rejection, or insufficient evidence prevents a reliable comparison.
+- `blocked`：401/403、已识别登录跳转、认证失败标记或其他明确拒绝。
+- `equivalent_access`：低权限上下文获得成功响应，且与高权限响应高度相似。
+- `changed_response`：请求成功，但授权相关响应属性存在实质差异。
+- `inconclusive`：会话失效、超时、内容不稳定、策略拒绝或证据不足。
 
-`equivalent_access` creates a suspected authorization finding. It is not a confirmed vulnerability until a human triages it or an explicit access policy establishes that the target context should be denied.
+`equivalent_access` 生成“疑似授权缺陷” finding。在人工 triage 或显式访问策略证明目标上下文应被拒绝前，不能标记为已确认漏洞。
 
-## 8. Safety, storage, and audit controls
+## 8. 安全、存储与审计
 
-- Existing HTTP/HTTPS, DNS, redirect, proxy, target-admission, timeout, concurrency, page, depth, and response-size guardrails apply to every context and replay.
-- Active replay never widens the target scope established at run creation.
-- Session material and exact replay values use protected storage with restrictive permissions, atomic writes, expiration, deletion, and an encryption-ready interface.
-- UI, CLI, logs, audit events, evidence previews, and reports use centralized redaction.
-- The run stores authorization confirmation, operator identity when available, configuration snapshot, replay counts, and all skip reasons.
-- Demo routes and demo credentials must be disabled outside an explicit demo environment before authenticated coverage is exposed beyond loopback.
-- Durable execution and restart recovery are required before recommending multi-user or multi-instance deployment.
+- 现有 HTTP/HTTPS、DNS、重定向、代理、目标准入、超时、并发、页面、深度和响应大小限制应用于每个上下文和每次重放。
+- 主动重放不能扩大运行创建时确定的目标范围。
+- 会话材料和精确重放值使用受保护存储，要求严格权限、原子写入、过期、删除及可接入加密的接口。
+- UI、CLI、日志、审计事件、证据预览和报告统一使用中央脱敏服务。
+- 运行保存授权确认、可用时的操作者身份、配置快照、重放数量和所有跳过原因。
+- 在认证覆盖能力暴露到 loopback 之外前，demo routes 和 demo credentials 必须只在显式 demo 环境启用。
+- 在推荐多人或多实例部署前，必须具备持久化任务执行与重启恢复。
 
-## 9. Failure and completeness semantics
+## 9. 失败与完整性语义
 
-- A user or admin login failure makes an authenticated-coverage run `incomplete`.
-- Unknown context data cannot be treated as an asset absence or authorization difference.
-- A single collection failure produces a context warning and preserves other results.
-- A replay-stage failure does not discard passive coverage results, but the report states that active verification is incomplete.
-- If a target context session is invalid before replay, all affected candidates are skipped and recorded; Garden does not continue with stale session state.
-- A stage failure is authoritative even if diagnostic report generation also fails.
-- A run can be `completed`, `completed_with_warnings`, `incomplete`, or `failed`; each status has an explicit completeness explanation.
+- user 或 admin 登录失败时，authenticated-coverage run 标记为 `incomplete`。
+- 未知上下文数据不能解释为资产缺失或授权差异。
+- 单个采集失败产生上下文 warning，保留其他结果。
+- 重放阶段失败不丢弃被动结果，但报告必须声明主动验证不完整。
+- 重放前目标上下文会话无效时，跳过所有相关候选并记录，不得使用旧会话继续。
+- 即使诊断报告也生成失败，原始阶段失败仍是权威状态。
+- 运行状态包括 `completed`、`completed_with_warnings`、`incomplete`、`failed`，每种状态都必须给出完整性说明。
 
-Queued and running work must either resume after a worker restart or transition to a terminal interrupted state with a retry path. It must not remain permanently active because of a stale idempotency key.
+queued/running 工作在 worker 重启后必须恢复，或明确进入可重试的 interrupted 终态，不能因陈旧 idempotency key 永久卡住。
 
-## 10. User interfaces
+## 10. 用户界面
 
 ### 10.1 Web
 
-The home page presents two entry cards:
+首页提供两个入口卡片：
 
-- Quick scan: URL and bounded scan controls.
-- Authenticated coverage: URL, user profile, admin profile, bounded controls, active-replay opt-in, and authorization confirmation.
+- Quick scan：URL 和有界扫描控制。
+- Authenticated coverage：URL、user profile、admin profile、有界控制、主动重放 opt-in 和授权确认。
 
-The assessment page shows:
+assessment 详情页展示：
 
-- overall progress and completeness;
-- three context cards with login, collection, and asset counts;
-- a three-column coverage matrix;
-- replay candidates and verdicts;
-- findings, evidence, failures, and uncovered reasons;
-- the unified report.
+- 总体进度和完整性；
+- 三个上下文的登录、采集和资产数量；
+- 三列覆盖矩阵；
+- 重放候选与判定；
+- findings、evidence、失败和未覆盖原因；
+- 统一报告。
 
-The server-rendered UI remains intentionally light; it does not require a heavy SPA.
+Web 继续采用轻量服务端渲染，不引入重型 SPA。
 
 ### 10.2 HTTP API
 
-The canonical API is:
+规范 API 为：
 
 ```text
 POST /api/assessments
@@ -306,11 +306,11 @@ GET  /api/assessments/{id}/replays
 GET  /api/assessments/{id}/report
 ```
 
-`POST /api/scans` maps to a quick assessment during the compatibility window. Compatibility responses include the canonical assessment identifier and a deprecation notice without breaking the current response contract.
+兼容窗口内，`POST /api/scans` 映射到 quick assessment。兼容响应包含规范 assessment ID 和弃用提示，但不能破坏现有响应协议。
 
 ### 10.3 CLI
 
-Canonical commands are:
+规范命令为：
 
 ```bash
 gardenctl assess start --url URL --mode quick
@@ -324,124 +324,124 @@ gardenctl assess start \
   --confirm-authorized
 ```
 
-`gardenctl scan --url URL` remains a quick-mode alias during migration.
+迁移期间，`gardenctl scan --url URL` 保留为 quick 模式别名。
 
-## 11. Reports and findings
+## 11. 报告与 Findings
 
-The unified report contains:
+统一报告包含：
 
-1. execution summary and authorized scope;
-2. run mode, option snapshot, and completeness;
-3. anonymous, user, and admin session validity;
-4. three-context coverage matrix and important differences;
-5. active-replay scope, verdicts, skips, and evidence;
-6. suspected authorization findings and triage state;
-7. passive findings;
-8. failures, limits, and uncovered reasons;
-9. retest history where applicable;
-10. generation and traceability metadata.
+1. 执行摘要和授权范围；
+2. 运行模式、参数快照和完整性；
+3. anonymous、user、admin 会话有效性；
+4. 三上下文覆盖矩阵和重要差异；
+5. 主动重放范围、判定、跳过原因和证据；
+6. 疑似授权 findings 与 triage 状态；
+7. 被动 findings；
+8. 失败、限制和未覆盖原因；
+9. 可用时的复测历史；
+10. 生成和追溯元数据。
 
-Reports distinguish observed facts, automated inference, and human-confirmed conclusions. Binary response bodies and reusable session material are never embedded.
+报告必须区分观察事实、自动推断和人工确认结论。二进制响应体和可复用会话材料不能嵌入报告。
 
-## 12. Migration strategy
+## 12. 迁移策略
 
-1. Introduce Alembic before changing the persisted model.
-2. Add unified-run fields and new context, request, difference, and replay tables without removing legacy tables.
-3. Route new quick runs through the unified model while keeping current adapters compatible.
-4. Add three-context collection and passive comparison.
-5. Add active replay behind local CLI opt-in and feature gating.
-6. Add canonical assessment API, UI, CLI, and report paths.
-7. Migrate legacy inventory, evidence, finding, and job references with repeatable migration tests.
-8. Switch reads to unified records, retain legacy read-only access for one compatibility window, then remove obsolete paths.
+1. 在修改持久化模型前引入 Alembic。
+2. 新增统一运行字段及 context、request、difference、replay 表，不删除旧表。
+3. 让新 quick run 走统一模型，同时保持现有适配器兼容。
+4. 增加三上下文采集和被动比较。
+5. 在本地 CLI opt-in 与功能开关后增加主动重放。
+6. 增加规范 assessment API、UI、CLI 和报告路径。
+7. 通过可重复迁移测试迁移旧 inventory、evidence、finding、job 引用。
+8. 读取路径切换到统一记录，保留一个兼容窗口的旧数据只读能力，然后移除旧路径。
 
-Completed historical runs remain immutable. Migrations must never reinterpret incomplete legacy data as complete three-context coverage.
+历史已完成运行保持不可变。迁移不能把不完整旧数据重新解释成完整三上下文覆盖。
 
-## 13. Implementation work packages
+## 13. 实施工作包
 
-### WP1: Product and protocol alignment
+### WP1：产品与协议统一
 
-- Align README, PLANS, architecture, threat model, deployment, demo, and migration documents.
-- Define canonical terms, statuses, API schemas, and compatibility policy.
+- 对齐 README、PLANS、architecture、threat model、deployment、demo 和 migration 文档。
+- 定义规范术语、状态、API schemas 和兼容策略。
 
-### WP2: Migration and unified model foundation
+### WP2：迁移与统一模型基础
 
-- Add Alembic.
-- Extend `ScanRun` and add `ScanContext`, `ScanRequest`, `CoverageDifference`, and `ReplayExecution`.
-- Add protected storage and unified evidence/finding references.
+- 引入 Alembic。
+- 扩展 `ScanRun`，增加 `ScanContext`、`ScanRequest`、`CoverageDifference`、`ReplayExecution`。
+- 增加受保护存储和统一 evidence/finding 引用。
 
-### WP3: Unified orchestration and quick compatibility
+### WP3：统一编排与 quick 兼容
 
-- Implement the new stage graph.
-- Keep existing quick Web/API/CLI behavior working through adapters.
-- Add interrupted-run handling and durable-dispatcher contract tests.
+- 实现新阶段图。
+- 通过适配器保持现有 quick Web/API/CLI 行为。
+- 增加 interrupted run 处理和持久化 dispatcher 契约测试。
 
-### WP4: Three-context collection and passive differences
+### WP4：三上下文采集与被动差异
 
-- Validate user and admin sessions.
-- Collect all three contexts under equivalent limits.
-- Normalize assets and calculate the coverage matrix.
+- 验证 user/admin 会话。
+- 在相同限制下采集三个上下文。
+- 规范化资产并计算覆盖矩阵。
 
-### WP5: Active replay engine
+### WP5：主动重放引擎
 
-- Select eligible candidates.
-- Replace source authentication with the target context.
-- Apply network and execution budgets.
-- Produce verdicts, evidence, audit events, and suspected findings.
+- 选择符合条件的候选。
+- 用目标上下文替换来源认证。
+- 应用网络与执行预算。
+- 生成判定、证据、审计事件和疑似 findings。
 
-### WP6: Product surfaces and lifecycle
+### WP6：产品界面与生命周期
 
-- Add assessment Web, API, and CLI surfaces.
-- Add unified report, triage, retest, and export paths.
-- Add operator authorization before enabling active replay over Web/API.
+- 增加 assessment Web、API、CLI。
+- 增加统一报告、triage、retest、export。
+- 在 Web/API 启用主动重放前增加操作者授权。
 
-### WP7: Legacy migration and removal
+### WP7：旧模型迁移与移除
 
-- Migrate historical references.
-- Remove obsolete `ScanJob`, parallel inventory, evidence, finding, and report paths after compatibility verification.
-- Refresh internal package READMEs and generated documentation.
+- 迁移历史引用。
+- 兼容验证后移除旧 `ScanJob` 及平行 inventory、evidence、finding、report 路径。
+- 更新内部包 README 和生成文档。
 
-### WP8: Operational hardening
+### WP8：运行加固
 
-- Add durable execution and restart recovery.
-- Add data-retention controls, secure session/replay storage, observability, and non-root deployment.
-- Gate demo routes and credentials by environment.
+- 增加持久化执行与重启恢复。
+- 增加数据保留、会话/重放安全存储、可观测性和非 root 部署。
+- 按环境隔离 demo routes 和 credentials。
 
-## 14. Test strategy
+## 14. 测试策略
 
-The implementation requires:
+实现必须包含：
 
-- schema-upgrade, rollback, and historical-data migration tests;
-- current quick API and CLI compatibility tests;
-- unit tests for identity normalization and dynamic-content filtering;
-- unit tests for coverage classifications and every replay verdict;
-- tests that reject unsafe methods, request bodies, cross-origin targets, disallowed redirects, arbitrary replay URLs, and source credential leakage;
-- tests for login failure, session expiry, partial collection, partial replay, and incomplete-run reporting;
-- integration tests for all three replay directions;
-- a real Chromium login, inventory, and evidence path for user and admin contexts;
-- an end-to-end local fixture with deliberately allowed and denied resources;
-- restart tests proving queued/running work resumes or terminates explicitly;
-- redaction tests across database views, UI, CLI, audit events, and exports;
-- regression tests for finding deduplication, triage, retest, and report generation.
+- schema upgrade、rollback 和历史数据迁移测试；
+- 现有 quick API/CLI 兼容测试；
+- 身份规范化和动态内容过滤单元测试；
+- 覆盖分类及所有重放判定单元测试；
+- 拒绝危险方法、请求体、跨源目标、被拒绝重定向、任意重放 URL 和来源凭证泄漏的测试；
+- 登录失败、会话过期、部分采集、部分重放和 incomplete 报告测试；
+- 三种重放方向集成测试；
+- user/admin 的真实 Chromium 登录、inventory 和 evidence 路径；
+- 包含明确允许/拒绝资源的本地端到端 fixture；
+- 证明 queued/running 工作恢复或明确终止的重启测试；
+- 数据库视图、UI、CLI、审计事件和导出的脱敏测试；
+- finding 去重、triage、retest 和报告回归测试。
 
-CI must keep Ruff, formatting, Python-version coverage, Docker build, and CLI smoke checks. A real-browser job must be added instead of relying exclusively on mock or contract tests.
+CI 保留 Ruff、格式、Python 版本矩阵、Docker build 和 CLI smoke，并新增真实浏览器任务，不能继续只依赖 mock/contract 测试。
 
-## 15. Definition of done
+## 15. 完成定义
 
-The first authenticated-coverage release is complete when:
+首版认证覆盖发布完成时必须满足：
 
-- one-URL quick scanning remains usable through existing entry points;
-- one Web form, API request, or CLI command can start a three-context assessment;
-- user and admin sessions are validated and all three contexts are collected under equivalent bounds;
-- the report clearly states what each context observed and which assets differ;
-- opt-in replay executes the three approved higher-to-lower privilege directions;
-- every replay is bounded, same-origin, non-mutating, redacted, and audited;
-- incomplete collection cannot be reported as an authorization difference;
-- suspected authorization findings link to reproducible redacted evidence and support triage and retest;
-- application access control gates Web/API active replay, while local CLI use requires explicit authorization confirmation;
-- database migrations, backward compatibility, real-browser E2E, restart recovery, lint, formatting, and the full test suite pass;
-- README, architecture, threat model, deployment, demo, and migration documents consistently describe authenticated verification as the core and quick scan as the entry;
-- no raw reusable session material appears in ordinary database views, logs, UI, CLI, or reports.
+- 现有单 URL quick 入口保持可用；
+- 一个 Web 表单、API 请求或 CLI 命令可启动三上下文 assessment；
+- user/admin 会话经过验证，三个上下文在相同边界下完成采集；
+- 报告清楚说明每个上下文观察到了什么、哪些资产存在差异；
+- opt-in 主动重放覆盖三种已批准的高到低权限方向；
+- 每次重放均有界、同源、非修改性、脱敏且可审计；
+- 不完整采集不能报告为授权差异；
+- 疑似授权 findings 关联可复现脱敏证据，并支持 triage/retest；
+- Web/API 主动重放受应用权限控制，本地 CLI 必须显式确认授权；
+- 数据库迁移、向后兼容、真实浏览器 E2E、重启恢复、lint、format 和全量测试通过；
+- README、architecture、threat model、deployment、demo、migration 文档一致表述“认证验证为核心、quick scan 为入口”；
+- 普通数据库视图、日志、UI、CLI 和报告中不出现可复用原始会话材料。
 
-## 16. Future extensions
+## 16. 后续扩展
 
-After the MVP is validated, Garden may add arbitrary role matrices, explicit route-access policies, carefully approved state-changing request templates, continuous scheduled assessments, baseline drift, external scanner execution adapters, and ticketing or notification integrations. These extensions must reuse the unified run, context, evidence, and finding contracts rather than reintroduce parallel workflows.
+MVP 验证后，可增加任意角色矩阵、显式路由访问策略、经过审批的状态修改请求模板、持续调度、baseline drift、外部扫描器执行适配器，以及工单/通知集成。这些能力必须复用统一 run、context、evidence、finding 协议，不能再次产生平行工作流。
