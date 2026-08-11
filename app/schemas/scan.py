@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.models.enums import AssessmentMode, CompletenessStatus, ContextKind
 
 
 class ScanRunStatus(str, Enum):
@@ -14,13 +16,17 @@ class ScanRunStatus(str, Enum):
     COMPLETED = "completed"
     COMPLETED_WITH_WARNINGS = "completed_with_warnings"
     FAILED = "failed"
+    INCOMPLETE = "incomplete"
+    INTERRUPTED = "interrupted"
 
 
 class ScanStageName(str, Enum):
     VALIDATE = "validate"
-    DISCOVER = "discover"
+    ESTABLISH_CONTEXTS = "establish_contexts"
     COLLECT = "collect"
     NORMALIZE = "normalize"
+    COMPARE_COVERAGE = "compare_coverage"
+    REPLAY_AUTHORIZATION = "replay_authorization"
     ANALYZE = "analyze"
     REPORT = "report"
 
@@ -64,8 +70,32 @@ class ScanFailureView(BaseModel):
     occurred_at: datetime
 
 
+class ScanContextView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    kind: ContextKind
+    credential_profile_id: int | None = None
+    auth_session_id: int | None = None
+    status: str
+    login_status: str = "pending"
+    session_validation_status: str = "pending"
+    collection_status: str = "pending"
+    completeness: str = CompletenessStatus.PENDING.value
+    asset_count: int = 0
+    request_count: int = 0
+    failure_count: int = 0
+    error_code: str | None = None
+    error_message: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
 class ScanRunView(BaseModel):
     id: int
+    mode: AssessmentMode = AssessmentMode.QUICK
+    target_id: int | None = None
+    source_run_id: int | None = None
     input_url: str
     normalized_url: str
     status: str
@@ -79,6 +109,7 @@ class ScanRunView(BaseModel):
     finished_at: datetime | None = None
     report_generated_at: datetime | None = None
     created_at: datetime
+    contexts: list[ScanContextView] = Field(default_factory=list)
     stages: list[ScanStageView] = Field(default_factory=list)
     failures: list[ScanFailureView] = Field(default_factory=list)
     asset_count: int = 0

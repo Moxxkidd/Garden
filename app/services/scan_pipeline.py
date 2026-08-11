@@ -1,4 +1,4 @@
-"""Persisted six-stage URL-to-report execution pipeline."""
+"""Quick URL-to-report execution mapped onto the unified assessment stages."""
 
 from __future__ import annotations
 
@@ -27,7 +27,6 @@ from app.services.scan_reporting import ScanReportService
 STAGES = [stage.value for stage in ScanStageName]
 PROGRESS_AFTER_STAGE = {
     ScanStageName.VALIDATE.value: 8,
-    ScanStageName.DISCOVER.value: 20,
     ScanStageName.COLLECT.value: 58,
     ScanStageName.NORMALIZE.value: 68,
     ScanStageName.ANALYZE.value: 86,
@@ -77,19 +76,12 @@ class ScanPipeline:
                 deadline,
                 lambda: self._validate(run),
             )
-            entry = self._run_stage(
-                session,
-                run,
-                ScanStageName.DISCOVER.value,
-                deadline,
-                lambda: self._discover(session, run, options),
-            )
             self._run_stage(
                 session,
                 run,
                 ScanStageName.COLLECT.value,
                 deadline,
-                lambda: self._collect(session, run, entry, options, deadline),
+                lambda: self._discover_and_collect(session, run, options, deadline),
             )
             self._run_stage(
                 session,
@@ -192,6 +184,17 @@ class ScanPipeline:
             f"Fetched entry URL with HTTP {result.status_code}; "
             f"discovered {len(result.discovered_urls)} linked URL(s)."
         )
+
+    def _discover_and_collect(
+        self,
+        session: Session,
+        run: ScanRun,
+        options: ScanOptions,
+        deadline: float,
+    ):
+        entry, discovery_summary = self._discover(session, run, options)
+        result, collection_summary = self._collect(session, run, entry, options, deadline)
+        return result, f"{discovery_summary} {collection_summary}"
 
     def _collect(
         self,

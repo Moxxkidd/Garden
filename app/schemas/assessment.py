@@ -6,8 +6,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.enums import AssessmentMode, CompletenessStatus, ContextKind, ReplayVerdict
-from app.schemas.scan import ScanOptions
+from app.models.enums import AssessmentMode, ContextKind, ReplayVerdict
+from app.schemas.scan import ScanOptions, ScanRunView
 
 
 class AssessmentStartRequest(BaseModel):
@@ -34,27 +34,6 @@ class AssessmentStartRequest(BaseModel):
         if self.active_checks_enabled and not self.authorization_confirmed:
             raise ValueError("启用主动重放前必须显式确认授权。")
         return self
-
-
-class ScanContextView(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    kind: ContextKind
-    credential_profile_id: int | None = None
-    auth_session_id: int | None = None
-    status: str
-    login_status: str = "pending"
-    session_validation_status: str = "pending"
-    collection_status: str = "pending"
-    completeness: str = CompletenessStatus.PENDING.value
-    asset_count: int = 0
-    request_count: int = 0
-    failure_count: int = 0
-    error_code: str | None = None
-    error_message: str | None = None
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
 
 
 class CoverageDifferenceView(BaseModel):
@@ -92,21 +71,13 @@ class ReplayExecutionView(BaseModel):
     finished_at: datetime | None = None
 
 
-class AssessmentRunView(BaseModel):
+class AssessmentRunView(ScanRunView):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
-    mode: AssessmentMode
-    target_id: int | None = None
-    source_run_id: int | None = None
-    status: str = "queued"
-    current_stage: str = "queued"
-    progress: int = 0
     completeness: str
     active_checks_enabled: bool
     authorization_confirmed_at: datetime | None = None
     authorization_confirmed_by: str | None = None
-    contexts: list[ScanContextView] = Field(default_factory=list)
     context_counts: dict[str, int] = Field(
         default_factory=lambda: {"anonymous": 0, "user": 0, "admin": 0}
     )
