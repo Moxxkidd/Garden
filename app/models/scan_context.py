@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -13,7 +21,14 @@ from app.models.mixins import TimestampMixin
 
 class ScanContext(TimestampMixin, Base):
     __tablename__ = "scan_contexts"
-    __table_args__ = (UniqueConstraint("scan_run_id", "kind"),)
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('anonymous', 'user', 'admin')",
+            name="ck_scan_contexts_kind",
+        ),
+        UniqueConstraint("scan_run_id", "kind", name="uq_scan_contexts_run_kind"),
+        UniqueConstraint("scan_run_id", "id", name="uq_scan_contexts_run_id_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     scan_run_id: Mapped[int] = mapped_column(ForeignKey("scan_runs.id"), index=True)
@@ -42,19 +57,27 @@ class ScanContext(TimestampMixin, Base):
     scan_run = relationship("ScanRun", back_populates="contexts")
     credential_profile = relationship("CredentialProfile")
     auth_session = relationship("AuthSession", back_populates="scan_contexts")
-    assets = relationship("ScanAsset", back_populates="context")
+    assets = relationship(
+        "ScanAsset",
+        back_populates="context",
+        foreign_keys="[ScanAsset.scan_run_id, ScanAsset.context_id]",
+        viewonly=True,
+    )
     requests = relationship(
         "ScanRequest",
         back_populates="source_context",
-        foreign_keys="ScanRequest.source_context_id",
+        foreign_keys="[ScanRequest.scan_run_id, ScanRequest.source_context_id]",
+        viewonly=True,
     )
     source_replay_executions = relationship(
         "ReplayExecution",
         back_populates="source_context",
-        foreign_keys="ReplayExecution.source_context_id",
+        foreign_keys=("[ReplayExecution.scan_run_id, ReplayExecution.source_context_id]"),
+        viewonly=True,
     )
     target_replay_executions = relationship(
         "ReplayExecution",
         back_populates="target_context",
-        foreign_keys="ReplayExecution.target_context_id",
+        foreign_keys=("[ReplayExecution.scan_run_id, ReplayExecution.target_context_id]"),
+        viewonly=True,
     )

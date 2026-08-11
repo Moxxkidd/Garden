@@ -1,5 +1,6 @@
 """统一验证运行模型与请求协议行为测试。"""
 
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -16,6 +17,7 @@ from app.models.enums import (
 )
 from app.models.replay_execution import ReplayExecution
 from app.models.scan_context import ScanContext
+from app.models.scan_request import ScanRequest
 from app.schemas.assessment import AssessmentRunView, AssessmentStartRequest
 from tests.helpers.assessment import add_asset, add_request, make_authenticated_run, make_run
 
@@ -53,6 +55,15 @@ def test_context_kind_is_unique_per_run(db_session):
             ScanContext(scan_run_id=run.id, kind="user", status="pending"),
         ]
     )
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+
+@pytest.mark.parametrize("kind", ["operator", "auditor"])
+def test_context_kind_rejects_values_outside_fixed_protocol(db_session, kind):
+    run = make_run(db_session)
+    db_session.add(ScanContext(scan_run_id=run.id, kind=kind, status="pending"))
 
     with pytest.raises(IntegrityError):
         db_session.commit()
@@ -221,16 +232,96 @@ def test_source_run_relationship_is_unambiguous(db_session):
 
 def test_scan_request_stores_only_redacted_request_data(db_session):
     run = make_authenticated_run(db_session)
-    request = add_request(
-        db_session,
-        run.contexts[2],
-        redacted_url="http://127.0.0.1:8000/items?token=[REDACTED]",
+    secret = "real-session-secret-42"
+    request = ScanRequest.from_capture(
+        scan_run_id=run.id,
+        source_context_id=run.contexts[2].id,
+        method="GET",
+        raw_url=f"http://127.0.0.1:8000/items?token={secret}&id=7#fragment",
+        header_names=["Authorization", "Cookie"],
         fingerprint="request-fingerprint",
         protected_storage_ref="vault://assessment/request/42",
     )
+    db_session.add(request)
 
     db_session.commit()
 
-    assert request.redacted_url.endswith("token=[REDACTED]")
+    persisted = (
+        db_session.execute(ScanRequest.__table__.select().where(ScanRequest.id == request.id))
+        .mappings()
+        .one()
+    )
+    ordinary_values = {
+        key: value for key, value in persisted.items() if key != "protected_storage_ref"
+    }
+    assert request.normalized_redacted_url == (
+        "http://127.0.0.1:8000/items?id=[REDACTED]&token=[REDACTED]"
+    )
+    assert "normalized_url" not in persisted
+    assert "redacted_url" not in persisted
+    assert secret not in json.dumps(ordinary_values, default=str)
+    assert secret not in json.dumps(dict(persisted), default=str)
     assert request.fingerprint == "request-fingerprint"
     assert request.protected_storage_ref == "vault://assessment/request/42"
+
+
+def test_scan_request_rejects_unredacted_query_values():
+    with pytest.raises(ValueError, match="脱敏"):
+        ScanRequest(
+            scan_run_id=1,
+            source_context_id=1,
+            method="GET",
+            normalized_redacted_url="http://app/items?token=real-secret",
+            fingerprint="request-fingerprint",
+            protected_storage_ref="vault://assessment/request/1",
+        )
+
+
+def test_scan_request_rejects_source_context_from_another_run(db_session):
+    first = make_authenticated_run(db_session)
+    second = make_authenticated_run(db_session)
+    request = add_request(db_session, second.contexts[2])
+    request.scan_run_id = first.id
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+
+def test_scan_request_rejects_asset_from_another_run(db_session):
+    first = make_authenticated_run(db_session)
+    second = make_authenticated_run(db_session)
+    foreign_asset = add_asset(db_session, second, context_id=second.contexts[2].id)
+    request = add_request(db_session, first.contexts[2])
+    request.asset_id = foreign_asset.id
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    ["source_request", "source_context", "target_context"],
+)
+def test_replay_execution_rejects_cross_run_links(db_session, mismatch):
+    first = make_authenticated_run(db_session)
+    second = make_authenticated_run(db_session)
+    first_request = add_request(db_session, first.contexts[2])
+    second_request = add_request(db_session, second.contexts[2])
+    source_request = second_request if mismatch == "source_request" else first_request
+    source_context = second.contexts[2] if mismatch == "source_context" else first.contexts[2]
+    target_context = second.contexts[1] if mismatch == "target_context" else first.contexts[1]
+    execution = ReplayExecution(
+        scan_run_id=first.id,
+        source_request_id=source_request.id,
+        source_context_id=source_context.id,
+        target_context_id=target_context.id,
+        policy_snapshot={},
+        policy_hash=f"policy-{mismatch}",
+        status="pending",
+        redirects=[],
+        response_summary_redacted={},
+    )
+    db_session.add(execution)
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()

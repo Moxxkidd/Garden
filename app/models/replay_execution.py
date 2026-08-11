@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.ext.mutable import MutableDict, MutableList
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,13 +30,32 @@ class ReplayExecution(TimestampMixin, Base):
             "target_context_id",
             "policy_hash",
         ),
+        ForeignKeyConstraint(
+            ["scan_run_id", "source_request_id", "source_context_id"],
+            [
+                "scan_requests.scan_run_id",
+                "scan_requests.id",
+                "scan_requests.source_context_id",
+            ],
+            name="fk_replay_executions_run_source_request_context",
+        ),
+        ForeignKeyConstraint(
+            ["scan_run_id", "source_context_id"],
+            ["scan_contexts.scan_run_id", "scan_contexts.id"],
+            name="fk_replay_executions_run_source_context",
+        ),
+        ForeignKeyConstraint(
+            ["scan_run_id", "target_context_id"],
+            ["scan_contexts.scan_run_id", "scan_contexts.id"],
+            name="fk_replay_executions_run_target_context",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     scan_run_id: Mapped[int] = mapped_column(ForeignKey("scan_runs.id"), index=True)
-    source_request_id: Mapped[int] = mapped_column(ForeignKey("scan_requests.id"), index=True)
-    source_context_id: Mapped[int] = mapped_column(ForeignKey("scan_contexts.id"), index=True)
-    target_context_id: Mapped[int] = mapped_column(ForeignKey("scan_contexts.id"), index=True)
+    source_request_id: Mapped[int] = mapped_column(index=True)
+    source_context_id: Mapped[int] = mapped_column(index=True)
+    target_context_id: Mapped[int] = mapped_column(index=True)
     policy_snapshot: Mapped[dict[str, object]] = mapped_column(
         MutableDict.as_mutable(JSON), default=dict
     )
@@ -48,14 +76,21 @@ class ReplayExecution(TimestampMixin, Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     scan_run = relationship("ScanRun", back_populates="replay_executions")
-    source_request = relationship("ScanRequest", back_populates="replay_executions")
+    source_request = relationship(
+        "ScanRequest",
+        back_populates="replay_executions",
+        foreign_keys=[scan_run_id, source_request_id, source_context_id],
+        viewonly=True,
+    )
     source_context = relationship(
         "ScanContext",
         back_populates="source_replay_executions",
-        foreign_keys=[source_context_id],
+        foreign_keys=[scan_run_id, source_context_id],
+        viewonly=True,
     )
     target_context = relationship(
         "ScanContext",
         back_populates="target_replay_executions",
-        foreign_keys=[target_context_id],
+        foreign_keys=[scan_run_id, target_context_id],
+        viewonly=True,
     )

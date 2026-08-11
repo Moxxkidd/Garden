@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -107,13 +117,17 @@ class ScanAsset(Base):
             "url",
             name="uq_scan_assets_run_context_type_url",
         ),
+        UniqueConstraint("scan_run_id", "id", name="uq_scan_assets_run_id_id"),
+        ForeignKeyConstraint(
+            ["scan_run_id", "context_id"],
+            ["scan_contexts.scan_run_id", "scan_contexts.id"],
+            name="fk_scan_assets_run_context",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     scan_run_id: Mapped[int] = mapped_column(ForeignKey("scan_runs.id"), index=True)
-    context_id: Mapped[int | None] = mapped_column(
-        ForeignKey("scan_contexts.id"), nullable=True, index=True
-    )
+    context_id: Mapped[int | None] = mapped_column(nullable=True, index=True)
     identity_key: Mapped[str | None] = mapped_column(String(1000), nullable=True, index=True)
     asset_type: Mapped[str] = mapped_column(String(40), index=True)
     url: Mapped[str] = mapped_column(String(1000))
@@ -126,8 +140,18 @@ class ScanAsset(Base):
     discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     scan_run = relationship("ScanRun", back_populates="assets")
-    context = relationship("ScanContext", back_populates="assets")
-    requests = relationship("ScanRequest", back_populates="asset")
+    context = relationship(
+        "ScanContext",
+        back_populates="assets",
+        foreign_keys=[scan_run_id, context_id],
+        viewonly=True,
+    )
+    requests = relationship(
+        "ScanRequest",
+        back_populates="asset",
+        foreign_keys="[ScanRequest.scan_run_id, ScanRequest.asset_id]",
+        viewonly=True,
+    )
 
 
 class ScanEvidence(Base):

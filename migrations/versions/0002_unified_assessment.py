@@ -211,7 +211,12 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["credential_profile_id"], ["credential_profiles.id"]),
         sa.ForeignKeyConstraint(["auth_session_id"], ["auth_sessions.id"]),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("scan_run_id", "kind"),
+        sa.CheckConstraint(
+            "kind IN ('anonymous', 'user', 'admin')",
+            name="ck_scan_contexts_kind",
+        ),
+        sa.UniqueConstraint("scan_run_id", "kind", name="uq_scan_contexts_run_kind"),
+        sa.UniqueConstraint("scan_run_id", "id", name="uq_scan_contexts_run_id_id"),
     )
     op.create_index("ix_scan_contexts_scan_run_id", "scan_contexts", ["scan_run_id"])
     op.create_index("ix_scan_contexts_kind", "scan_contexts", ["kind"])
@@ -233,8 +238,12 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("context_id", sa.Integer(), nullable=True))
         batch_op.add_column(sa.Column("identity_key", sa.String(length=1000), nullable=True))
         batch_op.create_foreign_key(
-            "fk_scan_assets_context_id_scan_contexts", "scan_contexts", ["context_id"], ["id"]
+            "fk_scan_assets_run_context",
+            "scan_contexts",
+            ["scan_run_id", "context_id"],
+            ["scan_run_id", "id"],
         )
+        batch_op.create_unique_constraint("uq_scan_assets_run_id_id", ["scan_run_id", "id"])
         batch_op.create_index("ix_scan_assets_context_id", ["context_id"], unique=False)
         batch_op.create_index("ix_scan_assets_identity_key", ["identity_key"], unique=False)
     _replace_scan_asset_unique_constraint()
@@ -247,8 +256,7 @@ def upgrade() -> None:
         sa.Column("source_context_id", sa.Integer(), nullable=False),
         sa.Column("asset_id", sa.Integer(), nullable=True),
         sa.Column("method", sa.String(length=16), nullable=False),
-        sa.Column("normalized_url", sa.String(length=1000), nullable=False),
-        sa.Column("redacted_url", sa.String(length=1000), nullable=False),
+        sa.Column("normalized_redacted_url", sa.String(length=1000), nullable=False),
         sa.Column("header_names", sa.JSON(), nullable=False),
         sa.Column("fingerprint", sa.String(length=128), nullable=False),
         sa.Column("replay_allowed", sa.Boolean(), nullable=False),
@@ -258,9 +266,23 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["scan_run_id"], ["scan_runs.id"]),
-        sa.ForeignKeyConstraint(["source_context_id"], ["scan_contexts.id"]),
-        sa.ForeignKeyConstraint(["asset_id"], ["scan_assets.id"]),
+        sa.ForeignKeyConstraint(
+            ["scan_run_id", "source_context_id"],
+            ["scan_contexts.scan_run_id", "scan_contexts.id"],
+            name="fk_scan_requests_run_source_context",
+        ),
+        sa.ForeignKeyConstraint(
+            ["scan_run_id", "asset_id"],
+            ["scan_assets.scan_run_id", "scan_assets.id"],
+            name="fk_scan_requests_run_asset",
+        ),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "scan_run_id",
+            "id",
+            "source_context_id",
+            name="uq_scan_requests_run_id_source_context",
+        ),
     )
     for column in (
         "scan_run_id",
@@ -326,9 +348,25 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["scan_run_id"], ["scan_runs.id"]),
-        sa.ForeignKeyConstraint(["source_request_id"], ["scan_requests.id"]),
-        sa.ForeignKeyConstraint(["source_context_id"], ["scan_contexts.id"]),
-        sa.ForeignKeyConstraint(["target_context_id"], ["scan_contexts.id"]),
+        sa.ForeignKeyConstraint(
+            ["scan_run_id", "source_request_id", "source_context_id"],
+            [
+                "scan_requests.scan_run_id",
+                "scan_requests.id",
+                "scan_requests.source_context_id",
+            ],
+            name="fk_replay_executions_run_source_request_context",
+        ),
+        sa.ForeignKeyConstraint(
+            ["scan_run_id", "source_context_id"],
+            ["scan_contexts.scan_run_id", "scan_contexts.id"],
+            name="fk_replay_executions_run_source_context",
+        ),
+        sa.ForeignKeyConstraint(
+            ["scan_run_id", "target_context_id"],
+            ["scan_contexts.scan_run_id", "scan_contexts.id"],
+            name="fk_replay_executions_run_target_context",
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("scan_run_id", "source_request_id", "target_context_id", "policy_hash"),
     )
@@ -352,7 +390,8 @@ def downgrade() -> None:
     with op.batch_alter_table("scan_assets") as batch_op:
         batch_op.drop_index("ix_scan_assets_identity_key")
         batch_op.drop_index("ix_scan_assets_context_id")
-        batch_op.drop_constraint("fk_scan_assets_context_id_scan_contexts", type_="foreignkey")
+        batch_op.drop_constraint("fk_scan_assets_run_context", type_="foreignkey")
+        batch_op.drop_constraint("uq_scan_assets_run_id_id", type_="unique")
         batch_op.drop_column("identity_key")
         batch_op.drop_column("context_id")
 

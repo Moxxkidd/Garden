@@ -84,7 +84,7 @@ def add_request(
     session: Session,
     context: ScanContext,
     *,
-    redacted_url: str = "http://127.0.0.1:8000/items?token=[REDACTED]",
+    normalized_redacted_url: str = "http://127.0.0.1:8000/items?token=[REDACTED]",
     fingerprint: str = "request-fingerprint",
     protected_storage_ref: str = "vault://assessment/request/1",
 ) -> ScanRequest:
@@ -92,8 +92,7 @@ def add_request(
         scan_run_id=context.scan_run_id,
         source_context_id=context.id,
         method="GET",
-        normalized_url=redacted_url,
-        redacted_url=redacted_url,
+        normalized_redacted_url=normalized_redacted_url,
         fingerprint=fingerprint,
         protected_storage_ref=protected_storage_ref,
     )
