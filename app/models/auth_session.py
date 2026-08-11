@@ -40,5 +40,6 @@ class AuthSession(TimestampMixin, Base):
     scan_job = relationship("ScanJob", back_populates="auth_sessions")
     audit_events = relationship("AuditEvent", back_populates="auth_session")
     inventory_runs = relationship("InventoryRun", back_populates="auth_session")
+    scan_contexts = relationship("ScanContext", back_populates="auth_session")
     findings = relationship("Finding", back_populates="auth_session")
     evidences = relationship("Evidence", back_populates="auth_session")
