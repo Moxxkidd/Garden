@@ -158,6 +158,59 @@ class RecordingHttpAdapter:
         )
 
 
+class StatefulHttpAdapter:
+    def __init__(self) -> None:
+        self.login_count = 0
+        self.refresh_count = 0
+        self.validated_payloads: list[dict[str, object]] = []
+
+    def login(self, target, credential_profile, secret_value, config):
+        self.login_count += 1
+        assert secret_value == "never-audited-secret"
+        return LoginExecutionResult(
+            success=True,
+            adapter="http",
+            target_name=target.name,
+            profile_name=credential_profile.name,
+            status="active",
+            session_type="http_cookie_jar",
+            message="login succeeded",
+            storage_payload={"state": "fresh", "cookies": {"session": "raw-cookie-value"}},
+            session_metadata_redacted={"cookie_names": ["session"]},
+        )
+
+    def validate(self, target, credential_profile, config, stored_payload):
+        self.validated_payloads.append(stored_payload)
+        valid = stored_payload.get("state") in {"valid", "fresh", "refreshed"}
+        return SessionValidationResult(
+            valid=valid,
+            status="active" if valid else "invalid",
+            message="session valid" if valid else "session invalid",
+        )
+
+    def refresh(self, target, credential_profile, secret_value, config, stored_payload):
+        self.refresh_count += 1
+        return LoginExecutionResult(
+            success=True,
+            adapter="http",
+            target_name=target.name,
+            profile_name=credential_profile.name,
+            status="refreshed",
+            session_type="http_cookie_jar",
+            message="session refreshed",
+            storage_payload={"state": "refreshed"},
+            session_metadata_redacted={"cookie_names": ["session"]},
+        )
+
+
+class FailingAfterFlushStorage:
+    def write_payload(self, session_id: int, payload: dict[str, object]) -> str:
+        raise OSError("storage failure: adapter-secret raw-cookie-value")
+
+    def read_payload(self, storage_ref: str) -> dict[str, object]:
+        raise AssertionError("no persisted payload should be read")
+
+
 def context_by_kind(contexts: list[ScanContext], kind: str) -> ScanContext:
     return next(context for context in contexts if context.kind == kind)
 
@@ -172,6 +225,31 @@ def make_profile_run(db_session, profiles: Profiles, admin_profile_id: int | Non
     run.input_url = "http://127.0.0.1:8080/start"
     run.normalized_url = run.input_url
     return run
+
+
+def add_stored_auth_session(
+    db_session,
+    storage_service,
+    *,
+    profile_id: int,
+    target_id: int,
+    payload: dict[str, object],
+    refresh_supported: bool = False,
+) -> AuthSession:
+    auth_session = AuthSession(
+        target_id=target_id,
+        credential_profile_id=profile_id,
+        status="active",
+        session_type="http_cookie_jar",
+        refresh_supported=refresh_supported,
+        session_metadata_redacted={},
+        storage_ref="",
+    )
+    db_session.add(auth_session)
+    db_session.flush()
+    auth_session.storage_ref = storage_service.write_payload(auth_session.id, payload)
+    db_session.flush()
+    return auth_session
 
 
 def test_profiles_must_share_target_and_expected_roles(db_session, profiles):
@@ -273,6 +351,38 @@ def test_both_login_failures_use_general_incomplete_completeness(db_session, pro
     assert run.completeness == "incomplete"
 
 
+def test_non_domain_storage_failure_is_persisted_as_redacted_context_failure(db_session, profiles):
+    run = make_profile_run(db_session, profiles)
+    service = ContextEstablishmentService(
+        auth_service=AuthSessionService(
+            storage_service=FailingAfterFlushStorage(),
+            http_adapter=RecordingHttpAdapter(),
+        )
+    )
+
+    contexts = service.establish(db_session, run)
+    db_session.flush()
+
+    for kind in ("user", "admin"):
+        context = context_by_kind(contexts, kind)
+        assert context.status == "failed"
+        assert context.auth_session_id is None
+    assert run.status == "incomplete"
+    assert db_session.scalars(select(AuthSession)).all() == []
+    failure_events = list(
+        db_session.scalars(
+            select(AuditEvent).where(
+                AuditEvent.event_type == "context_establishment",
+                AuditEvent.status == "failure",
+            )
+        )
+    )
+    assert len(failure_events) == 2
+    serialized = repr([event.detail_redacted for event in failure_events]).lower()
+    assert "adapter-secret" not in serialized
+    assert "raw-cookie-value" not in serialized
+
+
 def test_pipeline_runs_only_context_stage_for_authenticated_run(db_session, profiles):
     run = make_profile_run(db_session, profiles)
     stage = ScanRunStage(
@@ -317,3 +427,107 @@ def test_ensure_valid_for_profile_reuses_storage_backed_session(db_session, prof
     ]
     details = repr(db_session.scalars(select(AuditEvent.detail_redacted)).all()).lower()
     assert "raw-cookie-value" not in details
+
+
+def test_ensure_valid_skips_newer_session_with_mismatched_target(db_session, profiles, tmp_path):
+    storage = SessionStorageService(tmp_path / "session-payloads")
+    adapter = StatefulHttpAdapter()
+    profile = db_session.get(CredentialProfile, profiles.user_id)
+    other_target_id = db_session.get(CredentialProfile, profiles.other_target_admin_id).target_id
+    correct = add_stored_auth_session(
+        db_session,
+        storage,
+        profile_id=profile.id,
+        target_id=profile.target_id,
+        payload={"state": "valid", "marker": "correct"},
+    )
+    add_stored_auth_session(
+        db_session,
+        storage,
+        profile_id=profile.id,
+        target_id=other_target_id,
+        payload={"state": "valid", "marker": "mismatched"},
+    )
+    service = AuthSessionService(storage_service=storage, http_adapter=adapter)
+
+    selected = service.ensure_valid_for_profile(db_session, profile.id)
+
+    assert selected.id == correct.id
+    assert adapter.login_count == 0
+    assert adapter.validated_payloads == [{"state": "valid", "marker": "correct"}]
+
+
+def test_ensure_valid_relogs_when_only_session_has_mismatched_target(
+    db_session, profiles, tmp_path
+):
+    storage = SessionStorageService(tmp_path / "session-payloads")
+    adapter = StatefulHttpAdapter()
+    profile = db_session.get(CredentialProfile, profiles.user_id)
+    other_target_id = db_session.get(CredentialProfile, profiles.other_target_admin_id).target_id
+    mismatched = add_stored_auth_session(
+        db_session,
+        storage,
+        profile_id=profile.id,
+        target_id=other_target_id,
+        payload={"state": "valid", "marker": "mismatched"},
+    )
+    service = AuthSessionService(storage_service=storage, http_adapter=adapter)
+
+    selected = service.ensure_valid_for_profile(db_session, profile.id)
+
+    assert selected.id != mismatched.id
+    assert selected.target_id == profile.target_id
+    assert adapter.login_count == 1
+    assert adapter.validated_payloads == [
+        {"state": "fresh", "cookies": {"session": "raw-cookie-value"}}
+    ]
+
+
+def test_ensure_valid_refreshes_then_revalidates_existing_session(db_session, profiles, tmp_path):
+    storage = SessionStorageService(tmp_path / "session-payloads")
+    adapter = StatefulHttpAdapter()
+    profile = db_session.get(CredentialProfile, profiles.user_id)
+    existing = add_stored_auth_session(
+        db_session,
+        storage,
+        profile_id=profile.id,
+        target_id=profile.target_id,
+        payload={"state": "invalid"},
+        refresh_supported=True,
+    )
+    service = AuthSessionService(storage_service=storage, http_adapter=adapter)
+
+    selected = service.ensure_valid_for_profile(db_session, profile.id)
+
+    assert selected.id == existing.id
+    assert adapter.login_count == 0
+    assert adapter.refresh_count == 1
+    assert adapter.validated_payloads == [
+        {"state": "invalid"},
+        {"state": "refreshed"},
+    ]
+
+
+def test_ensure_valid_relogs_after_invalid_non_refreshable_session(db_session, profiles, tmp_path):
+    storage = SessionStorageService(tmp_path / "session-payloads")
+    adapter = StatefulHttpAdapter()
+    profile = db_session.get(CredentialProfile, profiles.user_id)
+    existing = add_stored_auth_session(
+        db_session,
+        storage,
+        profile_id=profile.id,
+        target_id=profile.target_id,
+        payload={"state": "invalid"},
+    )
+    service = AuthSessionService(storage_service=storage, http_adapter=adapter)
+
+    selected = service.ensure_valid_for_profile(db_session, profile.id)
+
+    assert selected.id != existing.id
+    assert selected.target_id == profile.target_id
+    assert adapter.login_count == 1
+    assert adapter.refresh_count == 0
+    assert adapter.validated_payloads == [
+        {"state": "invalid"},
+        {"state": "fresh", "cookies": {"session": "raw-cookie-value"}},
+    ]

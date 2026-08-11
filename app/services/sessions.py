@@ -72,7 +72,10 @@ class AuthSessionService:
         candidates = list(
             session.scalars(
                 select(AuthSession)
-                .where(AuthSession.credential_profile_id == profile_id)
+                .where(
+                    AuthSession.credential_profile_id == profile_id,
+                    AuthSession.target_id == credential.target_id,
+                )
                 .order_by(AuthSession.id.desc())
             )
         )

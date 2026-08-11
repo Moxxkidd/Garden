@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.errors import GardenError, InputValidationError, ResourceNotFoundError
+from app.core.errors import InputValidationError, ResourceNotFoundError
 from app.models.credential_profile import CredentialProfile
 from app.models.enums import (
     AssessmentMode,
@@ -137,8 +137,9 @@ class ContextEstablishmentService:
         now = datetime.now(timezone.utc)
         context.started_at = context.started_at or now
         try:
-            auth_session = self.auth_service.ensure_valid_for_profile(session, profile.id)
-        except GardenError:
+            with session.begin_nested():
+                auth_session = self.auth_service.ensure_valid_for_profile(session, profile.id)
+        except Exception:  # noqa: BLE001 - context boundary persists a redacted failure
             context.auth_session_id = None
             context.status = "failed"
             context.login_status = "failed"
