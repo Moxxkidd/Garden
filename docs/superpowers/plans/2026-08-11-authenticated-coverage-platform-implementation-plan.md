@@ -222,11 +222,13 @@ git commit -m "引入数据库迁移基线"
 ```python
 def test_authenticated_assessment_has_exactly_three_contexts(db_session):
     run = make_run(db_session, mode="authenticated_coverage")
-    db_session.add_all([
-        ScanContext(scan_run_id=run.id, kind="anonymous", status="pending"),
-        ScanContext(scan_run_id=run.id, kind="user", status="pending"),
-        ScanContext(scan_run_id=run.id, kind="admin", status="pending"),
-    ])
+    db_session.add_all(
+        [
+            ScanContext(scan_run_id=run.id, kind="anonymous", status="pending"),
+            ScanContext(scan_run_id=run.id, kind="user", status="pending"),
+            ScanContext(scan_run_id=run.id, kind="admin", status="pending"),
+        ]
+    )
     db_session.commit()
     assert [item.kind for item in run.contexts] == ["anonymous", "user", "admin"]
 ```
@@ -236,18 +238,25 @@ def test_authenticated_assessment_has_exactly_three_contexts(db_session):
 ```python
 def test_context_kind_is_unique_per_run(db_session):
     run = make_run(db_session)
-    db_session.add_all([
-        ScanContext(scan_run_id=run.id, kind="user", status="pending"),
-        ScanContext(scan_run_id=run.id, kind="user", status="pending"),
-    ])
+    db_session.add_all(
+        [
+            ScanContext(scan_run_id=run.id, kind="user", status="pending"),
+            ScanContext(scan_run_id=run.id, kind="user", status="pending"),
+        ]
+    )
     with pytest.raises(IntegrityError):
         db_session.commit()
 
 
 def test_active_replay_requires_authorization_confirmation():
     with pytest.raises(ValidationError):
-        AssessmentStartRequest(url="http://127.0.0.1:8000", mode="authenticated_coverage",
-            user_profile_id=1, admin_profile_id=2, active_checks_enabled=True)
+        AssessmentStartRequest(
+            url="http://127.0.0.1:8000",
+            mode="authenticated_coverage",
+            user_profile_id=1,
+            admin_profile_id=2,
+            active_checks_enabled=True,
+        )
 ```
 
 - [ ] **步骤 3：运行测试并确认模型不存在**
@@ -343,15 +352,23 @@ def test_start_assessment_creates_three_contexts(assessment_profiles, inline_ser
     view = inline_service.start_assessment(request)
     assert [item.kind for item in view.contexts] == ["anonymous", "user", "admin"]
     assert [stage.name for stage in view.stages] == [
-        "validate", "establish_contexts", "collect", "normalize",
-        "compare_coverage", "replay_authorization", "analyze", "report",
+        "validate",
+        "establish_contexts",
+        "collect",
+        "normalize",
+        "compare_coverage",
+        "replay_authorization",
+        "analyze",
+        "report",
     ]
 ```
 
 - [ ] **步骤 3：写 quick 运行升级关联测试**
 
 ```python
-def test_authenticated_assessment_can_reference_quick_source_run(inline_service, completed_quick_run, assessment_profiles):
+def test_authenticated_assessment_can_reference_quick_source_run(
+    inline_service, completed_quick_run, assessment_profiles
+):
     view = inline_service.start_assessment(
         AssessmentStartRequest(
             url=completed_quick_run.url,
@@ -497,10 +514,13 @@ git commit -m "建立三角色验证上下文"
 - [ ] **步骤 1：写身份规范化测试**
 
 ```python
-@pytest.mark.parametrize(("left", "right"), [
-    ("https://app/a?id=1&sort=name", "https://app/a?sort=date&id=9"),
-    ("https://app:443/a/", "https://app/a"),
-])
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [
+        ("https://app/a?id=1&sort=name", "https://app/a?sort=date&id=9"),
+        ("https://app:443/a/", "https://app/a"),
+    ],
+)
 def test_asset_identity_ignores_values_and_default_port(left, right):
     assert canonical_asset_identity("GET", left) == canonical_asset_identity("GET", right)
 ```
@@ -511,7 +531,9 @@ def test_asset_identity_ignores_values_and_default_port(left, right):
 def test_signature_ignores_timestamp_nonce_and_trace_id():
     first = "generated=2026-08-11T01:02:03Z nonce=abc trace_id=req-1 stable=users"
     second = "generated=2026-08-11T02:03:04Z nonce=xyz trace_id=req-2 stable=users"
-    assert stable_response_signature(first, "text/plain") == stable_response_signature(second, "text/plain")
+    assert stable_response_signature(first, "text/plain") == stable_response_signature(
+        second, "text/plain"
+    )
 ```
 
 - [ ] **步骤 3：写 context-scoped 持久化测试**
@@ -693,7 +715,9 @@ def test_protected_payload_can_be_deleted_and_expired_payloads_are_purged(tmp_pa
 def test_policy_only_selects_approved_downward_gets(run_with_requests):
     candidates = ReplayPolicy(max_candidates=50).candidates(run_with_requests)
     assert {(c.source_kind, c.target_kind) for c in candidates} == {
-        ("user", "anonymous"), ("admin", "user"), ("admin", "anonymous")
+        ("user", "anonymous"),
+        ("admin", "user"),
+        ("admin", "anonymous"),
     }
     assert all(c.method in {"GET", "HEAD", "OPTIONS"} for c in candidates)
 ```
@@ -787,14 +811,19 @@ def test_replay_replaces_source_authentication(fake_http_transport, replay_candi
 - [ ] **步骤 2：写四种判定测试**
 
 ```python
-@pytest.mark.parametrize(("status", "login_redirect", "similarity", "expected"), [
-    (403, False, 0.0, "blocked"),
-    (302, True, 0.0, "blocked"),
-    (200, False, 0.95, "equivalent_access"),
-    (200, False, 0.35, "changed_response"),
-])
+@pytest.mark.parametrize(
+    ("status", "login_redirect", "similarity", "expected"),
+    [
+        (403, False, 0.0, "blocked"),
+        (302, True, 0.0, "blocked"),
+        (200, False, 0.95, "equivalent_access"),
+        (200, False, 0.35, "changed_response"),
+    ],
+)
 def test_classify_replay(status, login_redirect, similarity, expected):
-    assert classify_replay(make_source(), make_replay(status, login_redirect, similarity)) == expected
+    assert (
+        classify_replay(make_source(), make_replay(status, login_redirect, similarity)) == expected
+    )
 ```
 
 - [ ] **步骤 3：写超时、跨源重定向和会话失效测试**
@@ -902,7 +931,13 @@ def test_non_equivalent_verdict_does_not_create_vulnerability_finding(verdict):
 
 ```python
 def test_authenticated_report_contains_coverage_and_replay_sections(report_text):
-    for heading in ["三角色会话有效性", "覆盖矩阵", "主动权限重放", "疑似授权缺陷", "完整性与未覆盖原因"]:
+    for heading in [
+        "三角色会话有效性",
+        "覆盖矩阵",
+        "主动权限重放",
+        "疑似授权缺陷",
+        "完整性与未覆盖原因",
+    ]:
         assert f"## {heading}" in report_text
 ```
 
@@ -978,9 +1013,22 @@ def test_operator_can_start_active_assessment(operator_client, assessment_payloa
 
 ```python
 def test_cli_rejects_active_replay_without_confirmation(runner):
-    result = runner.invoke(app, ["assess", "start", "--url", LOCAL_URL,
-        "--mode", "authenticated-coverage", "--user-profile", "user",
-        "--admin-profile", "admin", "--enable-active-replay"])
+    result = runner.invoke(
+        app,
+        [
+            "assess",
+            "start",
+            "--url",
+            LOCAL_URL,
+            "--mode",
+            "authenticated-coverage",
+            "--user-profile",
+            "user",
+            "--admin-profile",
+            "admin",
+            "--enable-active-replay",
+        ],
+    )
     assert result.exit_code == 2
     assert "--confirm-authorized" in result.stdout
 ```
@@ -1106,8 +1154,12 @@ def test_worker_requeues_expired_running_assessment(db_session, frozen_time):
 
 ```python
 def test_worker_marks_repeated_crash_interrupted(db_session, frozen_time):
-    run = make_run(db_session, status="running", recovery_count=3,
-        lease_expires_at=frozen_time.minus(minutes=5))
+    run = make_run(
+        db_session,
+        status="running",
+        recovery_count=3,
+        lease_expires_at=frozen_time.minus(minutes=5),
+    )
     AssessmentWorker(max_recoveries=3).recover_interrupted(frozen_time.now)
     db_session.refresh(run)
     assert run.status == "interrupted"
