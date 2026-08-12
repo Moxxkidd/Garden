@@ -7,7 +7,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -18,6 +18,14 @@ logger = get_logger(__name__)
 _DATABASE_URL: str | None = None
 _ENGINE: Engine | None = None
 _SESSION_FACTORY: sessionmaker[Session] | None = None
+
+
+def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
 
 
 def _migration_assets_root() -> Path:
@@ -106,6 +114,8 @@ def init_database(database_url: str) -> None:
         pool_pre_ping=True,
         connect_args=connect_args,
     )
+    if database_url.startswith("sqlite"):
+        event.listen(_ENGINE, "connect", _enable_sqlite_foreign_keys)
     _SESSION_FACTORY = sessionmaker(
         bind=_ENGINE,
         autoflush=False,

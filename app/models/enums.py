@@ -33,6 +33,34 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class AssessmentMode(str, Enum):
+    QUICK = "quick"
+    AUTHENTICATED_COVERAGE = "authenticated_coverage"
+
+
+class ContextKind(str, Enum):
+    ANONYMOUS = "anonymous"
+    USER = "user"
+    ADMIN = "admin"
+
+
+class ReplayVerdict(str, Enum):
+    BLOCKED = "blocked"
+    EQUIVALENT_ACCESS = "equivalent_access"
+    CHANGED_RESPONSE = "changed_response"
+    INCONCLUSIVE = "inconclusive"
+
+
+class CompletenessStatus(str, Enum):
+    PENDING = "pending"
+    COMPLETE = "complete"
+    INCOMPLETE = "incomplete"
+    MISSING_USER_CONTEXT = "missing_user_context"
+    MISSING_ADMIN_CONTEXT = "missing_admin_context"
+    ACTIVE_CHECKS_INCOMPLETE = "active_checks_incomplete"
+    LEGACY_SINGLE_CONTEXT = "legacy_single_context"
+
+
 class SessionStatus(str, Enum):
     ACTIVE = "active"
     EXPIRED = "expired"
@@ -60,6 +88,7 @@ class AuditEventType(str, Enum):
     LOGIN_ATTEMPT = "login_attempt"
     SESSION_VALIDATION = "session_validation"
     SESSION_REFRESH = "session_refresh"
+    CONTEXT_ESTABLISHMENT = "context_establishment"
     FINDING_STATUS_UPDATE = "finding_status_update"
     EVIDENCE_EXPORT = "evidence_export"
     RETEST_RUN = "retest_run"

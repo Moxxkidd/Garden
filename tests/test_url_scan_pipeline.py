@@ -135,7 +135,26 @@ def test_complete_pipeline_persists_structured_data_and_report(tmp_path) -> None
     assert scan.asset_count == 2
     assert scan.evidence_count == 2
     assert scan.finding_count >= 1
-    assert [stage.status for stage in scan.stages] == ["completed"] * 6
+    assert [stage.name for stage in scan.stages] == [
+        "validate",
+        "establish_contexts",
+        "collect",
+        "normalize",
+        "compare_coverage",
+        "replay_authorization",
+        "analyze",
+        "report",
+    ]
+    assert [stage.status for stage in scan.stages] == [
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "skipped",
+        "skipped",
+        "completed",
+        "completed",
+    ]
     report = service.read_report(scan.id)
     for heading in [
         "执行摘要",

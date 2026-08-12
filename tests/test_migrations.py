@@ -5,6 +5,8 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import NoSuchModuleError
@@ -14,7 +16,6 @@ from typer.testing import CliRunner
 import app.models  # noqa: F401
 from app.cli.main import app as cli_app
 from app.core.settings import clear_settings_cache, get_settings
-from app.db.base import Base
 from app.db.bootstrap import (
     reset_database_state,
     stamp_existing_database,
@@ -27,19 +28,42 @@ runner = CliRunner()
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def create_unversioned_legacy_database(url: str):
+    """构造仅包含 0001 schema、但尚未登记 Alembic 版本的历史数据库。"""
+    upgrade_database(url, "0001")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(text("drop table alembic_version"))
+    return engine
+
+
+def downgrade_database(url: str, revision: str) -> None:
+    config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+    command.downgrade(config, revision)
+
+
 def test_upgrade_database_creates_current_schema(tmp_path):
     url = f"sqlite+pysqlite:///{tmp_path / 'fresh.db'}"
 
     upgrade_database(url)
 
     tables = set(inspect(create_engine(url)).get_table_names())
-    assert {"alembic_version", "scan_runs", "scan_jobs", "inventory_runs"} <= tables
+    assert {
+        "alembic_version",
+        "scan_runs",
+        "scan_contexts",
+        "scan_requests",
+        "coverage_differences",
+        "replay_executions",
+        "scan_jobs",
+        "inventory_runs",
+    } <= tables
 
 
 def test_stamp_existing_database_preserves_rows(tmp_path):
     url = f"sqlite+pysqlite:///{tmp_path / 'legacy.db'}"
-    engine = create_engine(url)
-    Base.metadata.create_all(engine)
+    engine = create_unversioned_legacy_database(url)
     with Session(engine) as session:
         session.add(
             Target(
@@ -58,12 +82,106 @@ def test_stamp_existing_database_preserves_rows(tmp_path):
 
     with engine.connect() as connection:
         assert connection.scalar(text("select count(*) from targets")) == 1
-        assert connection.scalar(text("select version_num from alembic_version")) == "0001"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0002"
+
+
+def test_legacy_scan_assets_are_backfilled_into_anonymous_context(tmp_path):
+    url = f"sqlite+pysqlite:///{tmp_path / 'legacy-assets.db'}"
+    engine = create_unversioned_legacy_database(url)
+    with engine.begin() as connection:
+        run_id = connection.execute(
+            text(
+                """
+                insert into scan_runs (
+                    input_url, normalized_url, active_key, status, current_stage,
+                    progress, options, retry_count, report_path, error_code,
+                    error_message, started_at, finished_at, report_generated_at,
+                    created_at, updated_at
+                ) values (
+                    :input_url, :normalized_url, null, 'completed', 'report',
+                    100, '{}', 0, null, null, null, null, null, null,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )
+                """
+            ),
+            {
+                "input_url": "http://localhost:8080/items?token=secret&id=7",
+                "normalized_url": "http://localhost:8080/items?id=7&token=secret",
+            },
+        ).lastrowid
+        asset_id = connection.execute(
+            text(
+                """
+                insert into scan_assets (
+                    scan_run_id, asset_type, url, method, status_code, title,
+                    attributes, discovered_at
+                ) values (
+                    :run_id, 'page', :url, 'GET', 200, 'Items', '{}', CURRENT_TIMESTAMP
+                )
+                """
+            ),
+            {
+                "run_id": run_id,
+                "url": "http://localhost:8080/items?token=secret&id=7",
+            },
+        ).lastrowid
+
+    stamp_existing_database(url)
+    upgrade_database(url)
+
+    with engine.connect() as connection:
+        run = (
+            connection.execute(
+                text("select mode, completeness from scan_runs where id = :run_id"),
+                {"run_id": run_id},
+            )
+            .mappings()
+            .one()
+        )
+        context = (
+            connection.execute(
+                text("select id, kind, asset_count from scan_contexts where scan_run_id = :run_id"),
+                {"run_id": run_id},
+            )
+            .mappings()
+            .one()
+        )
+        asset = (
+            connection.execute(
+                text("select context_id, identity_key from scan_assets where id = :asset_id"),
+                {"asset_id": asset_id},
+            )
+            .mappings()
+            .one()
+        )
+
+    assert run == {"mode": "quick", "completeness": "complete"}
+    assert context["kind"] == "anonymous"
+    assert context["asset_count"] == 1
+    assert asset["context_id"] == context["id"]
+    assert asset["identity_key"] == "GET:/items?id&token"
+
+
+def test_unified_assessment_migration_round_trip(tmp_path):
+    url = f"sqlite+pysqlite:///{tmp_path / 'round-trip.db'}"
+    upgrade_database(url)
+
+    downgrade_database(url, "0001")
+
+    downgraded_tables = set(inspect(create_engine(url)).get_table_names())
+    assert "scan_contexts" not in downgraded_tables
+    assert "scan_requests" not in downgraded_tables
+    assert "coverage_differences" not in downgraded_tables
+    assert "replay_executions" not in downgraded_tables
+
+    upgrade_database(url)
+    with create_engine(url).connect() as connection:
+        assert connection.scalar(text("select version_num from alembic_version")) == "0002"
 
 
 def test_application_requires_explicit_stamp_for_unversioned_legacy_database(tmp_path, monkeypatch):
     url = f"sqlite+pysqlite:///{tmp_path / 'legacy-app.db'}"
-    Base.metadata.create_all(create_engine(url))
+    create_unversioned_legacy_database(url)
     monkeypatch.setenv("GARDEN_DATABASE_URL", url)
     monkeypatch.setenv("GARDEN_DATABASE_AUTO_MIGRATE", "false")
     clear_settings_cache()
@@ -112,7 +230,7 @@ def test_application_auto_migrates_fresh_database_in_development(tmp_path, monke
         assert client.get("/healthz").status_code == 200
 
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0001"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0002"
 
 
 def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
@@ -125,13 +243,12 @@ def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
     current_result = runner.invoke(cli_app, ["db", "current"])
 
     assert upgrade_result.exit_code == 0
-    assert "0001" in current_result.stdout
+    assert "0002" in current_result.stdout
 
 
 def test_database_cli_stamp_existing_preserves_legacy_rows(tmp_path, monkeypatch):
     url = f"sqlite+pysqlite:///{tmp_path / 'cli-legacy.db'}"
-    engine = create_engine(url)
-    Base.metadata.create_all(engine)
+    engine = create_unversioned_legacy_database(url)
     with Session(engine) as session:
         session.add(
             Target(
@@ -190,6 +307,7 @@ def test_built_wheel_installs_with_loadable_migration_assets(tmp_path):
         "app/db/migration_assets/migrations/env.py",
         "app/db/migration_assets/migrations/script.py.mako",
         "app/db/migration_assets/migrations/versions/0001_existing_schema_baseline.py",
+        "app/db/migration_assets/migrations/versions/0002_unified_assessment.py",
     }
     assert expected_paths <= packaged_paths
 
@@ -242,9 +360,7 @@ assert "alembic_version" in inspect(create_engine(database_url)).get_table_names
 
 def test_percent_encoded_non_sqlite_url_fails_without_leaking_credentials(capsys):
     encoded_password = "encoded-secret%40value%2Fpart"
-    database_url = (
-        f"postgresql+gardenmissing://garden:{encoded_password}@db.example.invalid/garden"
-    )
+    database_url = f"postgresql+gardenmissing://garden:{encoded_password}@db.example.invalid/garden"
 
     with pytest.raises(NoSuchModuleError) as exc_info:
         upgrade_database(database_url)

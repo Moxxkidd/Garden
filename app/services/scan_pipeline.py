@@ -1,4 +1,4 @@
-"""Persisted six-stage URL-to-report execution pipeline."""
+"""Quick URL-to-report execution mapped onto the unified assessment stages."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import InputValidationError, TargetPolicyError
+from app.models.enums import AssessmentMode, CompletenessStatus, ContextKind
+from app.models.scan_context import ScanContext
 from app.models.scan_run import (
     ScanAsset,
     ScanEvidence,
@@ -20,6 +22,13 @@ from app.models.scan_run import (
 )
 from app.redaction.service import RedactionService
 from app.schemas.scan import FetchResult, ScanOptions, ScanRunStatus, ScanStageName
+from app.services.context_collection import (
+    ContextCollectionService,
+    ContextCollectionSummary,
+    DefaultContextCollectionGateway,
+)
+from app.services.context_establishment import ContextEstablishmentService
+from app.services.coverage_identity import canonical_asset_identity, redacted_observed_url
 from app.services.scan_analysis import PassiveScanAnalyzer
 from app.services.scan_network import FetchError, HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_reporting import ScanReportService
@@ -27,7 +36,7 @@ from app.services.scan_reporting import ScanReportService
 STAGES = [stage.value for stage in ScanStageName]
 PROGRESS_AFTER_STAGE = {
     ScanStageName.VALIDATE.value: 8,
-    ScanStageName.DISCOVER.value: 20,
+    ScanStageName.ESTABLISH_CONTEXTS.value: 18,
     ScanStageName.COLLECT.value: 58,
     ScanStageName.NORMALIZE.value: 68,
     ScanStageName.ANALYZE.value: 86,
@@ -48,6 +57,8 @@ class ScanPipeline:
         analyzer: PassiveScanAnalyzer | None = None,
         report_service: ScanReportService | None = None,
         redaction_service: RedactionService | None = None,
+        context_service: ContextEstablishmentService | None = None,
+        context_collection_service: ContextCollectionService | None = None,
         clock=time.monotonic,
     ) -> None:
         self.policy = policy
@@ -55,7 +66,132 @@ class ScanPipeline:
         self.analyzer = analyzer or PassiveScanAnalyzer()
         self.report_service = report_service or ScanReportService()
         self.redaction_service = redaction_service or RedactionService()
+        self.context_service = context_service or ContextEstablishmentService()
+        self.context_collection_service = context_collection_service or ContextCollectionService(
+            gateway=DefaultContextCollectionGateway(http_gateway=gateway)
+        )
         self.clock = clock
+
+    def establish_contexts(self, session: Session, scan_run_id: int) -> list[ScanContext]:
+        """Execute only the authenticated context-establishment stage."""
+
+        run = session.get(ScanRun, scan_run_id)
+        if run is None:
+            raise InputValidationError(f"Scan run {scan_run_id} was not found.")
+        if run.mode != AssessmentMode.AUTHENTICATED_COVERAGE.value:
+            raise InputValidationError("Only authenticated coverage runs establish three contexts.")
+        stage = self._stage(session, run.id, ScanStageName.ESTABLISH_CONTEXTS.value)
+        if stage is None:
+            raise RuntimeError("Missing persisted stage 'establish_contexts'.")
+
+        stage.status = "running"
+        stage.attempt += 1
+        stage.started_at = datetime.now(timezone.utc)
+        run.current_stage = ScanStageName.ESTABLISH_CONTEXTS.value
+        session.flush()
+        try:
+            contexts = self.context_service.establish(session, run)
+        except Exception as error:
+            session.rollback()
+            run = session.get(ScanRun, scan_run_id)
+            stage = self._stage(session, scan_run_id, ScanStageName.ESTABLISH_CONTEXTS.value)
+            if run is not None:
+                run.status = ScanRunStatus.INCOMPLETE.value
+                run.completeness = CompletenessStatus.INCOMPLETE.value
+                run.error_code = "context_establishment_invalid"
+                run.error_message = str(error)
+                run.finished_at = datetime.now(timezone.utc)
+            if stage is not None:
+                stage.status = "failed"
+                stage.error_code = "context_establishment_invalid"
+                stage.error_message = str(error)
+                stage.finished_at = datetime.now(timezone.utc)
+            session.commit()
+            raise
+
+        if run.status == ScanRunStatus.INCOMPLETE.value:
+            stage.status = "failed"
+            stage.error_code = run.error_code
+            stage.error_message = run.error_message
+            stage.summary = "One or more required authentication contexts failed."
+        else:
+            stage.status = "completed"
+            stage.summary = "Established anonymous, user, and admin contexts."
+            run.progress = PROGRESS_AFTER_STAGE[ScanStageName.ESTABLISH_CONTEXTS.value]
+        stage.finished_at = datetime.now(timezone.utc)
+        session.commit()
+        return contexts
+
+    def collect_contexts(
+        self,
+        session: Session,
+        scan_run_id: int,
+    ) -> list[ContextCollectionSummary]:
+        """Execute context collection independently so one failure retains other results."""
+
+        run = session.get(ScanRun, scan_run_id)
+        if run is None:
+            raise InputValidationError(f"Scan run {scan_run_id} was not found.")
+        if run.mode != AssessmentMode.AUTHENTICATED_COVERAGE.value:
+            raise InputValidationError("Only authenticated coverage runs collect three contexts.")
+        stage = self._stage(session, run.id, ScanStageName.COLLECT.value)
+        if stage is None:
+            raise RuntimeError("Missing persisted stage 'collect'.")
+        stage.status = "running"
+        stage.attempt += 1
+        stage.started_at = datetime.now(timezone.utc)
+        run.current_stage = ScanStageName.COLLECT.value
+        session.flush()
+
+        summaries: list[ContextCollectionSummary] = []
+        failed_kinds: set[str] = set()
+        contexts = list(
+            session.scalars(
+                select(ScanContext)
+                .where(ScanContext.scan_run_id == run.id)
+                .order_by(ScanContext.id)
+            )
+        )
+        for context in contexts:
+            if context.status == "failed":
+                failed_kinds.add(context.kind)
+                continue
+            try:
+                with session.begin_nested():
+                    summaries.append(self.context_collection_service.collect(session, run, context))
+            except Exception:  # noqa: BLE001 - context boundary persists only a safe diagnostic
+                context = session.get(ScanContext, context.id)
+                context.status = "failed"
+                context.collection_status = "failed"
+                context.completeness = CompletenessStatus.INCOMPLETE.value
+                context.failure_count += 1
+                context.error_code = "context_collection_failed"
+                context.error_message = "Collection failed for this context."
+                context.finished_at = datetime.now(timezone.utc)
+                failed_kinds.add(context.kind)
+
+        if failed_kinds:
+            run.status = ScanRunStatus.INCOMPLETE.value
+            if failed_kinds == {ContextKind.USER.value}:
+                run.completeness = CompletenessStatus.MISSING_USER_CONTEXT.value
+            elif failed_kinds == {ContextKind.ADMIN.value}:
+                run.completeness = CompletenessStatus.MISSING_ADMIN_CONTEXT.value
+            else:
+                run.completeness = CompletenessStatus.INCOMPLETE.value
+            run.error_code = "context_collection_incomplete"
+            run.error_message = "One or more contexts could not be collected completely."
+            stage.status = "completed_with_warnings"
+            stage.summary = (
+                f"Collected {len(summaries)} context(s); "
+                f"{len(failed_kinds)} context(s) were incomplete."
+            )
+        else:
+            stage.status = "completed"
+            stage.summary = f"Collected {len(summaries)} context(s)."
+            run.progress = PROGRESS_AFTER_STAGE[ScanStageName.COLLECT.value]
+        stage.finished_at = datetime.now(timezone.utc)
+        session.commit()
+        return summaries
 
     def execute(self, session: Session, scan_run_id: int) -> None:
         run = session.get(ScanRun, scan_run_id)
@@ -77,19 +213,12 @@ class ScanPipeline:
                 deadline,
                 lambda: self._validate(run),
             )
-            entry = self._run_stage(
-                session,
-                run,
-                ScanStageName.DISCOVER.value,
-                deadline,
-                lambda: self._discover(session, run, options),
-            )
             self._run_stage(
                 session,
                 run,
                 ScanStageName.COLLECT.value,
                 deadline,
-                lambda: self._collect(session, run, entry, options, deadline),
+                lambda: self._discover_and_collect(session, run, options, deadline),
             )
             self._run_stage(
                 session,
@@ -122,6 +251,7 @@ class ScanPipeline:
             run.progress = 100
             run.finished_at = datetime.now(timezone.utc)
             run.active_key = None
+            self._finalize_quick_context(session, run)
             session.commit()
         except Exception as error:  # noqa: BLE001 - stage boundary records diagnostics
             session.rollback()
@@ -192,6 +322,17 @@ class ScanPipeline:
             f"Fetched entry URL with HTTP {result.status_code}; "
             f"discovered {len(result.discovered_urls)} linked URL(s)."
         )
+
+    def _discover_and_collect(
+        self,
+        session: Session,
+        run: ScanRun,
+        options: ScanOptions,
+        deadline: float,
+    ):
+        entry, discovery_summary = self._discover(session, run, options)
+        result, collection_summary = self._collect(session, run, entry, options, deadline)
+        return result, f"{discovery_summary} {collection_summary}"
 
     def _collect(
         self,
@@ -306,11 +447,20 @@ class ScanPipeline:
     def _persist_fetch(
         self, session: Session, run: ScanRun, result: FetchResult, *, depth: int
     ) -> None:
+        context = session.scalar(
+            select(ScanContext).where(
+                ScanContext.scan_run_id == run.id,
+                ScanContext.kind == ContextKind.ANONYMOUS.value,
+            )
+        )
+        if context is None:
+            raise RuntimeError("Missing persisted anonymous quick-scan context.")
+        identity_key = canonical_asset_identity("GET", result.final_url)
         asset = session.scalar(
             select(ScanAsset).where(
                 ScanAsset.scan_run_id == run.id,
-                ScanAsset.asset_type == "page",
-                ScanAsset.url == result.final_url,
+                ScanAsset.context_id == context.id,
+                ScanAsset.identity_key == identity_key,
             )
         )
         now = datetime.now(timezone.utc)
@@ -327,8 +477,10 @@ class ScanPipeline:
         if asset is None:
             asset = ScanAsset(
                 scan_run_id=run.id,
+                context_id=context.id,
+                identity_key=identity_key,
                 asset_type="page",
-                url=result.final_url,
+                url=redacted_observed_url(result.final_url),
                 method="GET",
                 status_code=result.status_code,
                 title=result.title,
@@ -389,6 +541,28 @@ class ScanPipeline:
             )
         )
         run.retry_count += max(0, attempt - 1)
+
+    def _finalize_quick_context(self, session: Session, run: ScanRun) -> None:
+        if run.mode != AssessmentMode.QUICK.value:
+            return
+        context = session.scalar(
+            select(ScanContext).where(
+                ScanContext.scan_run_id == run.id,
+                ScanContext.kind == ContextKind.ANONYMOUS.value,
+            )
+        )
+        if context is None:
+            raise RuntimeError("Missing persisted anonymous quick-scan context.")
+        context.status = run.status
+        context.login_status = "not_applicable"
+        context.session_validation_status = "not_applicable"
+        context.collection_status = "completed"
+        context.completeness = CompletenessStatus.LEGACY_SINGLE_CONTEXT.value
+        context.asset_count = len(run.assets)
+        context.request_count = len(run.requests)
+        context.failure_count = len(run.failures)
+        context.started_at = context.started_at or run.started_at
+        context.finished_at = run.finished_at
 
     def _try_failure_report(self, session: Session, run: ScanRun) -> None:
         try:
