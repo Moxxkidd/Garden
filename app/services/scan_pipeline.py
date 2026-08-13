@@ -48,6 +48,10 @@ class OverallScanTimeout(RuntimeError):
     pass
 
 
+class ScanInterrupted(RuntimeError):
+    """A persisted cancellation signal observed at a safe pipeline boundary."""
+
+
 class ScanPipeline:
     def __init__(
         self,
@@ -241,6 +245,7 @@ class ScanPipeline:
                 deadline,
                 lambda: self._report(session, run),
             )
+            self._check_interrupted(session, run.id)
             session.refresh(run)
             run.status = (
                 ScanRunStatus.COMPLETED_WITH_WARNINGS.value
@@ -253,6 +258,9 @@ class ScanPipeline:
             run.active_key = None
             self._finalize_quick_context(session, run)
             session.commit()
+        except ScanInterrupted:
+            session.rollback()
+            return
         except Exception as error:  # noqa: BLE001 - stage boundary records diagnostics
             session.rollback()
             run = session.get(ScanRun, scan_run_id)
@@ -285,6 +293,7 @@ class ScanPipeline:
             self._try_failure_report(session, run)
 
     def _run_stage(self, session, run, name, deadline, operation):
+        self._check_interrupted(session, run.id)
         self._check_deadline(deadline)
         stage = self._stage(session, run.id, name)
         if stage is None:
@@ -295,6 +304,7 @@ class ScanPipeline:
         run.current_stage = name
         session.commit()
         result, summary = operation()
+        self._check_interrupted(session, run.id)
         self._check_deadline(deadline)
         stage = self._stage(session, run.id, name)
         stage.status = "completed"
@@ -316,7 +326,9 @@ class ScanPipeline:
         return result, summary
 
     def _discover(self, session: Session, run: ScanRun, options: ScanOptions):
+        self._check_interrupted(session, run.id)
         result = self.gateway.fetch(run.normalized_url, options)
+        self._check_interrupted(session, run.id)
         self._persist_fetch(session, run, result, depth=0)
         return result, (
             f"Fetched entry URL with HTTP {result.status_code}; "
@@ -348,6 +360,7 @@ class ScanPipeline:
         collected = 1
         skipped_external = 0
         while queue and collected < options.max_pages:
+            self._check_interrupted(session, run.id)
             self._check_deadline(deadline)
             url, depth = queue.pop(0)
             if url in seen:
@@ -360,6 +373,7 @@ class ScanPipeline:
                 continue
             try:
                 result = self.gateway.fetch(url, options)
+                self._check_interrupted(session, run.id)
             except (FetchError, InputValidationError, TargetPolicyError) as error:
                 code, retryable, attempts, failed_url = self._error_details(error, url)
                 self._record_failure(
@@ -590,6 +604,14 @@ class ScanPipeline:
     def _check_deadline(self, deadline: float) -> None:
         if self.clock() > deadline:
             raise OverallScanTimeout("The overall scan timeout was exceeded.")
+
+    def _check_interrupted(self, session: Session, scan_run_id: int) -> None:
+        status = session.scalar(
+            select(ScanRun.status).where(ScanRun.id == scan_run_id),
+            execution_options={"autoflush": False},
+        )
+        if status == ScanRunStatus.INTERRUPTED.value:
+            raise ScanInterrupted("Scan was cancelled.")
 
     def _origin(self, url: str) -> tuple[str, str, int | None]:
         parsed = urlparse(url)
