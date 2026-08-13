@@ -16,7 +16,26 @@ URL
   → Markdown 报告
 ```
 
-## 快速开始
+## 正式 CLI 快速开始
+
+macOS、Linux 或 WSL（Python 3.10+）可直接在仓库根目录安装用户级 CLI；不需要 `sudo`，也不需要手动激活虚拟环境：
+
+```bash
+./install.sh
+garden --version
+garden scan http://127.0.0.1:13000/
+```
+
+首次运行会自动启动或复用仅监听本机回环地址的 Web UI，并输出首页和本次扫描详情地址；默认前台显示进度，但不会自动打开浏览器。用户数据默认保存于 `~/.garden`，可用 `GARDEN_HOME` 覆盖。若安装后找不到命令，请按安装器输出将 `~/.local/bin` 加入 PATH。
+
+```bash
+garden scan http://127.0.0.1:13000/ --detach  # 仅提交，立即返回
+garden stop                                   # 中断活动扫描并停止本机 UI
+```
+
+`gardenctl` 是兼容别名，既有命令组和 `gardenctl scan --url URL` 均继续可用。
+
+## 仓库开发快速开始
 
 环境要求：Python 3.10+。
 
@@ -57,14 +76,14 @@ docker compose up --build
 ### CLI
 
 ```bash
-gardenctl scan --url http://127.0.0.1:13000/
+garden scan http://127.0.0.1:13000/
+gardenctl scan --url http://127.0.0.1:13000/  # 兼容写法
 ```
 
 可以用边界参数控制扫描规模：
 
 ```bash
-gardenctl scan \
-  --url http://127.0.0.1:13000/ \
+garden scan http://127.0.0.1:13000/ \
   --max-pages 10 \
   --max-depth 2 \
   --request-timeout 5 \
@@ -84,6 +103,7 @@ curl -X POST http://127.0.0.1:8000/api/scans \
 
 - `POST /api/scans`：提交 URL
 - `GET /api/scans/{id}`：读取进度、阶段和失败信息
+- `POST /api/scans/{id}/cancel`：中断尚未结束的扫描并保留已写入结果
 - `GET /api/scans/{id}/report`：阅读或下载报告
 
 ## 报告内容
