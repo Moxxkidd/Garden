@@ -176,6 +176,32 @@ class ScanApplicationService:
         with session_scope() as session:
             self.pipeline.execute(session, scan_run_id)
 
+    def cancel_scan(self, scan_run_id: int) -> ScanRunView:
+        """立即标记一个尚未结束的扫描为已中断，保留已写入的证据。"""
+
+        with session_scope() as session:
+            run = self._get(session, scan_run_id)
+            if run.status not in TERMINAL_SCAN_RUN_STATUSES:
+                self._mark_interrupted(run)
+            return self._view(run)
+
+    def interrupt_active_scans(self) -> int:
+        """在服务启动时收敛上次异常退出遗留的活动扫描。"""
+
+        with session_scope() as session:
+            active_ids = list(
+                session.scalars(
+                    select(ScanRun.id).where(
+                        ScanRun.status.in_(
+                            [ScanRunStatus.QUEUED.value, ScanRunStatus.RUNNING.value]
+                        )
+                    )
+                )
+            )
+            for scan_run_id in active_ids:
+                self._mark_interrupted(self._get(session, scan_run_id))
+            return len(active_ids)
+
     def get_scan(self, scan_run_id: int) -> ScanRunView:
         with session_scope() as session:
             run = self._get(session, scan_run_id)
@@ -252,6 +278,33 @@ class ScanApplicationService:
         if run is None:
             raise ResourceNotFoundError(f"Scan run {scan_run_id} was not found.")
         return run
+
+    def _mark_interrupted(self, run: ScanRun) -> None:
+        now = datetime.now(timezone.utc)
+        run.status = ScanRunStatus.INTERRUPTED.value
+        run.current_stage = ScanRunStatus.INTERRUPTED.value
+        run.error_code = "scan_cancelled"
+        run.error_message = "Scan was cancelled before completion."
+        run.finished_at = now
+        run.active_key = None
+        for stage in run.stages:
+            if stage.status == "running":
+                stage.status = "interrupted"
+                stage.summary = "Interrupted before this stage completed."
+                stage.finished_at = now
+            elif stage.status == "pending":
+                stage.status = "skipped"
+                stage.summary = "Skipped because the scan was cancelled."
+                stage.finished_at = now
+        if run.mode == AssessmentMode.QUICK.value:
+            for context in run.contexts:
+                if context.kind != ContextKind.ANONYMOUS.value:
+                    continue
+                context.status = ScanRunStatus.INTERRUPTED.value
+                context.collection_status = ScanRunStatus.INTERRUPTED.value
+                context.error_code = "scan_cancelled"
+                context.error_message = "Scan was cancelled before collection completed."
+                context.finished_at = now
 
     def _view(self, run: ScanRun) -> ScanRunView:
         return ScanRunView(**self._view_data(run))

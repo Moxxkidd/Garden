@@ -24,6 +24,11 @@ def scan_status_api(request: Request, scan_run_id: int) -> ScanRunView:
     return request.app.state.scan_service.get_scan(scan_run_id)
 
 
+@router.post("/api/scans/{scan_run_id}/cancel", response_model=ScanRunView)
+def cancel_scan_api(request: Request, scan_run_id: int) -> ScanRunView:
+    return request.app.state.scan_service.cancel_scan(scan_run_id)
+
+
 @router.get("/api/scans/{scan_run_id}/report")
 def scan_report_api(
     request: Request,

@@ -1,9 +1,22 @@
 """Central settings loader for Garden."""
 
+import os
 from functools import lru_cache
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, DotEnvSettingsSource, SettingsConfigDict
+
+from app.cli.paths import GardenPaths
+
+
+def _is_formal_cli_runtime() -> bool:
+    return os.environ.get("GARDEN_CLI_RUNTIME") == "1"
+
+
+def _default_database_url() -> str:
+    if _is_formal_cli_runtime():
+        return GardenPaths.from_environment().database_url
+    return "sqlite+pysqlite:///./data/garden.db"
 
 
 class Settings(BaseSettings):
@@ -13,10 +26,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="GARDEN_LOG_LEVEL")
     api_host: str = Field(default="127.0.0.1", alias="GARDEN_API_HOST")
     api_port: int = Field(default=8000, alias="GARDEN_API_PORT")
-    database_url: str = Field(
-        default="sqlite+pysqlite:///./data/garden.db",
-        alias="GARDEN_DATABASE_URL",
-    )
+    database_url: str = Field(default_factory=_default_database_url, alias="GARDEN_DATABASE_URL")
     database_auto_migrate: bool = Field(
         default=False,
         alias="GARDEN_DATABASE_AUTO_MIGRATE",
@@ -73,6 +83,25 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        if _is_formal_cli_runtime():
+            formal_dotenv = DotEnvSettingsSource(
+                settings_cls,
+                env_file=GardenPaths.from_environment().config_file,
+                env_file_encoding="utf-8",
+                case_sensitive=False,
+            )
+            return init_settings, env_settings, formal_dotenv, file_secret_settings
+        return init_settings, env_settings, dotenv_settings, file_secret_settings
 
 
 @lru_cache(maxsize=1)

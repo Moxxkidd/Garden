@@ -24,7 +24,40 @@
 - `make`
 - Chromium / Playwright 运行时
 
-## 二、本地开发部署
+## 二、用户级正式 CLI（推荐）
+
+适用于 macOS、Linux 和 WSL，要求 Python 3.10+。在仓库根目录执行：
+
+```bash
+./install.sh
+garden --version
+garden scan http://127.0.0.1:8080/
+```
+
+安装器不使用 `sudo`，也不会修改 shell 配置。运行环境位于 `~/.local/share/garden/runtime/`，命令入口是 `~/.local/bin/garden` 与兼容入口 `~/.local/bin/gardenctl`。若 `~/.local/bin` 不在 PATH，按安装器输出的命令配置后重新打开终端。
+
+用户数据默认位于 `~/.garden`，可通过 `GARDEN_HOME` 覆盖：
+
+```text
+~/.garden/
+├── config.env
+├── garden.db
+├── reports/
+├── storage/
+├── logs/web.log
+└── runtime/server.json
+```
+
+`garden scan URL` 自动启动或复用仅监听 `127.0.0.1` 的 Web UI，终端会输出首页和本次详情地址。默认前台等待并显示进度；`--detach` 仅提交任务并立即返回。不要在同一条命令中同时使用位置 URL 和 `--url`。
+
+```bash
+garden scan http://127.0.0.1:8080/ --detach
+garden stop
+```
+
+`garden stop` 会把全部 queued/running 扫描标记为 `interrupted` 并停止本机 UI，已写入的资产和证据会保留。安装器升级前会自动备份 SQLite 数据库；如果服务仍在运行，先执行 `garden stop`。正式 CLI 只读取 `$GARDEN_HOME/config.env`，不读取当前目录 `.env`，而当前 shell 环境变量优先。
+
+## 三、本地开发部署
 
 ### 1. 克隆仓库
 
@@ -105,18 +138,18 @@ curl -s -X POST http://127.0.0.1:8000/api/scans \
 
 响应中的 `id` 可用于 Web/API 查看进度；不需要执行 inventory、checks 或 report 命令。
 
-## 三、CLI 基础验证
+## 四、CLI 基础验证
 
 激活虚拟环境后执行：
 
 ```bash
-gardenctl --help
-gardenctl version
-gardenctl healthcheck
-gardenctl scan --url http://127.0.0.1:8080/
+garden --help
+garden version
+garden healthcheck
+garden scan http://127.0.0.1:8080/
 ```
 
-## 四、Docker 方式运行
+## 五、Docker 方式运行
 
 ### 1. 构建镜像
 
@@ -155,7 +188,7 @@ docker run --rm -it \
 docker compose up --build
 ```
 
-## 五、旧版登录后高级工作流（可选）
+## 六、旧版登录后高级工作流（可选）
 
 下面这些命令只用于需要登录态、人工 triage 或 retest 的高级流程；它们不是 URL 自动扫描的前置或后置步骤。
 
@@ -203,7 +236,7 @@ gardenctl findings list
 gardenctl evidence list
 ```
 
-## 六、DVWA 联调步骤
+## 七、DVWA 联调步骤
 
 如果你想拿一个真实登录后靶场做演示，可以使用 DVWA。
 

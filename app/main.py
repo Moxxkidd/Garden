@@ -27,6 +27,9 @@ async def lifespan(app: FastAPI):
     )
     init_database(settings.database_url)
     app.state.scan_service = ScanApplicationService(settings=settings)
+    interrupted = app.state.scan_service.interrupt_active_scans()
+    if interrupted:
+        logger.warning("Interrupted stale active scans", extra={"count": interrupted})
     try:
         yield
     finally:

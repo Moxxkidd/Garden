@@ -15,6 +15,7 @@ from app.cli.report import app as report_app
 from app.cli.retest import app as retest_app
 from app.cli.scan import scan as scan_command
 from app.cli.sessions import app as session_app
+from app.cli.stop import stop as stop_command
 from app.cli.targets import app as target_app
 from app.cli.utils import console, render_json
 from app.core.logging import configure_logging
@@ -23,7 +24,7 @@ from app.db.bootstrap import init_database
 from app.services.health import build_health_response
 
 app = typer.Typer(
-    name="gardenctl",
+    name="garden",
     help=(
         "CLI for Garden's one-URL automatic asset reports and advanced authenticated "
         "verification workflows."
@@ -54,6 +55,7 @@ def healthcheck() -> None:
 
 
 app.command("scan")(scan_command)
+app.command("stop")(stop_command)
 app.add_typer(target_app, name="target")
 app.add_typer(credential_app, name="cred")
 app.add_typer(job_app, name="job")
