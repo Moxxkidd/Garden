@@ -47,6 +47,14 @@ class GardenPaths:
     def runtime_dir(self) -> Path:
         return self.home / "runtime"
 
+    @property
+    def server_state_file(self) -> Path:
+        return self.runtime_dir / "server.json"
+
+    @property
+    def web_log_file(self) -> Path:
+        return self.logs_dir / "web.log"
+
     def ensure_directories(self) -> None:
         for directory in (
             self.home,
