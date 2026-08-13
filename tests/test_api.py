@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 
@@ -20,6 +22,41 @@ def test_index_page_loads(app) -> None:
     assert "Dashboard" in response.text
     assert "One URL to a structured report" in response.text
     assert "Start scan" in response.text
+
+
+def test_scans_page_uses_compact_navigation_and_clickable_scan_rows(app) -> None:
+    scan = SimpleNamespace(
+        id=4,
+        normalized_url="http://127.0.0.1:3000/",
+        status="completed_with_warnings",
+        current_stage="finished",
+        progress=100,
+    )
+
+    with TestClient(app) as client:
+        original_service = app.state.scan_service
+        app.state.scan_service = SimpleNamespace(list_scans=lambda: [scan])
+        try:
+            response = client.get("/scans")
+        finally:
+            app.state.scan_service = original_service
+
+    assert response.status_code == 200
+    assert 'href="/"' in response.text
+    assert 'href="/scans"' in response.text
+    for hidden_path in (
+        "/targets",
+        "/credentials",
+        "/jobs",
+        "/sessions",
+        "/inventory",
+        "/findings",
+        "/evidence",
+    ):
+        assert f'href="{hidden_path}"' not in response.text
+    assert 'data-scan-detail-url="/scans/4"' in response.text
+    assert 'aria-label="View scan #4"' in response.text
+    assert 'href="/scans/4"' in response.text
 
 
 def test_management_pages_render(app, seeded_findings) -> None:
