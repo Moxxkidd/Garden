@@ -52,6 +52,10 @@ class GardenPaths:
         return self.runtime_dir / "server.json"
 
     @property
+    def server_pid_file(self) -> Path:
+        return self.runtime_dir / "server.pid"
+
+    @property
     def web_log_file(self) -> Path:
         return self.logs_dir / "web.log"
 

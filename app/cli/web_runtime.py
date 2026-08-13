@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -45,6 +46,7 @@ class WebRuntimeManager:
         self.paths = paths
         self.default_port = default_port
         self.startup_timeout_seconds = startup_timeout_seconds
+        self.started_by_this_command = False
 
     def ensure(self, *, ui_port: int | None = None) -> WebRuntime:
         existing = self._load_state()
@@ -55,6 +57,7 @@ class WebRuntimeManager:
                         f"Garden Web UI 已在端口 {existing.port} 运行；"
                         "请使用相同端口或先执行 garden stop。"
                     )
+                self.started_by_this_command = False
                 return existing
             self._remove_state()
 
@@ -78,6 +81,7 @@ class WebRuntimeManager:
                     started_at=datetime.now(timezone.utc).isoformat(),
                 )
                 self._write_state(runtime)
+                self.started_by_this_command = True
                 return runtime
             self._terminate_process(process)
             last_error = WebRuntimeError(
@@ -112,9 +116,37 @@ class WebRuntimeManager:
         temp_path.write_text(json.dumps(asdict(runtime), sort_keys=True), encoding="utf-8")
         temp_path.chmod(0o600)
         temp_path.replace(self.paths.server_state_file)
+        self.paths.server_pid_file.write_text(f"{runtime.pid}\n", encoding="utf-8")
+        self.paths.server_pid_file.chmod(0o600)
 
     def _remove_state(self) -> None:
         self.paths.server_state_file.unlink(missing_ok=True)
+        self.paths.server_pid_file.unlink(missing_ok=True)
+
+    def stop(self) -> bool:
+        """只终止状态文件确认的健康 Garden UI；不触碰不确定的外部进程。"""
+
+        runtime = self._load_state()
+        if runtime is None or not self._is_healthy(runtime):
+            self._remove_state()
+            return False
+        try:
+            os.killpg(runtime.pid, signal.SIGTERM)
+        except (AttributeError, OSError):
+            self._remove_state()
+            return False
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            if not self._is_process_alive(runtime.pid):
+                self._remove_state()
+                return True
+            time.sleep(0.05)
+        try:
+            os.killpg(runtime.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        self._remove_state()
+        return True
 
     def _is_healthy(self, runtime: WebRuntime) -> bool:
         if not self._is_process_alive(runtime.pid):

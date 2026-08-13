@@ -4,7 +4,7 @@ from typer.testing import CliRunner
 
 import app.cli.scan as scan_cli
 from app.cli.main import app
-from app.schemas.scan import ScanRunView
+from app.schemas.scan import ScanOptions, ScanRunView
 from app.services.login_configs import LoginConfigService, encode_inline_login_config
 
 runner = CliRunner()
@@ -25,12 +25,25 @@ def test_inline_playwright_config_round_trip_for_legacy_commands() -> None:
     assert config.auto_detect_selectors is True
 
 
-def test_scan_command_is_thin_adapter_over_core_service(monkeypatch) -> None:
+def test_legacy_scan_url_option_submits_through_local_web_ui(monkeypatch) -> None:
     calls = []
 
-    class FakeScanService:
-        def __init__(self, *, dispatcher):
-            assert dispatcher.__class__.__name__ == "InlineScanDispatcher"
+    class Runtime:
+        base_url = "http://127.0.0.1:8000"
+
+    class FakeRuntimeManager:
+        started_by_this_command = False
+
+        def __init__(self, **kwargs):
+            pass
+
+        def ensure(self, *, ui_port):
+            assert ui_port is None
+            return Runtime()
+
+    class FakeLocalScanApi:
+        def __init__(self, base_url):
+            assert base_url == Runtime.base_url
 
         def start_scan(self, url, options):
             calls.append((url, options.max_pages, options.max_depth, options.retry_attempts))
@@ -49,7 +62,12 @@ def test_scan_command_is_thin_adapter_over_core_service(monkeypatch) -> None:
                 finding_count=1,
             )
 
-    monkeypatch.setattr(scan_cli, "ScanApplicationService", FakeScanService)
+        def get_scan(self, scan_run_id):
+            assert scan_run_id == 41
+            return self.start_scan("http://127.0.0.1:8888/", ScanOptions())
+
+    monkeypatch.setattr(scan_cli, "WebRuntimeManager", FakeRuntimeManager)
+    monkeypatch.setattr(scan_cli, "LocalScanApi", FakeLocalScanApi)
     result = runner.invoke(
         app,
         [
@@ -67,5 +85,6 @@ def test_scan_command_is_thin_adapter_over_core_service(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert calls == [("http://127.0.0.1:8888/", 3, 1, 0)]
-    assert "Automatic URL Scan Result" in result.stdout
+    assert "Web UI：http://127.0.0.1:8000" in result.stdout
+    assert "Garden 扫描结果" in result.stdout
     assert "exports/scan-reports/scan-41.md" in result.stdout

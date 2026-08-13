@@ -45,6 +45,7 @@ def test_cancel_missing_scan_raises_not_found(tmp_path) -> None:
 
 def test_cancelled_pipeline_does_not_create_a_failure_report(tmp_path) -> None:
     service, _ = build_holding_service(tmp_path)
+
     def cancel_during_validation(run):
         service.cancel_scan(run.id)
         return None, "Cancelled while validating."

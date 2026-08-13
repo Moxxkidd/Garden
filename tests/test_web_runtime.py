@@ -31,6 +31,7 @@ def test_ensure_prefers_default_port_and_records_started_server(monkeypatch, tmp
     assert state["port"] == 8000
     assert state["home"] == str(paths.home)
     assert state["started_at"]
+    assert paths.server_pid_file.read_text(encoding="utf-8") == "4210\n"
 
 
 def test_ensure_uses_system_free_port_when_default_is_occupied(monkeypatch, tmp_path):
@@ -110,3 +111,31 @@ def test_ensure_removes_stale_state_before_starting(monkeypatch, tmp_path):
 
     assert runtime.port == 8000
     assert json.loads(paths.server_state_file.read_text(encoding="utf-8"))["pid"] == 4213
+
+
+def test_stop_only_terminates_a_healthy_recorded_server(monkeypatch, tmp_path):
+    from app.cli.web_runtime import WebRuntimeManager
+
+    paths = GardenPaths(tmp_path / "garden-home")
+    paths.ensure_directories()
+    paths.server_state_file.write_text(
+        json.dumps(
+            {
+                "pid": 4214,
+                "port": 8000,
+                "home": str(paths.home),
+                "started_at": "2026-08-13T00:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    manager = WebRuntimeManager(paths=paths)
+    killed = []
+    alive = iter([True, False])
+    monkeypatch.setattr(manager, "_is_healthy", lambda runtime: True)
+    monkeypatch.setattr(manager, "_is_process_alive", lambda pid: next(alive))
+    monkeypatch.setattr("app.cli.web_runtime.os.killpg", lambda pid, signal: killed.append(pid))
+
+    assert manager.stop() is True
+    assert killed == [4214]
+    assert not paths.server_state_file.exists()
