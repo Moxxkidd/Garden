@@ -104,11 +104,25 @@ cleanup_stage() {
 trap cleanup_stage EXIT
 
 python3 -m venv "$GARDEN_STAGE_DIR/venv"
-"$GARDEN_STAGE_DIR/venv/bin/python" -m pip install --upgrade pip
-"$GARDEN_STAGE_DIR/venv/bin/python" -m pip install "$GARDEN_SOURCE_ROOT"
+GARDEN_STAGE_PYTHON="$GARDEN_STAGE_DIR/venv/bin/python"
+export PIP_RETRIES="${PIP_RETRIES:-10}"
+export PIP_TIMEOUT="${PIP_TIMEOUT:-30}"
+run_install_pip() {
+  case "${ALL_PROXY:-${all_proxy:-}}" in
+    socks* | SOCKS*)
+      echo "检测到 SOCKS ALL_PROXY；安装依赖时临时忽略该变量。"
+      env -u ALL_PROXY -u all_proxy "$GARDEN_STAGE_PYTHON" -m pip "$@"
+      ;;
+    *)
+      "$GARDEN_STAGE_PYTHON" -m pip "$@"
+      ;;
+  esac
+}
+run_install_pip install --upgrade pip
+run_install_pip install "$GARDEN_SOURCE_ROOT"
 
 GARDEN_CLI_RUNTIME=1 GARDEN_HOME="$GARDEN_HOME" \
-  "$GARDEN_STAGE_DIR/venv/bin/gardenctl" db upgrade
+  "$GARDEN_STAGE_PYTHON" -m app.cli.main db upgrade
 
 if [ -d "$GARDEN_RUNTIME_DIR" ]; then
   mv "$GARDEN_RUNTIME_DIR" "$GARDEN_OLD_RUNTIME_DIR"
@@ -120,18 +134,20 @@ fi
 
 write_launcher() {
   local launcher_path="$1"
+  local command_name="$2"
   cat > "$launcher_path" <<EOF
 #!/usr/bin/env sh
 set -eu
 export GARDEN_CLI_RUNTIME=1
+export GARDEN_CLI_NAME="$command_name"
 export GARDEN_HOME="\${GARDEN_HOME:-$GARDEN_HOME}"
-exec "$GARDEN_RUNTIME_DIR/venv/bin/gardenctl" "\$@"
+exec "$GARDEN_RUNTIME_DIR/venv/bin/python" -m app.cli.main "\$@"
 EOF
   chmod 0755 "$launcher_path"
 }
 
-write_launcher "$GARDEN_BIN_DIR/garden"
-write_launcher "$GARDEN_BIN_DIR/gardenctl"
+write_launcher "$GARDEN_BIN_DIR/garden" "garden"
+write_launcher "$GARDEN_BIN_DIR/gardenctl" "gardenctl"
 
 echo "Garden 已安装。"
 echo "命令入口：$GARDEN_BIN_DIR/garden"

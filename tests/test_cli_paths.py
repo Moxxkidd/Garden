@@ -1,6 +1,20 @@
 from app.core.settings import clear_settings_cache, get_settings
 
 
+def test_formal_runtime_services_keep_outputs_inside_garden_home(monkeypatch, tmp_path):
+    from app.services.evidence_storage import EvidenceStorageService
+    from app.services.scan_reporting import ScanReportService
+    from app.services.session_storage import SessionStorageService
+
+    home = tmp_path / "garden-home"
+    monkeypatch.setenv("GARDEN_HOME", str(home))
+    monkeypatch.setenv("GARDEN_CLI_RUNTIME", "1")
+
+    assert ScanReportService().output_root == home / "reports"
+    assert SessionStorageService().base_directory == home / "storage" / "session_payloads"
+    assert EvidenceStorageService().base_directory == home / "storage" / "evidence"
+
+
 def test_formal_runtime_paths_use_garden_home(monkeypatch, tmp_path):
     from app.cli.paths import GardenPaths
 

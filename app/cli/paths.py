@@ -68,3 +68,11 @@ class GardenPaths:
             self.runtime_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
+
+
+def formal_runtime_paths() -> GardenPaths | None:
+    """正式 CLI 运行时返回用户目录约定；仓库开发模式保持原路径。"""
+
+    if os.environ.get("GARDEN_CLI_RUNTIME") != "1":
+        return None
+    return GardenPaths.from_environment()

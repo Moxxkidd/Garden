@@ -9,6 +9,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.cli.paths import formal_runtime_paths
 from app.core.errors import ResourceNotFoundError
 from app.models.scan_run import ScanRun
 
@@ -19,7 +20,12 @@ class ScanReportService:
     _control_character_pattern = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 
     def __init__(self, output_root: Path | None = None) -> None:
-        self.output_root = output_root or (Path.cwd() / "exports" / "scan-reports")
+        formal_paths = formal_runtime_paths()
+        self.output_root = output_root or (
+            formal_paths.reports_dir
+            if formal_paths is not None
+            else Path.cwd() / "exports" / "scan-reports"
+        )
 
     def generate(self, session: Session, scan_run_id: int) -> str:
         run = session.scalar(
