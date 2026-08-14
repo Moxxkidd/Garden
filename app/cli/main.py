@@ -1,5 +1,8 @@
 """Typer CLI entrypoint for Garden."""
 
+import os
+from typing import Annotated
+
 import typer
 
 from app.cli.baseline import app as baseline_app
@@ -30,12 +33,24 @@ app = typer.Typer(
         "verification workflows."
     ),
     no_args_is_help=True,
+    invoke_without_command=True,
 )
 
 
 @app.callback()
-def main() -> None:
+def main(
+    context: typer.Context,
+    show_version: Annotated[
+        bool,
+        typer.Option("--version", help="Show the current Garden version.", is_eager=True),
+    ] = False,
+) -> None:
     settings = get_settings()
+    if show_version:
+        console.print(f"[bold]{settings.project_name}[/bold] {settings.project_version}")
+        raise typer.Exit
+    if context.invoked_subcommand == "version":
+        return
     configure_logging(settings.log_level)
     init_database(settings.database_url)
 
@@ -72,4 +87,4 @@ app.add_typer(database_app, name="db")
 
 
 if __name__ == "__main__":
-    app()
+    app(prog_name=os.environ.get("GARDEN_CLI_NAME", "garden"))

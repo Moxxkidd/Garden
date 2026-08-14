@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from app.cli.paths import formal_runtime_paths
 from app.core.errors import InputValidationError
 
 
@@ -15,7 +16,12 @@ class SessionStorageService:
     """Store raw session material outside the main database record."""
 
     def __init__(self, base_directory: Path | None = None) -> None:
-        self.base_directory = base_directory or (Path.cwd() / "data" / "session_payloads")
+        formal_paths = formal_runtime_paths()
+        self.base_directory = base_directory or (
+            formal_paths.storage_dir / "session_payloads"
+            if formal_paths is not None
+            else Path.cwd() / "data" / "session_payloads"
+        )
         self.base_directory.mkdir(parents=True, exist_ok=True)
 
     def write_payload(self, session_id: int, payload: dict[str, Any]) -> str:

@@ -10,6 +10,15 @@ from app.services.login_configs import LoginConfigService, encode_inline_login_c
 runner = CliRunner()
 
 
+def test_global_version_option_matches_version_command() -> None:
+    option = runner.invoke(app, ["--version"])
+    command = runner.invoke(app, ["version"])
+
+    assert option.exit_code == 0
+    assert option.stdout == command.stdout
+    assert "Database initialized" not in command.stderr
+
+
 def test_inline_playwright_config_round_trip_for_legacy_commands() -> None:
     encoded = encode_inline_login_config(
         {

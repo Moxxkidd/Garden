@@ -36,6 +36,8 @@ garden scan http://127.0.0.1:8080/
 
 安装器不使用 `sudo`，也不会修改 shell 配置。运行环境位于 `~/.local/share/garden/runtime/`，命令入口是 `~/.local/bin/garden` 与兼容入口 `~/.local/bin/gardenctl`。若 `~/.local/bin` 不在 PATH，按安装器输出的命令配置后重新打开终端。
 
+若当前 shell 设置了 SOCKS `ALL_PROXY`，安装器会在创建隔离运行环境时临时忽略该变量，并增加依赖下载重试；不会修改当前 shell 或其他项目的代理配置。
+
 用户数据默认位于 `~/.garden`，可通过 `GARDEN_HOME` 覆盖：
 
 ```text
