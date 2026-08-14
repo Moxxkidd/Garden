@@ -17,8 +17,13 @@
         </thead>
         <tbody class="divide-y divide-black/5">
           {% for scan in scans %}
-            <tr class="hover:bg-stone-50">
-              <td class="px-5 py-4 font-medium"><a href="/scans/{{ scan.id }}">#{{ scan.id }}</a></td>
+            <tr
+              class="cursor-pointer transition-colors hover:bg-stone-50 focus-within:bg-stone-50 focus-within:outline-none focus-within:ring-2 focus-within:ring-inset focus-within:ring-emerald-600"
+              data-scan-detail-url="/scans/{{ scan.id }}"
+            >
+              <td class="px-5 py-4 font-medium">
+                <a href="/scans/{{ scan.id }}" aria-label="View scan #{{ scan.id }}">#{{ scan.id }}</a>
+              </td>
               <td class="max-w-xl truncate px-5 py-4">{{ scan.normalized_url }}</td>
               <td class="px-5 py-4">{{ status_badge(scan.status) }}</td>
               <td class="px-5 py-4">{{ scan.current_stage }}</td>
@@ -31,4 +36,19 @@
       </table>
     </div>
   </section>
+  <script>
+    (function () {
+      function scanRowFromEvent(event) {
+        if (!(event.target instanceof Element)) return null;
+        if (event.target.closest('a, button, input, select, textarea')) return null;
+        return event.target.closest('[data-scan-detail-url]');
+      }
+
+      document.addEventListener('click', function (event) {
+        var row = scanRowFromEvent(event);
+        if (row) window.location.assign(row.dataset.scanDetailUrl);
+      });
+
+    })();
+  </script>
 {% endblock %}
