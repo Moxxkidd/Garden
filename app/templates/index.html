@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import severity_badge, confidence_badge, status_badge %}
+{% from "_macros.html" import status_badge %}
 
 {% block content %}
   <section class="space-y-8">
@@ -44,15 +44,15 @@
 
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
       <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">Targets</p>
-        <p class="mt-3 text-3xl font-semibold">{{ dashboard.total_targets }}</p>
+        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">URL Scans</p>
+        <p class="mt-3 text-3xl font-semibold">{{ dashboard.total_scans }}</p>
       </div>
       <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">Credential Profiles</p>
-        <p class="mt-3 text-3xl font-semibold">{{ dashboard.total_credential_profiles }}</p>
+        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">Assets</p>
+        <p class="mt-3 text-3xl font-semibold">{{ dashboard.total_assets }}</p>
       </div>
       <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">Findings</p>
+        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">Passive Findings</p>
         <p class="mt-3 text-3xl font-semibold">{{ dashboard.total_findings }}</p>
       </div>
       <div class="rounded-2xl border border-red-200 bg-red-50/50 p-5 shadow-sm">
@@ -68,29 +68,29 @@
     <div class="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
       <div class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold">Recent Jobs</h2>
-          <a href="/jobs" class="text-sm text-slate-500">View all</a>
+          <h2 class="text-lg font-semibold">Recent URL Scans</h2>
+          <a href="/scans" class="text-sm text-slate-500">View all</a>
         </div>
         <div class="mt-4 overflow-hidden rounded-2xl border border-black/10">
           <table class="min-w-full divide-y divide-black/5 text-sm">
             <thead class="bg-stone-50 text-left text-slate-500">
               <tr>
-                <th class="px-4 py-3">Job</th>
-                <th class="px-4 py-3">Target</th>
-                <th class="px-4 py-3">Profile</th>
+                <th class="px-4 py-3">Scan</th>
+                <th class="px-4 py-3">URL</th>
                 <th class="px-4 py-3">Status</th>
+                <th class="px-4 py-3">Progress</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-black/5">
-              {% for job in dashboard.recent_jobs %}
+              {% for scan in dashboard.recent_scans %}
                 <tr class="hover:bg-stone-50">
-                  <td class="px-4 py-3 font-medium"><a href="/jobs/{{ job.id }}">{{ job.id }}</a></td>
-                  <td class="px-4 py-3">{{ job.target.name if job.target else job.target_id }}</td>
-                  <td class="px-4 py-3">{{ job.credential_profile.name if job.credential_profile else job.credential_profile_id }}</td>
-                  <td class="px-4 py-3">{{ status_badge(job.status) }}</td>
+                  <td class="px-4 py-3 font-medium"><a href="/scans/{{ scan.id }}">#{{ scan.id }}</a></td>
+                  <td class="max-w-xs truncate px-4 py-3"><a href="/scans/{{ scan.id }}">{{ scan.normalized_url }}</a></td>
+                  <td class="px-4 py-3">{{ status_badge(scan.status) }}</td>
+                  <td class="px-4 py-3">{{ scan.progress }}%</td>
                 </tr>
               {% else %}
-                <tr><td colspan="4" class="px-4 py-6 text-center text-slate-500">No workflow jobs have been recorded yet.</td></tr>
+                <tr><td colspan="4" class="px-4 py-6 text-center text-slate-500">No URL scans yet.</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -100,13 +100,13 @@
       <div class="space-y-6">
         <div class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
           <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold">Findings Overview</h2>
-            <a href="/findings" class="text-sm text-slate-500">Open findings</a>
+            <h2 class="text-lg font-semibold">Scan Status</h2>
+            <a href="/scans" class="text-sm text-slate-500">View scans</a>
           </div>
           <div class="mt-4 grid gap-3 sm:grid-cols-2">
             {% for status, count in dashboard.status_breakdown.items() %}
               <div class="rounded-2xl border border-black/10 bg-stone-50 p-4">
-                <p class="text-xs uppercase tracking-[0.16em] text-slate-500">{{ status }}</p>
+                <p class="text-xs uppercase tracking-[0.16em] text-slate-500">{{ status | replace('_', ' ') }}</p>
                 <p class="mt-2 text-2xl font-semibold">{{ count }}</p>
               </div>
             {% endfor %}
@@ -132,33 +132,6 @@
             {% endfor %}
           </div>
         </div>
-      </div>
-    </div>
-
-    <div class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
-      <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold">Recent Retest Outcomes</h2>
-        <a href="/findings" class="text-sm text-slate-500">Manage findings</a>
-      </div>
-      <div class="mt-4 grid gap-4 lg:grid-cols-2">
-        {% for retest in dashboard.recent_retests %}
-          <div class="rounded-2xl border border-black/10 bg-stone-50 p-4">
-            <p class="text-sm font-medium text-slate-900">
-              <a href="/findings/{{ retest.finding.id if retest.finding else retest.finding_id }}">Finding #{{ retest.finding_id }}</a>
-              · {{ status_badge(retest.status) }}
-            </p>
-            <p class="mt-1 text-sm text-slate-600">
-              {{ retest.target.name if retest.target else retest.target_id }} ·
-              {{ retest.credential_profile.name if retest.credential_profile else retest.credential_profile_id }}
-            </p>
-            <p class="mt-2 text-sm text-slate-700">{{ retest.summary }}</p>
-            <p class="mt-2 text-xs uppercase tracking-[0.16em] text-slate-500"><time data-iso="{{ retest.created_at.isoformat() }}">{{ retest.created_at.isoformat() }}</time></p>
-          </div>
-        {% else %}
-          <div class="rounded-2xl border border-dashed border-black/10 bg-stone-50 p-6 text-sm text-slate-500">
-            No retest outcomes recorded yet. Move a finding to <span class="font-medium">fixed</span> and run a retest to populate this view.
-          </div>
-        {% endfor %}
       </div>
     </div>
   </section>

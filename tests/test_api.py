@@ -1,6 +1,11 @@
+import re
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+
+from app.db.bootstrap import session_scope
+from app.models.scan_run import ScanAsset, ScanFinding, ScanRun
 
 
 def test_healthz_returns_ok(app) -> None:
@@ -128,14 +133,90 @@ def test_management_pages_render(app, seeded_findings) -> None:
 
 
 def test_dashboard_page_shows_summary_cards(app, seeded_findings) -> None:
+    with session_scope() as session:
+        scan = ScanRun(
+            mode="quick",
+            input_url="http://127.0.0.1:3000/",
+            normalized_url="http://127.0.0.1:3000/",
+            status="completed_with_warnings",
+            current_stage="finished",
+            progress=100,
+            options={},
+        )
+        session.add(scan)
+        session.flush()
+        session.add_all(
+            [
+                ScanAsset(
+                    scan_run_id=scan.id,
+                    identity_key=f"GET:/asset-{index}",
+                    asset_type="page",
+                    url=f"http://127.0.0.1:3000/asset-{index}",
+                    method="GET",
+                    attributes={},
+                    discovered_at=datetime.now(timezone.utc),
+                )
+                for index in range(3)
+            ]
+        )
+        session.add_all(
+            [
+                ScanFinding(
+                    scan_run_id=scan.id,
+                    dedup_key="high-confidence",
+                    title="High-confidence passive finding",
+                    category="security-headers",
+                    severity="high",
+                    confidence="high",
+                    summary="Passive finding summary.",
+                    remediation="Apply the documented remediation.",
+                    asset_ids=[],
+                    evidence_ids=[],
+                    created_at=datetime.now(timezone.utc),
+                ),
+                ScanFinding(
+                    scan_run_id=scan.id,
+                    dedup_key="medium-confidence",
+                    title="Medium-confidence passive finding",
+                    category="information-exposure",
+                    severity="low",
+                    confidence="medium",
+                    summary="Passive finding summary.",
+                    remediation="Apply the documented remediation.",
+                    asset_ids=[],
+                    evidence_ids=[],
+                    created_at=datetime.now(timezone.utc),
+                ),
+            ]
+        )
+        session.flush()
+        scan_id = scan.id
+
     with TestClient(app) as client:
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "Findings Overview" in response.text
+    for label, value in (
+        ("URL Scans", 1),
+        ("Assets", 3),
+        ("Passive Findings", 2),
+        ("High Severity", 1),
+        ("High Confidence", 1),
+    ):
+        assert re.search(rf">{label}</p>\s*<p[^>]*>{value}</p>", response.text)
+    assert "Recent URL Scans" in response.text
+    assert "Scan Status" in response.text
     assert "Category Distribution" in response.text
-    assert "Recent Retest Outcomes" in response.text
-    assert "High Confidence" in response.text
+    assert f'href="/scans/{scan_id}"' in response.text
+    assert "http://127.0.0.1:3000/" in response.text
+    for legacy_content in (
+        ">Targets</p>",
+        ">Credential Profiles</p>",
+        "Recent Jobs",
+        "Findings Overview",
+        "Recent Retest Outcomes",
+    ):
+        assert legacy_content not in response.text
 
 
 def test_finding_status_update_route_updates_lifecycle_state(app, seeded_findings) -> None:
