@@ -4,10 +4,13 @@ import time
 
 import httpx
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 import app.main as main_app
 from app.core.errors import InputValidationError, TargetPolicyError
 from app.core.settings import get_settings
+from app.db.bootstrap import session_scope
+from app.models.scan_run import ScanAsset
 from app.schemas.scan import ScanOptions
 from app.services.scan_application import InlineScanDispatcher, ScanApplicationService
 from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
@@ -90,6 +93,48 @@ def test_network_retry_is_single_and_only_for_transient_failure() -> None:
     )
     assert result.attempts == 2
     assert len(calls) == 2
+
+
+def test_scan_defaults_expand_page_and_resource_budgets() -> None:
+    options = ScanOptions()
+
+    assert options.max_pages == 50
+    assert options.max_resources == 200
+
+
+def test_discovery_classifies_resources_and_normalizes_duplicate_headers() -> None:
+    def handler(request):
+        return httpx.Response(
+            200,
+            headers=[
+                ("content-type", "text/html"),
+                ("frame-options", "SAMEORIGIN"),
+                ("x-frame-options", "SAMEORIGIN, SAMEORIGIN"),
+            ],
+            text=(
+                '<link rel="stylesheet" href="/app.css">'
+                '<script src="/app.js"></script>'
+                '<img src="/logo.png">'
+                '<a href="/guide.pdf">Guide</a>'
+                '<a href="/about">About</a>'
+            ),
+        )
+
+    settings = get_settings()
+    policy = TargetNetworkPolicy(settings, resolver=_loopback_resolver)
+    result = HttpScanGateway(policy, transport=httpx.MockTransport(handler)).fetch(
+        "http://127.0.0.1/", ScanOptions(retry_attempts=0)
+    )
+
+    assert [(item.asset_type, item.url) for item in result.discovered_assets] == [
+        ("stylesheet", "http://127.0.0.1/app.css"),
+        ("script", "http://127.0.0.1/app.js"),
+        ("image", "http://127.0.0.1/logo.png"),
+        ("document", "http://127.0.0.1/guide.pdf"),
+        ("page", "http://127.0.0.1/about"),
+    ]
+    assert "frame-options" not in result.headers
+    assert result.headers["x-frame-options"] == "SAMEORIGIN"
 
 
 def test_redirect_to_link_local_is_blocked_before_second_request() -> None:
@@ -227,19 +272,117 @@ def test_empty_success_response_has_explicit_single_asset_result(tmp_path) -> No
     assert "HTTP 204" in report
 
 
-def test_page_limit_is_reported_as_incomplete_coverage(tmp_path) -> None:
+def test_pages_are_prioritized_and_coverage_limit_is_a_structured_warning(tmp_path) -> None:
+    calls = []
+
     def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text=(
+                    '<link rel="stylesheet" href="/app.css">'
+                    '<script src="/app.js"></script>'
+                    '<img src="/logo.png">'
+                    '<a href="/about">About</a>'
+                    '<a href="/news">News</a>'
+                    '<a href="/contact">Contact</a>'
+                ),
+            )
+        content_types = {
+            "/app.css": "text/css",
+            "/app.js": "application/javascript",
+            "/logo.png": "image/png",
+        }
         return httpx.Response(
             200,
-            headers={"content-type": "text/html"},
-            text='<a href="/one">One</a><a href="/two">Two</a>',
+            headers={"content-type": content_types.get(request.url.path, "text/html")},
+            text="<html><title>Fixture</title></html>",
         )
 
     service = _service(tmp_path, handler)
-    scan = service.start_scan("http://127.0.0.1/", ScanOptions(max_pages=1, retry_attempts=0))
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=2, max_resources=2, retry_attempts=0),
+    )
+
     assert scan.status == "completed_with_warnings"
     assert any(failure.code == "coverage_limit_reached" for failure in scan.failures)
-    assert "coverage_limit_reached" in service.read_report(scan.id)
+    assert calls == ["/", "/about", "/app.css", "/app.js"]
+    with session_scope() as session:
+        asset_types = list(
+            session.scalars(
+                select(ScanAsset.asset_type)
+                .where(ScanAsset.scan_run_id == scan.id)
+                .order_by(ScanAsset.id)
+            )
+        )
+    assert asset_types == ["page", "page", "stylesheet", "script"]
+
+    report = service.read_report(scan.id)
+    assert "## 覆盖告警" in report
+    assert "候选 URL 总数：7" in report
+    assert "已请求数量：4" in report
+    assert "未覆盖数量：3" in report
+    assert "命中限制：max_pages=2, max_resources=2" in report
+    assert "page：2" in report
+    assert "image：1" in report
+    assert "http://127.0.0.1/news" in report
+    assert "http://127.0.0.1/logo.png" in report
+    failure_section = report.split("## 请求失败", 1)[1]
+    assert "coverage_limit_reached" not in failure_section
+
+
+def test_static_resources_use_metadata_summary_and_report_positive_controls(tmp_path) -> None:
+    stylesheet = "/* Library 1.2.3 */ @import url('/theme.css'); .secret-marker { color: red; }"
+    javascript = (
+        "/*! Widget v4.5.6 */ document.write('secret-long-preview-marker'); "
+        "//# sourceMappingURL=widget.js.map"
+    )
+
+    def handler(request):
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={
+                    "content-type": "text/html",
+                    "strict-transport-security": "max-age=15768000",
+                    "x-frame-options": "SAMEORIGIN",
+                },
+                text=(
+                    '<link rel="stylesheet" href="/library-1.2.3.css">'
+                    '<script src="/widget-4.5.6.js"></script>'
+                ),
+            )
+        if request.url.path.endswith(".css"):
+            return httpx.Response(200, headers={"content-type": "text/css"}, text=stylesheet)
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/javascript"},
+            text=javascript,
+        )
+
+    service = _service(tmp_path, handler)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=1, max_resources=2, retry_attempts=0),
+    )
+    report = service.read_report(scan.id)
+
+    assert "| stylesheet |" in report
+    assert "| script |" in report
+    assert "## 已观察到的安全控制" in report
+    assert "Strict-Transport-Security=max-age=15768000" in report
+    assert "X-Frame-Options=SAMEORIGIN" in report
+    assert "资源摘要：size=" in report
+    assert "SHA-256=" in report
+    assert "版本线索=1.2.3" in report
+    assert "版本线索=4.5.6" in report
+    assert "安全信号=external_import" in report
+    assert "source_map_reference" in report
+    assert "secret-long-preview-marker" not in report
+    assert ".secret-marker" not in report
 
 
 def test_active_duplicate_submission_returns_same_parent_task(tmp_path) -> None:

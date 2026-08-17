@@ -20,7 +20,8 @@ from app.schemas.scan import ScanOptions, ScanRunView
 def scan(
     entry_url: Annotated[str | None, typer.Argument(help="已授权的 HTTP(S) 入口 URL。")] = None,
     legacy_url: Annotated[str | None, typer.Option("--url", help="兼容旧版 URL 参数。")] = None,
-    max_pages: Annotated[int, typer.Option("--max-pages")] = 10,
+    max_pages: Annotated[int, typer.Option("--max-pages")] = 50,
+    max_resources: Annotated[int, typer.Option("--max-resources")] = 200,
     max_depth: Annotated[int, typer.Option("--max-depth")] = 2,
     request_timeout_seconds: Annotated[float | None, typer.Option("--request-timeout")] = None,
     overall_timeout_seconds: Annotated[float | None, typer.Option("--overall-timeout")] = None,
@@ -37,6 +38,7 @@ def scan(
         url = _resolve_url(entry_url, legacy_url)
         options = ScanOptions(
             max_pages=max_pages,
+            max_resources=max_resources,
             max_depth=max_depth,
             request_timeout_seconds=request_timeout_seconds,
             overall_timeout_seconds=overall_timeout_seconds,

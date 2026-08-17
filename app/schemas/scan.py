@@ -34,7 +34,8 @@ class ScanStageName(str, Enum):
 class ScanOptions(BaseModel):
     """Bounded user controls; infrastructure defaults are injected by the service."""
 
-    max_pages: int = Field(default=10, ge=1, le=100)
+    max_pages: int = Field(default=50, ge=1, le=500)
+    max_resources: int = Field(default=200, ge=0, le=2000)
     max_depth: int = Field(default=2, ge=0, le=5)
     request_timeout_seconds: float | None = Field(default=None, gt=0, le=60)
     overall_timeout_seconds: float | None = Field(default=None, gt=0, le=1800)
@@ -46,6 +47,13 @@ class ScanOptions(BaseModel):
 class ScanStartRequest(BaseModel):
     url: str = Field(min_length=1, max_length=1000)
     options: ScanOptions = Field(default_factory=ScanOptions)
+
+
+class DiscoveredAsset(BaseModel):
+    """A same-document discovery with an initial resource classification."""
+
+    url: str
+    asset_type: str
 
 
 class ScanStageView(BaseModel):
@@ -128,6 +136,8 @@ class FetchResult(BaseModel):
     body_is_text: bool = True
     title: str | None = None
     discovered_urls: list[str] = Field(default_factory=list)
+    discovered_assets: list[DiscoveredAsset] = Field(default_factory=list)
+    body_sha256: str = ""
     redirects: list[str] = Field(default_factory=list)
     attempts: int = 1
     elapsed_ms: int = 0

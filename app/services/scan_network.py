@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import socket
 import time
 from collections.abc import Callable
@@ -14,7 +15,7 @@ import httpx
 
 from app.core.errors import InputValidationError, TargetPolicyError
 from app.core.settings import Settings
-from app.schemas.scan import FetchResult, ScanOptions
+from app.schemas.scan import DiscoveredAsset, FetchResult, ScanOptions
 
 MAX_RESPONSE_BYTES = 256 * 1024
 TRANSIENT_STATUS_CODES = {502, 503, 504}
@@ -176,7 +177,7 @@ class TargetNetworkPolicy:
 class _HTMLMetadataParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.links: list[str] = []
+        self.links: list[tuple[str, str]] = []
         self.title_parts: list[str] = []
         self.in_title = False
 
@@ -186,10 +187,24 @@ class _HTMLMetadataParser(HTMLParser):
             self.in_title = True
         if lowered not in {"a", "link", "script", "img", "iframe"}:
             return
-        lookup = dict(attrs)
+        lookup = {key.lower(): value for key, value in attrs}
         candidate = lookup.get("href") or lookup.get("src")
         if candidate:
-            self.links.append(candidate)
+            asset_type = "page"
+            if lowered == "link":
+                rel = (lookup.get("rel") or "").lower().split()
+                resource_as = (lookup.get("as") or "").lower()
+                if "stylesheet" in rel or resource_as == "style":
+                    asset_type = "stylesheet"
+                elif "icon" in rel or resource_as == "image":
+                    asset_type = "image"
+                elif resource_as == "script":
+                    asset_type = "script"
+            elif lowered == "script":
+                asset_type = "script"
+            elif lowered == "img":
+                asset_type = "image"
+            self.links.append((candidate, asset_type))
 
     def handle_endtag(self, tag: str) -> None:
         if tag.lower() == "title":
@@ -246,18 +261,20 @@ class HttpScanGateway:
             content_type = response.headers.get("content-type")
             body_is_text = self._is_text_body(content_type, body)
             text = self._decode(body, response.encoding) if body_is_text else ""
-            title, links = self._parse_html(current, text, content_type)
+            title, discovered_assets = self._parse_html(current, text, content_type)
             return FetchResult(
                 requested_url=url,
                 final_url=current,
                 status_code=response.status_code,
-                headers={key.lower(): value for key, value in response.headers.items()},
+                headers=self._normalize_headers(response.headers),
                 content_type=content_type,
                 body_text=text,
                 body_size_bytes=len(body),
                 body_is_text=body_is_text,
                 title=title,
-                discovered_urls=links,
+                discovered_urls=[item.url for item in discovered_assets],
+                discovered_assets=discovered_assets,
+                body_sha256=hashlib.sha256(body).hexdigest(),
                 redirects=redirects,
                 attempts=total_attempts,
                 elapsed_ms=int((time.monotonic() - started) * 1000),
@@ -327,7 +344,7 @@ class HttpScanGateway:
 
     def _parse_html(
         self, base_url: str, text: str, content_type: str | None
-    ) -> tuple[str | None, list[str]]:
+    ) -> tuple[str | None, list[DiscoveredAsset]]:
         if "html" not in (content_type or "").lower():
             return None, []
         parser = _HTMLMetadataParser()
@@ -336,9 +353,9 @@ class HttpScanGateway:
         except Exception:
             return None, []
         title = " ".join(part for part in parser.title_parts if part).strip() or None
-        normalized: list[str] = []
+        normalized: list[DiscoveredAsset] = []
         seen: set[str] = set()
-        for candidate in parser.links:
+        for candidate, hinted_type in parser.links:
             joined = urljoin(base_url, candidate)
             parsed = urlparse(joined)
             if parsed.scheme not in {"http", "https"}:
@@ -348,5 +365,92 @@ class HttpScanGateway:
             )
             if value not in seen:
                 seen.add(value)
-                normalized.append(value)
+                normalized.append(
+                    DiscoveredAsset(
+                        url=value,
+                        asset_type=classify_asset_type(value, hint=hinted_type),
+                    )
+                )
         return title, normalized
+
+    def _normalize_headers(self, headers: httpx.Headers) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        aliases = {"frame-options": "x-frame-options"}
+        deduplicated_headers = {"x-frame-options", "x-content-type-options"}
+        for raw_key, raw_value in headers.multi_items():
+            key = aliases.get(raw_key.lower(), raw_key.lower())
+            values = [part.strip() for part in raw_value.split(",")]
+            if key in deduplicated_headers:
+                existing = [part.strip() for part in normalized.get(key, "").split(",")]
+                unique = [part for part in existing if part]
+                for value in values:
+                    if value and value.lower() not in {item.lower() for item in unique}:
+                        unique.append(value)
+                normalized[key] = ", ".join(unique)
+            elif key in normalized:
+                normalized[key] = f"{normalized[key]}, {raw_value}"
+            else:
+                normalized[key] = raw_value
+        return normalized
+
+
+_DOCUMENT_EXTENSIONS = {
+    ".csv",
+    ".doc",
+    ".docx",
+    ".epub",
+    ".odf",
+    ".ods",
+    ".odt",
+    ".pdf",
+    ".ppt",
+    ".pptx",
+    ".rtf",
+    ".txt",
+    ".xls",
+    ".xlsx",
+}
+_IMAGE_EXTENSIONS = {
+    ".avif",
+    ".bmp",
+    ".gif",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".svg",
+    ".webp",
+}
+
+
+def classify_asset_type(
+    url: str,
+    content_type: str | None = None,
+    *,
+    hint: str | None = None,
+) -> str:
+    """Classify a fetched or discovered URL into report-facing asset types."""
+
+    media_type = (content_type or "").split(";", 1)[0].strip().lower()
+    if media_type:
+        if media_type in {"text/css"}:
+            return "stylesheet"
+        if "javascript" in media_type or media_type in {"application/ecmascript"}:
+            return "script"
+        if media_type.startswith("image/"):
+            return "image"
+        if "html" in media_type:
+            return "page"
+        return "document"
+
+    path = urlparse(url).path.lower()
+    suffix = "." + path.rsplit(".", 1)[-1] if "." in path.rsplit("/", 1)[-1] else ""
+    if suffix == ".css":
+        return "stylesheet"
+    if suffix in {".js", ".mjs", ".cjs"}:
+        return "script"
+    if suffix in _IMAGE_EXTENSIONS:
+        return "image"
+    if suffix in _DOCUMENT_EXTENSIONS:
+        return "document"
+    return hint or "page"

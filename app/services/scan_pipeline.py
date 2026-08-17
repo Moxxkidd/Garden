@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import time
+from collections import Counter
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
@@ -21,7 +23,13 @@ from app.models.scan_run import (
     ScanRunStage,
 )
 from app.redaction.service import RedactionService
-from app.schemas.scan import FetchResult, ScanOptions, ScanRunStatus, ScanStageName
+from app.schemas.scan import (
+    DiscoveredAsset,
+    FetchResult,
+    ScanOptions,
+    ScanRunStatus,
+    ScanStageName,
+)
 from app.services.context_collection import (
     ContextCollectionService,
     ContextCollectionSummary,
@@ -30,7 +38,12 @@ from app.services.context_collection import (
 from app.services.context_establishment import ContextEstablishmentService
 from app.services.coverage_identity import canonical_asset_identity, redacted_observed_url
 from app.services.scan_analysis import PassiveScanAnalyzer
-from app.services.scan_network import FetchError, HttpScanGateway, TargetNetworkPolicy
+from app.services.scan_network import (
+    FetchError,
+    HttpScanGateway,
+    TargetNetworkPolicy,
+    classify_asset_type,
+)
 from app.services.scan_reporting import ScanReportService
 
 STAGES = [stage.value for stage in ScanStageName]
@@ -354,23 +367,48 @@ class ScanPipeline:
         options: ScanOptions,
         deadline: float,
     ):
-        queue = [(url, 1) for url in entry.discovered_urls]
+        page_queue: list[tuple[DiscoveredAsset, int]] = []
+        resource_queue: list[tuple[DiscoveredAsset, int]] = []
         seen = {entry.final_url, run.normalized_url}
+        requested = {entry.final_url}
+        candidates: dict[str, DiscoveredAsset] = {
+            entry.final_url: DiscoveredAsset(url=entry.final_url, asset_type="page")
+        }
         origin = self._origin(entry.final_url)
-        collected = 1
+        page_count = 1
+        page_requests = 1
+        resource_count = 0
+        resource_requests = 0
         skipped_external = 0
-        while queue and collected < options.max_pages:
+        depth_limited: list[DiscoveredAsset] = []
+
+        def enqueue(discovery: DiscoveredAsset, depth: int) -> None:
+            nonlocal skipped_external
+            if self._origin(discovery.url) != origin:
+                skipped_external += 1
+                return
+            candidates.setdefault(discovery.url, discovery)
+            if discovery.url in seen:
+                return
+            if depth > options.max_depth:
+                depth_limited.append(discovery)
+                return
+            target = page_queue if discovery.asset_type == "page" else resource_queue
+            target.append((discovery, depth))
+
+        for discovery in self._discoveries(entry):
+            enqueue(discovery, 1)
+
+        while page_queue and page_requests < options.max_pages:
             self._check_interrupted(session, run.id)
             self._check_deadline(deadline)
-            url, depth = queue.pop(0)
+            discovery, depth = page_queue.pop(0)
+            url = discovery.url
             if url in seen:
                 continue
             seen.add(url)
-            if self._origin(url) != origin:
-                skipped_external += 1
-                continue
-            if depth > options.max_depth:
-                continue
+            requested.add(url)
+            page_requests += 1
             try:
                 result = self.gateway.fetch(url, options)
                 self._check_interrupted(session, run.id)
@@ -388,26 +426,83 @@ class ScanPipeline:
                 )
                 session.commit()
                 continue
-            self._persist_fetch(session, run, result, depth=depth)
-            collected += 1
-            if depth < options.max_depth:
-                queue.extend((candidate, depth + 1) for candidate in result.discovered_urls)
+            self._persist_fetch(
+                session, run, result, depth=depth, asset_type_hint=discovery.asset_type
+            )
+            page_count += 1
+            for child in self._discoveries(result):
+                enqueue(child, depth + 1)
             session.commit()
-        remaining = len(queue)
-        if remaining:
+
+        while resource_queue and resource_requests < options.max_resources:
+            self._check_interrupted(session, run.id)
+            self._check_deadline(deadline)
+            discovery, depth = resource_queue.pop(0)
+            url = discovery.url
+            if url in seen:
+                continue
+            seen.add(url)
+            requested.add(url)
+            resource_requests += 1
+            try:
+                result = self.gateway.fetch(url, options)
+                self._check_interrupted(session, run.id)
+            except (FetchError, InputValidationError, TargetPolicyError) as error:
+                code, retryable, attempts, failed_url = self._error_details(error, url)
+                self._record_failure(
+                    session,
+                    run,
+                    stage=ScanStageName.COLLECT.value,
+                    code=code,
+                    message=str(error),
+                    url=failed_url,
+                    retryable=retryable,
+                    attempt=attempts,
+                )
+                session.commit()
+                continue
+            self._persist_fetch(
+                session, run, result, depth=depth, asset_type_hint=discovery.asset_type
+            )
+            resource_count += 1
+            session.commit()
+
+        uncovered = [item for url, item in candidates.items() if url not in requested]
+        limits: list[str] = []
+        if page_queue:
+            limits.append(f"max_pages={options.max_pages}")
+        if resource_queue:
+            limits.append(f"max_resources={options.max_resources}")
+        if depth_limited:
+            limits.append(f"max_depth={options.max_depth}")
+        if uncovered:
+            counts = Counter(item.asset_type for item in uncovered)
+            rendered_counts = ", ".join(
+                f"{asset_type}：{count}" for asset_type, count in sorted(counts.items())
+            )
+            samples: list[str] = []
+            for asset_type in sorted(counts):
+                urls = [item.url for item in uncovered if item.asset_type == asset_type][:3]
+                samples.append(f"{asset_type}=[{', '.join(urls)}]")
+            message = (
+                f"候选 URL 总数：{len(candidates)}；已请求数量：{len(requested)}；"
+                f"未覆盖数量：{len(uncovered)}；命中限制：{', '.join(limits) or '未知'}；"
+                f"未覆盖类型：{rendered_counts}；代表样本：{'；'.join(samples)}"
+            )
             self._record_failure(
                 session,
                 run,
                 stage=ScanStageName.COLLECT.value,
                 code="coverage_limit_reached",
-                message=f"Stopped with {remaining} queued URL(s) because a scan bound was reached.",
+                message=message,
                 url=None,
                 retryable=False,
                 attempt=1,
             )
         return None, (
-            f"Recorded {collected} same-origin page(s); skipped {skipped_external} external "
-            f"link(s); {remaining} URL(s) remained outside configured bounds."
+            f"Recorded {page_count} page(s) and {resource_count} resource(s); skipped "
+            f"{skipped_external} external link(s); {len(uncovered)} URL(s) remained "
+            "outside configured bounds."
         )
 
     def _normalize(self, session: Session, run: ScanRun):
@@ -459,7 +554,13 @@ class ScanPipeline:
         return path, f"Generated structured Markdown report at {path}."
 
     def _persist_fetch(
-        self, session: Session, run: ScanRun, result: FetchResult, *, depth: int
+        self,
+        session: Session,
+        run: ScanRun,
+        result: FetchResult,
+        *,
+        depth: int,
+        asset_type_hint: str | None = None,
     ) -> None:
         context = session.scalar(
             select(ScanContext).where(
@@ -478,6 +579,11 @@ class ScanPipeline:
             )
         )
         now = datetime.now(timezone.utc)
+        asset_type = classify_asset_type(
+            result.final_url, result.content_type, hint=asset_type_hint
+        )
+        version_hints = self._version_hints(result.final_url, result.body_text)
+        security_signals = self._resource_security_signals(asset_type, result.body_text)
         attributes = {
             "content_type": result.content_type,
             "body_size_bytes": result.body_size_bytes,
@@ -487,13 +593,16 @@ class ScanPipeline:
             "depth": depth,
             "redirects": result.redirects,
             "discovered_urls": result.discovered_urls,
+            "body_sha256": result.body_sha256,
+            "version_hints": version_hints,
+            "security_signals": security_signals,
         }
         if asset is None:
             asset = ScanAsset(
                 scan_run_id=run.id,
                 context_id=context.id,
                 identity_key=identity_key,
-                asset_type="page",
+                asset_type=asset_type,
                 url=redacted_observed_url(result.final_url),
                 method="GET",
                 status_code=result.status_code,
@@ -504,7 +613,23 @@ class ScanPipeline:
             session.add(asset)
             session.flush()
         headers = self.redaction_service.redact_mapping(result.headers)
-        if result.body_is_text:
+        resource_summary = None
+        if asset_type in {"stylesheet", "script", "image", "document"}:
+            resource_summary = {
+                "size_bytes": result.body_size_bytes,
+                "sha256": result.body_sha256,
+                "version_hints": version_hints,
+                "security_signals": security_signals,
+            }
+            if result.body_is_text:
+                preview = "[resource body preview omitted]"
+            else:
+                preview = (
+                    "[non-text response omitted; "
+                    f"content-type={result.content_type or 'unknown'}; "
+                    f"size={result.body_size_bytes} bytes]"
+                )
+        elif result.body_is_text:
             preview = self.redaction_service.redact_text(result.body_text, limit=1200)
         else:
             preview = (
@@ -523,12 +648,48 @@ class ScanPipeline:
                     f"HTTP {result.status_code}; content-type={result.content_type or '-'}; "
                     f"elapsed={result.elapsed_ms}ms; attempts={result.attempts}."
                 ),
-                data={"headers": headers, "preview": preview},
+                data={
+                    "headers": headers,
+                    "preview": preview,
+                    "resource_summary": resource_summary,
+                },
                 collected_at=now,
             )
         )
         run.retry_count += max(0, result.attempts - 1)
         session.flush()
+
+    def _discoveries(self, result: FetchResult) -> list[DiscoveredAsset]:
+        if result.discovered_assets:
+            return result.discovered_assets
+        return [
+            DiscoveredAsset(url=url, asset_type=classify_asset_type(url))
+            for url in result.discovered_urls
+        ]
+
+    def _version_hints(self, url: str, body: str) -> list[str]:
+        values = re.findall(
+            r"(?<!\d)(\d+\.\d+(?:\.\d+)?)(?!\d)",
+            f"{urlparse(url).path}\n{body[:4096]}",
+        )
+        return list(dict.fromkeys(values))[:5]
+
+    def _resource_security_signals(self, asset_type: str, body: str) -> list[str]:
+        signals: list[str] = []
+        lowered = body.lower()
+        if asset_type == "stylesheet":
+            if "@import" in lowered:
+                signals.append("external_import")
+            if "data:" in lowered:
+                signals.append("inline_data_uri")
+        if asset_type == "script":
+            if "sourcemappingurl=" in lowered:
+                signals.append("source_map_reference")
+            if "eval(" in lowered or "new function(" in lowered:
+                signals.append("dynamic_code_execution")
+            if "document.write(" in lowered:
+                signals.append("document_write")
+        return signals
 
     def _record_failure(
         self,
