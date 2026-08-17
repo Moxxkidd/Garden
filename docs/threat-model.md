@@ -22,11 +22,11 @@ It must not be positioned as a tool for unauthorized access, mass scanning, or o
 
 Garden is safe by default:
 
-- local/demo targets only by default
-- non-local targets require explicit opt-in
+- authorized public and loopback targets are enabled by default
+- private RFC1918/ULA targets require explicit opt-in
 - no destructive checks
 - no exploit modules
-- no public scanning defaults
+- no mass or unauthorized scanning
 - no true IDOR exploitation
 - no dangerous file upload testing
 - no aggressive crawling or fuzzing
@@ -35,16 +35,16 @@ This default posture is a core product constraint, not just an implementation de
 
 ## Target Restrictions
 
-By default, Garden only allows:
+By default, Garden allows:
 
 - `localhost`
 - `127.0.0.1`
-- local demo or containerized local networks when explicitly configured
+- authorized public targets
 
-Remote targets require:
+Operators must:
 
-- an explicit configuration change such as `GARDEN_ALLOW_NON_LOCAL_TARGETS=true`
-- a consciously authorized environment
+- submit only targets for which they have explicit authorization
+- set `GARDEN_ALLOW_NON_LOCAL_TARGETS=false` when local-only operation is required
 
 Private RFC1918/ULA targets require the separate
 `GARDEN_ALLOW_PRIVATE_TARGETS=true` opt-in. URL scans resolve and classify DNS

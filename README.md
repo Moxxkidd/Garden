@@ -126,13 +126,13 @@ exports/scan-reports/scan-<id>.md
 
 ## 安全边界
 
-Garden 只应用于已获得授权的目标，并默认采用保守策略：
+Garden 只应用于已获得授权的目标，并采用以下有界策略：
 
 - 仅允许 `http` 和 `https`
 - 只执行有界、同源的被动 `GET` 请求
 - 每次连接和重定向都会重新校验目标地址
-- 默认只允许本机回环目标
-- 公网目标需要显式设置 `GARDEN_ALLOW_NON_LOCAL_TARGETS=true`
+- 默认允许已授权的公网目标和本机回环目标
+- 如需恢复仅本机模式，可显式设置 `GARDEN_ALLOW_NON_LOCAL_TARGETS=false`
 - RFC1918/ULA 内网目标还需要设置 `GARDEN_ALLOW_PRIVATE_TARGETS=true`
 - link-local、云元数据常用地址、组播和未指定地址始终拒绝
 - 请求超时、整体超时、并发、重试、页面数和深度均有限制

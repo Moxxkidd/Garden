@@ -27,6 +27,7 @@ def test_index_page_loads(app) -> None:
     assert "Dashboard" in response.text
     assert "One URL to a structured report" in response.text
     assert "Start scan" in response.text
+    assert "Authorized public + local by default" in response.text
 
 
 def test_scans_page_uses_compact_navigation_and_clickable_scan_rows(app) -> None:
