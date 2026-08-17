@@ -94,6 +94,8 @@ garden scan http://127.0.0.1:13000/ \
   --retries 1
 ```
 
+--overall-timeout bounds target network collection. When it expires, Garden stops new requests, marks coverage incomplete, and finishes local normalization, analysis, and report generation for evidence already collected.
+
 ### HTTP API
 
 ```bash
