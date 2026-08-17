@@ -528,27 +528,55 @@ def test_active_duplicate_submission_returns_same_parent_task(tmp_path) -> None:
     assert dispatcher.ids == [first.id]
 
 
-def test_overall_timeout_is_persisted_and_gets_failure_report(tmp_path) -> None:
-    class AdvancingClock:
-        def __init__(self):
-            self.value = 0.0
+def test_overall_timeout_preserves_partial_collection_and_finishes_report(tmp_path) -> None:
+    class ControlledClock:
+        value = 0.0
 
-        def __call__(self):
-            self.value += 0.6
+        def __call__(self) -> float:
             return self.value
 
-    service = _service(
-        tmp_path,
-        lambda request: httpx.Response(204),
-        clock=AdvancingClock(),
-    )
+        def advance(self, seconds: float) -> None:
+            self.value += seconds
+
+    clock = ControlledClock()
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<a href="/first">First</a><a href="/never">Never</a>',
+            )
+        if request.url.path == "/first":
+            clock.advance(2.0)
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text="<title>First</title>",
+            )
+        raise AssertionError("No request may start after the deadline")
+
+    service = _service(tmp_path, handler, clock=clock)
     scan = service.start_scan(
-        "http://127.0.0.1/", ScanOptions(overall_timeout_seconds=1, retry_attempts=0)
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=3, overall_timeout_seconds=1, retry_attempts=0),
     )
-    assert scan.status == "failed"
-    assert scan.error_code == "overall_timeout"
-    assert scan.report_path is not None
-    assert "overall_timeout" in service.read_report(scan.id)
+
+    assert calls == ["/", "/first"]
+    assert scan.status == "completed_with_warnings"
+    assert scan.error_code is None
+    assert scan.asset_count == 2
+    assert scan.evidence_count == 2
+    selected = [
+        stage.status
+        for stage in scan.stages
+        if stage.name in {"collect", "normalize", "analyze", "report"}
+    ]
+    assert selected == ["completed_with_warnings", "completed", "completed", "completed"]
+    assert [failure.code for failure in scan.failures].count("overall_timeout") == 1
+    assert "First" in service.read_report(scan.id)
 
 
 def test_web_and_http_entry_run_end_to_end(tmp_path, monkeypatch) -> None:

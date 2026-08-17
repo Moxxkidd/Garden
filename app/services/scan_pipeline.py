@@ -38,6 +38,7 @@ from app.services.context_collection import (
 from app.services.context_establishment import ContextEstablishmentService
 from app.services.coverage_identity import canonical_asset_identity, redacted_observed_url
 from app.services.scan_analysis import PassiveScanAnalyzer
+from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_network import (
     FetchError,
     HttpScanGateway,
@@ -230,12 +231,14 @@ class ScanPipeline:
                 deadline,
                 lambda: self._validate(run),
             )
+            self._check_deadline(deadline)
             self._run_stage(
                 session,
                 run,
                 ScanStageName.COLLECT.value,
                 deadline,
                 lambda: self._discover_and_collect(session, run, options, deadline),
+                enforce_deadline=False,
             )
             self._run_stage(
                 session,
@@ -243,6 +246,7 @@ class ScanPipeline:
                 ScanStageName.NORMALIZE.value,
                 deadline,
                 lambda: self._normalize(session, run),
+                enforce_deadline=False,
             )
             self._run_stage(
                 session,
@@ -250,6 +254,7 @@ class ScanPipeline:
                 ScanStageName.ANALYZE.value,
                 deadline,
                 lambda: self._analyze(session, run),
+                enforce_deadline=False,
             )
             self._run_stage(
                 session,
@@ -257,6 +262,7 @@ class ScanPipeline:
                 ScanStageName.REPORT.value,
                 deadline,
                 lambda: self._report(session, run),
+                enforce_deadline=False,
             )
             self._check_interrupted(session, run.id)
             session.refresh(run)
@@ -305,9 +311,10 @@ class ScanPipeline:
             session.commit()
             self._try_failure_report(session, run)
 
-    def _run_stage(self, session, run, name, deadline, operation):
+    def _run_stage(self, session, run, name, deadline, operation, *, enforce_deadline: bool = True):
         self._check_interrupted(session, run.id)
-        self._check_deadline(deadline)
+        if enforce_deadline:
+            self._check_deadline(deadline)
         stage = self._stage(session, run.id, name)
         if stage is None:
             raise RuntimeError(f"Missing persisted stage '{name}'.")
@@ -318,9 +325,18 @@ class ScanPipeline:
         session.commit()
         result, summary = operation()
         self._check_interrupted(session, run.id)
-        self._check_deadline(deadline)
+        if enforce_deadline:
+            self._check_deadline(deadline)
         stage = self._stage(session, run.id, name)
-        stage.status = "completed"
+        session.refresh(run)
+        stage.status = (
+            "completed_with_warnings"
+            if any(
+                failure.stage == name and is_coverage_warning(failure.stage, failure.code)
+                for failure in run.failures
+            )
+            else "completed"
+        )
         stage.summary = summary
         stage.finished_at = datetime.now(timezone.utc)
         run = session.get(ScanRun, run.id)
@@ -356,7 +372,25 @@ class ScanPipeline:
         deadline: float,
     ):
         entry, discovery_summary = self._discover(session, run, options)
-        result, collection_summary = self._collect(session, run, entry, options, deadline)
+        try:
+            self._check_deadline(deadline)
+            result, collection_summary = self._collect(session, run, entry, options, deadline)
+        except OverallScanTimeout as error:
+            self._record_failure(
+                session,
+                run,
+                stage=ScanStageName.COLLECT.value,
+                code="overall_timeout",
+                message=str(error),
+                url=run.normalized_url,
+                retryable=False,
+                attempt=1,
+            )
+            session.commit()
+            return None, (
+                f"{discovery_summary} Collection deadline was reached; partial assets and "
+                "evidence will be finalized locally."
+            )
         return result, f"{discovery_summary} {collection_summary}"
 
     def _collect(
