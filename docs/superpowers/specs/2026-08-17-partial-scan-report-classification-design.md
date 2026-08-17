@@ -1,7 +1,7 @@
 # Partial Scan Report Classification Design
 
-**Date:** 2026-08-17  
-**Status:** Approved design, pending implementation plan  
+**Date:** 2026-08-17<br>
+**Status:** Approved design, pending implementation plan<br>
 **Scope:** Quick URL scan collection lifecycle and structured report classification
 
 ## Problem

@@ -10,6 +10,7 @@
 
 ## Global Constraints
 
+- **Human ruling (Task 4 fix round 1/5):** retain this work combined with the existing work in PR #17 (`fix/installer-report-hardening`); do not split it into a separate branch or pull request. Whole-branch review and delivery remain the controller's responsibility.
 - Do not follow redirects outside the configured same-origin boundary.
 - Do not increase page, resource, depth, response-size, or time budgets automatically.
 - Do not add a database column, table, or migration.
@@ -286,13 +287,15 @@ git commit -m "区分覆盖告警与请求失败"
 
 **Files:**
 - Modify: README.md
+- Modify: app/services/scan_failure_classification.py (Ruff import-order gate)
+- Modify: docs/superpowers/specs/2026-08-17-partial-scan-report-classification-design.md (diff whitespace gate)
 - Track: docs/superpowers/plans/2026-08-17-partial-scan-report-classification.md
 
 **Interfaces:**
 - Consumes: implemented collection deadline behavior.
 - Produces: exact user documentation and release-level verification evidence.
 
-- [ ] **Step 1: Document the timeout behavior**
+- [x] **Step 1: Document the timeout behavior**
 
 Add this statement to the URL scan CLI options section:
 
@@ -300,42 +303,49 @@ Add this statement to the URL scan CLI options section:
 --overall-timeout bounds target network collection. When it expires, Garden stops new requests, marks coverage incomplete, and finishes local normalization, analysis, and report generation for evidence already collected.
 ~~~
 
-- [ ] **Step 2: Run formatting, lint, and the complete suite**
+- [x] **Step 2: Run formatting, lint, and the complete suite**
 
 ~~~bash
-.venv/bin/ruff format --check app tests
-.venv/bin/ruff check app tests
-.venv/bin/pytest -q
+/Users/an/Documents/Garden/.venv/bin/python -m ruff format --check .
+/Users/an/Documents/Garden/.venv/bin/python -m ruff check .
+/Users/an/Documents/Garden/.venv/bin/python -m pytest -q
 ~~~
 
 Expected: all commands exit 0 with zero test failures.
 
-- [ ] **Step 3: Run package, wheel, installer, and CLI smoke checks**
+- [x] **Step 3: Run package, wheel, installer, and CLI smoke checks**
 
 ~~~bash
-make test-wheel
-make test-install
-make test-cli-smoke
+/Users/an/Documents/Garden/.venv/bin/python -m pytest tests/test_migrations.py::test_built_wheel_installs_with_loadable_migration_assets -q
+/Users/an/Documents/Garden/.venv/bin/python -m pytest tests/test_install_script.py -q
+/Users/an/Documents/Garden/.venv/bin/python -m app.cli.main --help
+/Users/an/Documents/Garden/.venv/bin/python -m app.cli.main healthcheck
 ~~~
 
-Expected: every command exits 0 and the installed smoke CLI imports Garden from its isolated runtime.
+`Makefile` has no `test-wheel`, `test-install`, or `test-cli-smoke` target. The first command above is the repository test that builds a wheel, installs it into an isolated target, and verifies that `app` imports from that target; the installer test and the two CLI commands are the repository's corresponding checks.
 
-- [ ] **Step 4: Confirm scope and absence of migrations**
+- [x] **Step 4: Confirm combined-branch integrity, Task 4 delta, and absence of migrations**
 
 ~~~bash
 git diff --check origin/main...HEAD
 git diff --name-only origin/main...HEAD
+git diff --name-only origin/main...HEAD | rg '(^|/)migrations/|(^|/)alembic'
+git diff --check 46784e6..HEAD
+git diff --name-only 46784e6..HEAD
 ~~~
 
-Expected: no new Alembic migration; changes are limited to the classifier, pipeline, report, tests, README, design, and plan.
+Expected: under the human ruling, do not assert that the combined `origin/main...HEAD` diff contains only this feature's files. Instead, assert that the combined branch adds no Alembic migration path, and that the Task 4 delta from base `46784e6` contains only intended Task 4 documentation and release-gate files.
 
-- [ ] **Step 5: Commit documentation**
+- [x] **Step 5: Commit documentation and release-gate fixes**
 
 ~~~bash
-git add README.md docs/superpowers/plans/2026-08-17-partial-scan-report-classification.md
-git commit -m "说明部分扫描超时语义"
+git add README.md \
+  app/services/scan_failure_classification.py \
+  docs/superpowers/plans/2026-08-17-partial-scan-report-classification.md \
+  docs/superpowers/specs/2026-08-17-partial-scan-report-classification-design.md
+git commit -m "修复发布验证门禁"
 ~~~
 
-- [ ] **Step 6: Review and delivery**
+- [x] **Step 6: Handoff to controller final whole-branch review**
 
-Use superpowers:requesting-code-review. Address confirmed findings, rerun affected checks, push the branch, update the draft PR, and install only the reviewed commit into the formal local Garden runtime.
+The implementation subagent records the completed Task 4 evidence and hands the combined PR #17 branch to the controller for final whole-branch review. Per the SDD workflow, only after that review may the controller push, update the draft PR, or install the reviewed commit into the formal local Garden runtime. This task performs none of those delivery actions.

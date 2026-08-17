@@ -1,8 +1,5 @@
 """Shared classification for persisted quick-scan diagnostic records."""
 
-from __future__ import annotations
-
-
 _COVERAGE_WARNING_KEYS = frozenset(
     {
         ("collect", "coverage_limit_reached"),
