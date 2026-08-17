@@ -13,9 +13,19 @@ from app.db.bootstrap import session_scope
 from app.models.scan_run import ScanAsset
 from app.schemas.scan import ScanOptions
 from app.services.scan_application import InlineScanDispatcher, ScanApplicationService
+from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_network import MAX_RESPONSE_BYTES, HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_pipeline import ScanPipeline
 from app.services.scan_reporting import ScanReportService
+
+
+def test_only_collect_boundary_and_budget_codes_are_coverage_warnings() -> None:
+    assert is_coverage_warning("collect", "coverage_limit_reached")
+    assert is_coverage_warning("collect", "cross_origin_redirect_blocked")
+    assert is_coverage_warning("collect", "overall_timeout")
+    assert not is_coverage_warning("validate", "cross_origin_redirect_blocked")
+    assert not is_coverage_warning("collect", "connect_error")
+    assert not is_coverage_warning("report", "stage_execution_failed")
 
 
 def _loopback_resolver(host, port, **kwargs):
