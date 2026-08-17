@@ -40,19 +40,45 @@ case "$(uname -m)" in
     ;;
 esac
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "未找到 python3。请先安装 Python 3.10 或更高版本。" >&2
-  exit 1
-fi
-
-if ! python3 - <<'PY'
+python_is_usable() {
+  "$1" - <<'PY' >/dev/null 2>&1
 import sys
 raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
 PY
-then
-  echo "Garden 需要 Python 3.10 或更高版本。" >&2
+}
+
+GARDEN_PYTHON_BIN=""
+if [ -n "${GARDEN_PYTHON:-}" ]; then
+  if command -v "$GARDEN_PYTHON" >/dev/null 2>&1 && python_is_usable "$GARDEN_PYTHON"; then
+    GARDEN_PYTHON_BIN="$(command -v "$GARDEN_PYTHON")"
+  else
+    echo "GARDEN_PYTHON 指向的解释器不可用或低于 Python 3.10：$GARDEN_PYTHON" >&2
+    exit 1
+  fi
+else
+  for candidate in \
+    python3 python3.13 python3.12 python3.11 python3.10 \
+    /opt/homebrew/opt/python@3.13/libexec/bin/python3 \
+    /opt/homebrew/opt/python@3.12/libexec/bin/python3 \
+    /opt/homebrew/opt/python@3.11/libexec/bin/python3 \
+    /usr/local/opt/python@3.13/libexec/bin/python3 \
+    /usr/local/opt/python@3.12/libexec/bin/python3 \
+    /usr/local/opt/python@3.11/libexec/bin/python3
+  do
+    if command -v "$candidate" >/dev/null 2>&1 && python_is_usable "$candidate"; then
+      GARDEN_PYTHON_BIN="$(command -v "$candidate")"
+      break
+    fi
+  done
+fi
+
+if [ -z "$GARDEN_PYTHON_BIN" ]; then
+  echo "未找到 Python 3.10 或更高版本。可安装 Python 3.12，或通过 GARDEN_PYTHON 指定解释器。" >&2
   exit 1
 fi
+
+GARDEN_PYTHON_VERSION="$("$GARDEN_PYTHON_BIN" -c 'import platform; print(platform.python_version())')"
+echo "使用 Python：$GARDEN_PYTHON_BIN ($GARDEN_PYTHON_VERSION)"
 
 GARDEN_SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 GARDEN_USER_HOME="${HOME:?HOME 未设置，无法执行用户级安装。}"
@@ -81,9 +107,30 @@ fi
 mkdir -p "$GARDEN_HOME" "$GARDEN_HOME/reports" "$GARDEN_HOME/storage" \
   "$GARDEN_HOME/logs" "$GARDEN_RUNTIME_STATE_DIR" "$GARDEN_INSTALL_ROOT" "$GARDEN_BIN_DIR"
 
-if [ ! -f "$GARDEN_HOME/config.env" ]; then
-  grep -v '^GARDEN_DATABASE_URL=' "$GARDEN_SOURCE_ROOT/.env.example" \
-    > "$GARDEN_HOME/config.env"
+GARDEN_CONFIG_FILE="$GARDEN_HOME/config.env"
+GARDEN_CONFIG_MARKER="# GARDEN_INSTALLER_MANAGED_CONFIG_VERSION=2"
+if [ ! -f "$GARDEN_CONFIG_FILE" ]; then
+  {
+    echo "$GARDEN_CONFIG_MARKER"
+    grep -v '^GARDEN_DATABASE_URL=' "$GARDEN_SOURCE_ROOT/.env.example"
+  } > "$GARDEN_CONFIG_FILE"
+elif ! grep -Fq "$GARDEN_CONFIG_MARKER" "$GARDEN_CONFIG_FILE" \
+  && grep -Fq '# Garden local demo defaults' "$GARDEN_CONFIG_FILE" \
+  && grep -Fq '# Safe-by-default guardrail: keep false for local/demo use only' "$GARDEN_CONFIG_FILE" \
+  && grep -Fqx 'GARDEN_ALLOW_NON_LOCAL_TARGETS=false' "$GARDEN_CONFIG_FILE"
+then
+  GARDEN_CONFIG_STAGE="$(mktemp "$GARDEN_HOME/.config.env.XXXXXX")"
+  {
+    echo "$GARDEN_CONFIG_MARKER"
+    sed \
+      -e 's|# Safe-by-default guardrail: keep false for local/demo use only|# 已授权公网目标默认允许；如需仅扫描本机目标，可显式改为 false。|' \
+      -e 's|^GARDEN_ALLOW_NON_LOCAL_TARGETS=false$|GARDEN_ALLOW_NON_LOCAL_TARGETS=true|' \
+      "$GARDEN_CONFIG_FILE"
+  } > "$GARDEN_CONFIG_STAGE"
+  chmod --reference="$GARDEN_CONFIG_FILE" "$GARDEN_CONFIG_STAGE" 2>/dev/null \
+    || chmod 0600 "$GARDEN_CONFIG_STAGE"
+  mv "$GARDEN_CONFIG_STAGE" "$GARDEN_CONFIG_FILE"
+  echo "已迁移旧版自动生成的公网目标策略：GARDEN_ALLOW_NON_LOCAL_TARGETS=true"
 fi
 
 if [ -f "$GARDEN_HOME/garden.db" ]; then
@@ -103,7 +150,7 @@ cleanup_stage() {
 }
 trap cleanup_stage EXIT
 
-python3 -m venv "$GARDEN_STAGE_DIR/venv"
+"$GARDEN_PYTHON_BIN" -m venv "$GARDEN_STAGE_DIR/venv"
 GARDEN_STAGE_PYTHON="$GARDEN_STAGE_DIR/venv/bin/python"
 export PIP_RETRIES="${PIP_RETRIES:-10}"
 export PIP_TIMEOUT="${PIP_TIMEOUT:-30}"
@@ -141,10 +188,23 @@ set -eu
 export GARDEN_CLI_RUNTIME=1
 export GARDEN_CLI_NAME="$command_name"
 export GARDEN_HOME="\${GARDEN_HOME:-$GARDEN_HOME}"
-exec "$GARDEN_RUNTIME_DIR/venv/bin/python" -m app.cli.main "\$@"
+exec "$GARDEN_RUNTIME_DIR/venv/bin/python" -I "$GARDEN_INSTALL_ROOT/launcher.py" "\$@"
 EOF
   chmod 0755 "$launcher_path"
 }
+
+cat > "$GARDEN_INSTALL_ROOT/launcher.py" <<'PY'
+"""Garden 正式安装入口；隔离当前目录与 PYTHONPATH 后加载已安装包。"""
+
+import os
+
+from app.cli.main import app
+
+
+if __name__ == "__main__":
+    app(prog_name=os.environ.get("GARDEN_CLI_NAME", "garden"))
+PY
+chmod 0644 "$GARDEN_INSTALL_ROOT/launcher.py"
 
 write_launcher "$GARDEN_BIN_DIR/garden" "garden"
 write_launcher "$GARDEN_BIN_DIR/gardenctl" "gardenctl"

@@ -58,6 +58,7 @@ class ScanReportService:
         assets = sorted(run.assets, key=lambda item: item.id)
         evidence = sorted(run.evidence, key=lambda item: item.id)
         findings = sorted(run.findings, key=lambda item: item.id)
+        finding_groups = self._group_findings(findings)
         stages = sorted(run.stages, key=lambda item: item.position)
         summary_status = run.status
         if summary_status == "running":
@@ -71,7 +72,7 @@ class ScanReportService:
             f"- 入口 URL：{run.normalized_url}",
             f"- 发现资产：{len(assets)}",
             f"- 证据记录：{len(evidence)}",
-            f"- 风险或关注项：{len(findings)}",
+            f"- 风险或关注项：{len(finding_groups)} 类（{len(findings)} 条原始观察）",
             f"- 覆盖告警：{len(coverage_warnings)}",
             f"- 请求或阶段失败：{len(request_failures)}",
             "",
@@ -112,7 +113,9 @@ class ScanReportService:
         lines.extend(["", "## 证据", ""])
         if not evidence:
             lines.append("没有可用证据；请结合失败与未覆盖部分判断报告完整性。")
-        for item in evidence:
+        detailed_evidence = [item for item in evidence if not item.data.get("resource_summary")]
+        resource_evidence = [item for item in evidence if item.data.get("resource_summary")]
+        for item in detailed_evidence:
             headers = item.data.get("headers", {})
             rendered_headers = ", ".join(
                 f"{key}={self._inline(str(value))}" for key, value in sorted(headers.items())[:12]
@@ -125,23 +128,34 @@ class ScanReportService:
                 f"- 摘要：{item.summary}",
                 f"- 响应头证据：{rendered_headers or '-'}",
             ]
-            resource_summary = item.data.get("resource_summary")
-            if resource_summary:
-                versions = ", ".join(resource_summary.get("version_hints") or []) or "未识别"
-                signals = ", ".join(resource_summary.get("security_signals") or []) or "未观察到"
-                evidence_lines.append(
-                    "- 资源摘要："
-                    f"size={resource_summary.get('size_bytes', 0)} bytes；"
-                    f"SHA-256={resource_summary.get('sha256') or '-'}；"
-                    f"版本线索={versions}；安全信号={signals}"
-                )
-                preview = str(item.data.get("preview") or "")
-                if preview.startswith("[non-text response omitted"):
-                    evidence_lines.append(f"- 内容说明：{self._inline(preview)}")
-            else:
-                preview = self._inline(str(item.data.get("preview") or "-"))[:500]
-                evidence_lines.append(f"- 脱敏内容预览：{preview}")
+            preview = self._inline(str(item.data.get("preview") or "-"))[:500]
+            evidence_lines.append(f"- 脱敏内容预览：{preview}")
             lines.extend([*evidence_lines, ""])
+        if resource_evidence:
+            lines.extend(["### 静态资源证据索引", ""])
+        for item in resource_evidence:
+            resource_summary = item.data["resource_summary"]
+            versions = ", ".join(resource_summary.get("version_hints") or []) or "未识别"
+            signals = ", ".join(resource_summary.get("security_signals") or []) or "未观察到"
+            truncated = bool(resource_summary.get("truncated"))
+            hash_label = "采集片段 SHA-256" if truncated else "SHA-256"
+            preview = str(item.data.get("preview") or "")
+            content_note = (
+                f"；内容说明={self._inline(preview)}"
+                if preview.startswith("[non-text response omitted")
+                else ""
+            )
+            asset_ref = f"A{item.asset_id}" if item.asset_id else "未关联"
+            lines.append(
+                f"- E{item.id}（{asset_ref}）资源摘要："
+                f"size={resource_summary.get('size_bytes', 0)} bytes；"
+                f"truncated={str(truncated).lower()}；"
+                f"{hash_label}={resource_summary.get('sha256') or '-'}；"
+                f"版本线索={versions}；安全信号={signals}；"
+                f"来源={self._inline(item.source_url)}{content_note}"
+            )
+        if resource_evidence:
+            lines.append("")
 
         observed_controls = self._observed_security_controls(evidence)
         lines.extend(["## 已观察到的安全控制", ""])
@@ -154,19 +168,29 @@ class ScanReportService:
         lines.extend(["## 风险或关注项", ""])
         if not findings:
             lines.append("未识别到风险或关注项。这不代表目标不存在未覆盖风险。")
-        for finding in findings:
-            evidence_refs = ", ".join(f"E{item}" for item in finding.evidence_ids) or "无"
-            asset_refs = ", ".join(f"A{item}" for item in finding.asset_ids) or "无"
+        for group in finding_groups:
+            findings_in_group = group["findings"]
+            first = findings_in_group[0]
+            evidence_ids = sorted(
+                {item for finding in findings_in_group for item in finding.evidence_ids}
+            )
+            asset_ids = sorted(
+                {item for finding in findings_in_group for item in finding.asset_ids}
+            )
+            evidence_refs = self._sample_refs("E", evidence_ids)
+            asset_refs = self._sample_refs("A", asset_ids)
+            heading_id = f"F{first.id} 等" if len(findings_in_group) > 1 else f"F{first.id}"
             lines.extend(
                 [
-                    f"### F{finding.id}：{finding.title}",
+                    f"### {heading_id}：{first.title}",
                     "",
-                    f"- 严重性 / 置信度：{finding.severity} / {finding.confidence}",
-                    f"- 类别：{finding.category}",
-                    f"- 关联资产：{asset_refs}",
-                    f"- 关联证据：{evidence_refs}",
-                    f"- 说明：{finding.summary}",
-                    f"- 建议：{finding.remediation}",
+                    f"- 严重性 / 置信度：{first.severity} / {first.confidence}",
+                    f"- 类别：{first.category}",
+                    f"- 影响范围：{len(asset_ids)} 个资产，{len(evidence_ids)} 条证据",
+                    f"- 关联资产样本：{asset_refs}",
+                    f"- 关联证据样本：{evidence_refs}",
+                    f"- 说明：{first.summary}",
+                    f"- 建议：{first.remediation}",
                     "",
                 ]
             )
@@ -177,16 +201,29 @@ class ScanReportService:
             return stage.status
 
         completed_stages = sum(1 for stage in stages if report_status(stage) == "completed")
+        has_collection_buckets = any("collection_bucket" in item.data for item in evidence)
+        if has_collection_buckets:
+            page_requests = sum(item.data.get("collection_bucket") == "page" for item in evidence)
+            resource_requests = sum(
+                item.data.get("collection_bucket") == "resource" for item in evidence
+            )
+            request_coverage = (
+                f"页面队列 {page_requests}/{run.options.get('max_pages', '-')}，"
+                f"资源队列 {resource_requests}/{run.options.get('max_resources', '-')}"
+            )
+        else:
+            final_pages = sum(asset.asset_type == "page" for asset in assets)
+            final_resources = sum(asset.asset_type != "page" for asset in assets)
+            request_coverage = (
+                f"旧版记录未保存请求预算桶；仅可确认最终页面类型 {final_pages}，"
+                f"其他资产类型 {final_resources}"
+            )
         lines.extend(
             [
                 "## 扫描覆盖范围",
                 "",
                 f"- 阶段完成：{completed_stages}/{len(stages)}",
-                "- 已请求并记录："
-                f"页面 {sum(asset.asset_type == 'page' for asset in assets)}/"
-                f"{run.options.get('max_pages', '-')}，静态资源 "
-                f"{sum(asset.asset_type != 'page' for asset in assets)}/"
-                f"{run.options.get('max_resources', '-')}",
+                f"- 已请求并记录：{request_coverage}",
             ]
         )
         for stage in stages:
@@ -222,6 +259,28 @@ class ScanReportService:
             ]
         )
         return lines
+
+    def _group_findings(self, findings) -> list[dict[str, object]]:
+        groups: dict[tuple[str, ...], list] = {}
+        for finding in findings:
+            key = (
+                finding.title,
+                finding.category,
+                finding.severity,
+                finding.confidence,
+                finding.summary,
+                finding.remediation,
+            )
+            groups.setdefault(key, []).append(finding)
+        return [{"findings": items} for items in groups.values()]
+
+    def _sample_refs(self, prefix: str, identifiers: list[int], limit: int = 10) -> str:
+        if not identifiers:
+            return "无"
+        rendered = ", ".join(f"{prefix}{identifier}" for identifier in identifiers[:limit])
+        if len(identifiers) > limit:
+            rendered += f" 等（共 {len(identifiers)} 条）"
+        return rendered
 
     def _observed_security_controls(self, evidence) -> list[tuple[str, str]]:
         names = {

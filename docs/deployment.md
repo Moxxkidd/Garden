@@ -36,6 +36,8 @@ garden scan http://127.0.0.1:8080/
 
 安装器不使用 `sudo`，也不会修改 shell 配置。运行环境位于 `~/.local/share/garden/runtime/`，命令入口是 `~/.local/bin/garden` 与兼容入口 `~/.local/bin/gardenctl`。若 `~/.local/bin` 不在 PATH，按安装器输出的命令配置后重新打开终端。
 
+安装器会从 `python3` 和版本化命令中选择首个满足 3.10+ 的解释器，并识别 macOS 上常见的 Homebrew `python@3.x` 路径。若要固定解释器，执行 `GARDEN_PYTHON=/path/to/python3 ./install.sh`。正式启动器通过隔离模式和绝对 bootstrap 文件加载运行环境中的 Garden 包，因此当前目录下的同名 `app` 源码或 `PYTHONPATH` 不会遮蔽已安装版本。
+
 若当前 shell 设置了 SOCKS `ALL_PROXY`，安装器会在创建隔离运行环境时临时忽略该变量，并增加依赖下载重试；不会修改当前 shell 或其他项目的代理配置。
 
 用户数据默认位于 `~/.garden`，可通过 `GARDEN_HOME` 覆盖：
@@ -58,6 +60,8 @@ garden stop
 ```
 
 `garden stop` 会把全部 queued/running 扫描标记为 `interrupted` 并停止本机 UI，已写入的资产和证据会保留。安装器升级前会自动备份 SQLite 数据库；如果服务仍在运行，先执行 `garden stop`。正式 CLI 只读取 `$GARDEN_HOME/config.env`，不读取当前目录 `.env`，而当前 shell 环境变量优先。
+
+配置文件由新安装器创建时会带有托管版本标记。升级遇到旧安装器原样生成、仍带旧版 guardrail 注释的 `GARDEN_ALLOW_NON_LOCAL_TARGETS=false` 时，会迁移为当前默认的公网目标策略；没有旧版生成特征的自定义 local-only 配置保持不变。
 
 ## 三、本地开发部署
 

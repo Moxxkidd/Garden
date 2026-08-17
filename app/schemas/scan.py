@@ -138,6 +138,7 @@ class FetchResult(BaseModel):
     discovered_urls: list[str] = Field(default_factory=list)
     discovered_assets: list[DiscoveredAsset] = Field(default_factory=list)
     body_sha256: str = ""
+    body_truncated: bool = False
     redirects: list[str] = Field(default_factory=list)
     attempts: int = 1
     elapsed_ms: int = 0

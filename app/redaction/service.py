@@ -34,6 +34,26 @@ class RedactionService:
         "key",
     }
     _path_like_keys = {"path", "screenshot_path", "storage_ref"}
+    _safe_http_metadata_headers = {
+        "accept-ranges",
+        "cache-control",
+        "connection",
+        "content-encoding",
+        "content-length",
+        "content-type",
+        "date",
+        "etag",
+        "expires",
+        "last-modified",
+        "permissions-policy",
+        "referrer-policy",
+        "server",
+        "strict-transport-security",
+        "transfer-encoding",
+        "vary",
+        "x-content-type-options",
+        "x-frame-options",
+    }
 
     def redact_text(self, value: str | None, *, limit: int = 400) -> str:
         if not value:
@@ -73,6 +93,19 @@ class RedactionService:
                 redacted[key] = [self._redact_list_entry(entry, limit=limit) for entry in item]
                 continue
             redacted[key] = self._redact_scalar(item, limit=limit)
+        return redacted
+
+    def redact_http_headers(self, value: dict[str, str], *, limit: int = 400) -> dict[str, str]:
+        redacted: dict[str, str] = {}
+        for key, item in value.items():
+            lowered = key.lower()
+            if self._is_sensitive_key(key):
+                redacted[key] = "***"
+            elif lowered in self._safe_http_metadata_headers:
+                cleaned = self._control_character_pattern.sub(" ", item)
+                redacted[key] = " ".join(cleaned.split())[:limit]
+            else:
+                redacted[key] = self.redact_text(item, limit=limit)
         return redacted
 
     def _redact_scalar(self, value: Any, *, limit: int) -> Any:
