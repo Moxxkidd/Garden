@@ -47,6 +47,13 @@ raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
 PY
 }
 
+python_is_preferred() {
+  "$1" - <<'PY' >/dev/null 2>&1
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
+PY
+}
+
 GARDEN_PYTHON_BIN=""
 if [ -n "${GARDEN_PYTHON:-}" ]; then
   if command -v "$GARDEN_PYTHON" >/dev/null 2>&1 && python_is_usable "$GARDEN_PYTHON"; then
@@ -56,16 +63,44 @@ if [ -n "${GARDEN_PYTHON:-}" ]; then
     exit 1
   fi
 else
+  GARDEN_COMPATIBLE_PYTHON_BIN=""
+  if command -v python3 >/dev/null 2>&1 && python_is_usable python3; then
+    if python_is_preferred python3; then
+      GARDEN_PYTHON_BIN="$(command -v python3)"
+    else
+      GARDEN_COMPATIBLE_PYTHON_BIN="$(command -v python3)"
+    fi
+  fi
+
   for candidate in \
-    python3 python3.13 python3.12 python3.11 python3.10 \
+    python3.13 python3.12 \
     /opt/homebrew/opt/python@3.13/libexec/bin/python3 \
     /opt/homebrew/opt/python@3.12/libexec/bin/python3 \
-    /opt/homebrew/opt/python@3.11/libexec/bin/python3 \
     /usr/local/opt/python@3.13/libexec/bin/python3 \
-    /usr/local/opt/python@3.12/libexec/bin/python3 \
+    /usr/local/opt/python@3.12/libexec/bin/python3
+  do
+    if [ -z "$GARDEN_PYTHON_BIN" ] \
+      && command -v "$candidate" >/dev/null 2>&1 \
+      && python_is_usable "$candidate"
+    then
+      GARDEN_PYTHON_BIN="$(command -v "$candidate")"
+      break
+    fi
+  done
+
+  if [ -z "$GARDEN_PYTHON_BIN" ] && [ -n "$GARDEN_COMPATIBLE_PYTHON_BIN" ]; then
+    GARDEN_PYTHON_BIN="$GARDEN_COMPATIBLE_PYTHON_BIN"
+  fi
+
+  for candidate in \
+    python3.11 python3.10 \
+    /opt/homebrew/opt/python@3.11/libexec/bin/python3 \
     /usr/local/opt/python@3.11/libexec/bin/python3
   do
-    if command -v "$candidate" >/dev/null 2>&1 && python_is_usable "$candidate"; then
+    if [ -z "$GARDEN_PYTHON_BIN" ] \
+      && command -v "$candidate" >/dev/null 2>&1 \
+      && python_is_usable "$candidate"
+    then
       GARDEN_PYTHON_BIN="$(command -v "$candidate")"
       break
     fi
@@ -171,6 +206,19 @@ run_install_pip install "$GARDEN_SOURCE_ROOT"
 GARDEN_CLI_RUNTIME=1 GARDEN_HOME="$GARDEN_HOME" \
   "$GARDEN_STAGE_PYTHON" -m app.cli.main db upgrade
 
+cat > "$GARDEN_STAGE_DIR/launcher.py" <<'PY'
+"""Garden 正式安装入口；隔离当前目录与 PYTHONPATH 后加载已安装包。"""
+
+import os
+
+from app.cli.main import app
+
+
+if __name__ == "__main__":
+    app(prog_name=os.environ.get("GARDEN_CLI_NAME", "garden"))
+PY
+chmod 0644 "$GARDEN_STAGE_DIR/launcher.py"
+
 if [ -d "$GARDEN_RUNTIME_DIR" ]; then
   mv "$GARDEN_RUNTIME_DIR" "$GARDEN_OLD_RUNTIME_DIR"
 fi
@@ -188,23 +236,10 @@ set -eu
 export GARDEN_CLI_RUNTIME=1
 export GARDEN_CLI_NAME="$command_name"
 export GARDEN_HOME="\${GARDEN_HOME:-$GARDEN_HOME}"
-exec "$GARDEN_RUNTIME_DIR/venv/bin/python" -I "$GARDEN_INSTALL_ROOT/launcher.py" "\$@"
+exec "$GARDEN_RUNTIME_DIR/venv/bin/python" -I "$GARDEN_RUNTIME_DIR/launcher.py" "\$@"
 EOF
   chmod 0755 "$launcher_path"
 }
-
-cat > "$GARDEN_INSTALL_ROOT/launcher.py" <<'PY'
-"""Garden 正式安装入口；隔离当前目录与 PYTHONPATH 后加载已安装包。"""
-
-import os
-
-from app.cli.main import app
-
-
-if __name__ == "__main__":
-    app(prog_name=os.environ.get("GARDEN_CLI_NAME", "garden"))
-PY
-chmod 0644 "$GARDEN_INSTALL_ROOT/launcher.py"
 
 write_launcher "$GARDEN_BIN_DIR/garden" "garden"
 write_launcher "$GARDEN_BIN_DIR/gardenctl" "gardenctl"

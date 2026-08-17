@@ -44,6 +44,29 @@ def test_http_header_redaction_preserves_safe_content_type_metadata() -> None:
     assert redacted["set-cookie"] == "***"
 
 
+def test_safe_http_metadata_headers_redact_embedded_credentials_without_masking_etags() -> None:
+    service = RedactionService()
+    etag = '"0123456789abcdef0123456789abcdef"'
+
+    redacted = service.redact_http_headers(
+        {
+            "cache-control": "public; Cookie: sessionid=abcdef1234567890",
+            "content-type": "text/html; Authorization: Basic c2VjcmV0OnZhbHVl",
+            "date": "Mon, 17 Aug 2026 03:02:31 GMT; session=supersecretvalue",
+            "etag": etag,
+            "server": "edge Bearer abcdef1234567890TOKEN",
+        }
+    )
+
+    assert redacted == {
+        "cache-control": "public; Cookie: ***",
+        "content-type": "text/html; Authorization: ***",
+        "date": "Mon, 17 Aug 2026 03:02:31 GMT; session=***",
+        "etag": etag,
+        "server": "edge Bearer ***",
+    }
+
+
 def test_evidence_export_outputs_are_redacted(seeded_inventory, fake_evidence_service) -> None:
     check_service = CheckRunService(evidence_service=fake_evidence_service)
     with session_scope() as session:

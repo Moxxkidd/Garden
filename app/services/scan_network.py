@@ -235,6 +235,7 @@ class HttpScanGateway:
         options: ScanOptions,
         *,
         expected_origin: tuple[str, str, int] | None = None,
+        before_request: Callable[[], None] | None = None,
     ) -> FetchResult:
         started = time.monotonic()
         current = self.policy.normalize_url(url)
@@ -243,7 +244,7 @@ class HttpScanGateway:
         for redirect_index in range(options.max_redirects + 1):
             self.policy.ensure_destination_allowed(current)
             response, body, attempts, body_truncated = self._request_once_with_retry(
-                current, options
+                current, options, before_request=before_request
             )
             total_attempts += attempts
             if response.status_code in {301, 302, 303, 307, 308}:
@@ -299,7 +300,11 @@ class HttpScanGateway:
         raise AssertionError("unreachable redirect state")
 
     def _request_once_with_retry(
-        self, url: str, options: ScanOptions
+        self,
+        url: str,
+        options: ScanOptions,
+        *,
+        before_request: Callable[[], None] | None,
     ) -> tuple[httpx.Response, bytes, int, bool]:
         retries = options.retry_attempts or 0
         proxy = self.policy.proxy_for_url(url)
@@ -314,6 +319,8 @@ class HttpScanGateway:
                     transport=self.transport,
                     headers={"User-Agent": options.user_agent, "Accept": "*/*"},
                 ) as client:
+                    if before_request is not None:
+                        before_request()
                     with client.stream("GET", url) as response:
                         chunks: list[bytes] = []
                         size = 0

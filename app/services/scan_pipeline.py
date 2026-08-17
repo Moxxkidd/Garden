@@ -308,6 +308,8 @@ class ScanPipeline:
             run.error_message = str(error)
             run.finished_at = datetime.now(timezone.utc)
             run.active_key = None
+            session.flush()
+            self._finalize_quick_context(session, run)
             session.commit()
             self._try_failure_report(session, run)
 
@@ -354,9 +356,19 @@ class ScanPipeline:
         )
         return result, summary
 
-    def _discover(self, session: Session, run: ScanRun, options: ScanOptions):
+    def _discover(
+        self,
+        session: Session,
+        run: ScanRun,
+        options: ScanOptions,
+        deadline: float,
+    ):
         self._check_interrupted(session, run.id)
-        result = self.gateway.fetch(run.normalized_url, options)
+        result = self.gateway.fetch(
+            run.normalized_url,
+            options,
+            before_request=lambda: self._guard_network_request(session, run.id, deadline),
+        )
         self._check_interrupted(session, run.id)
         self._persist_fetch(session, run, result, depth=0)
         return result, (
@@ -371,7 +383,7 @@ class ScanPipeline:
         options: ScanOptions,
         deadline: float,
     ):
-        entry, discovery_summary = self._discover(session, run, options)
+        entry, discovery_summary = self._discover(session, run, options, deadline)
         try:
             self._check_deadline(deadline)
             result, collection_summary = self._collect(session, run, entry, options, deadline)
@@ -433,7 +445,12 @@ class ScanPipeline:
             requested.add(url)
             page_requests += 1
             try:
-                result = self.gateway.fetch(url, options, expected_origin=origin)
+                result = self.gateway.fetch(
+                    url,
+                    options,
+                    expected_origin=origin,
+                    before_request=lambda: self._guard_network_request(session, run.id, deadline),
+                )
                 self._check_interrupted(session, run.id)
             except (FetchError, InputValidationError, TargetPolicyError) as error:
                 code, retryable, attempts, failed_url = self._error_details(error, url)
@@ -470,7 +487,12 @@ class ScanPipeline:
             requested.add(url)
             resource_requests += 1
             try:
-                result = self.gateway.fetch(url, options, expected_origin=origin)
+                result = self.gateway.fetch(
+                    url,
+                    options,
+                    expected_origin=origin,
+                    before_request=lambda: self._guard_network_request(session, run.id, deadline),
+                )
                 self._check_interrupted(session, run.id)
             except (FetchError, InputValidationError, TargetPolicyError) as error:
                 code, retryable, attempts, failed_url = self._error_details(error, url)
@@ -802,20 +824,29 @@ class ScanPipeline:
         context.status = run.status
         context.login_status = "not_applicable"
         context.session_validation_status = "not_applicable"
+        failures = list(
+            session.scalars(select(ScanFailure).where(ScanFailure.scan_run_id == run.id))
+        )
         coverage_warnings = [
-            failure for failure in run.failures if is_coverage_warning(failure.stage, failure.code)
+            failure for failure in failures if is_coverage_warning(failure.stage, failure.code)
         ]
         request_failures = [
-            failure
-            for failure in run.failures
-            if not is_coverage_warning(failure.stage, failure.code)
+            failure for failure in failures if not is_coverage_warning(failure.stage, failure.code)
         ]
-        context.collection_status = "completed_with_warnings" if coverage_warnings else "completed"
-        context.completeness = (
-            CompletenessStatus.INCOMPLETE.value
-            if coverage_warnings
-            else CompletenessStatus.LEGACY_SINGLE_CONTEXT.value
-        )
+        if run.status == ScanRunStatus.FAILED.value:
+            context.collection_status = "failed"
+            context.completeness = CompletenessStatus.INCOMPLETE.value
+            context.error_code = run.error_code
+            context.error_message = run.error_message
+        else:
+            context.collection_status = (
+                "completed_with_warnings" if coverage_warnings else "completed"
+            )
+            context.completeness = (
+                CompletenessStatus.INCOMPLETE.value
+                if coverage_warnings
+                else CompletenessStatus.LEGACY_SINGLE_CONTEXT.value
+            )
         context.asset_count = len(run.assets)
         context.request_count = len(run.requests)
         context.failure_count = len(request_failures)
@@ -846,8 +877,17 @@ class ScanPipeline:
         )
 
     def _check_deadline(self, deadline: float) -> None:
-        if self.clock() > deadline:
+        if self.clock() >= deadline:
             raise OverallScanTimeout("The overall scan timeout was exceeded.")
+
+    def _guard_network_request(
+        self,
+        session: Session,
+        scan_run_id: int,
+        deadline: float,
+    ) -> None:
+        self._check_interrupted(session, scan_run_id)
+        self._check_deadline(deadline)
 
     def _check_interrupted(self, session: Session, scan_run_id: int) -> None:
         status = session.scalar(

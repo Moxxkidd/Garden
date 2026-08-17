@@ -56,6 +56,15 @@ class RedactionService:
     }
 
     def redact_text(self, value: str | None, *, limit: int = 400) -> str:
+        return self._redact_text(value, limit=limit, mask_token_like=True)
+
+    def _redact_text(
+        self,
+        value: str | None,
+        *,
+        limit: int,
+        mask_token_like: bool,
+    ) -> str:
         if not value:
             return ""
         redacted = self._control_character_pattern.sub(" ", value)
@@ -67,7 +76,8 @@ class RedactionService:
             lambda match: f"{match.group(1)}{match.group(2)}{match.group(3)}{match.group(4)}***",
             redacted,
         )
-        redacted = self._token_like_pattern.sub(self._mask_token_like, redacted)
+        if mask_token_like:
+            redacted = self._token_like_pattern.sub(self._mask_token_like, redacted)
         redacted = " ".join(redacted.split())
         if len(redacted) <= limit:
             return redacted
@@ -102,8 +112,11 @@ class RedactionService:
             if self._is_sensitive_key(key):
                 redacted[key] = "***"
             elif lowered in self._safe_http_metadata_headers:
-                cleaned = self._control_character_pattern.sub(" ", item)
-                redacted[key] = " ".join(cleaned.split())[:limit]
+                redacted[key] = self._redact_text(
+                    item,
+                    limit=limit,
+                    mask_token_like=False,
+                )
             else:
                 redacted[key] = self.redact_text(item, limit=limit)
         return redacted

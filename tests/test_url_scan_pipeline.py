@@ -106,6 +106,44 @@ def test_network_retry_is_single_and_only_for_transient_failure() -> None:
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize("scenario", ["redirect", "retry"])
+def test_network_guard_runs_before_redirect_and_retry_requests(scenario) -> None:
+    class GuardStopped(RuntimeError):
+        pass
+
+    requests: list[str] = []
+    guard_checks = 0
+
+    def handler(request):
+        requests.append(str(request.url))
+        if scenario == "redirect":
+            return httpx.Response(302, headers={"location": "/next"})
+        raise httpx.ConnectError("retry me", request=request)
+
+    def guard() -> None:
+        nonlocal guard_checks
+        guard_checks += 1
+        if guard_checks == 2:
+            raise GuardStopped
+
+    policy = TargetNetworkPolicy(get_settings(), resolver=_loopback_resolver)
+    gateway = HttpScanGateway(
+        policy,
+        transport=httpx.MockTransport(handler),
+        sleeper=lambda _: None,
+    )
+
+    with pytest.raises(GuardStopped):
+        gateway.fetch(
+            "http://127.0.0.1/",
+            ScanOptions(max_redirects=1, retry_attempts=1),
+            before_request=guard,
+        )
+
+    assert guard_checks == 2
+    assert requests == ["http://127.0.0.1/"]
+
+
 def test_scan_defaults_expand_page_and_resource_budgets() -> None:
     options = ScanOptions()
 
@@ -281,6 +319,13 @@ def test_entry_connection_error_remains_a_fatal_request_failure(tmp_path) -> Non
 
     assert scan.status == "failed"
     assert scan.error_code == "network_retry_exhausted"
+    context = scan.contexts[0]
+    assert context.status == "failed"
+    assert context.collection_status == "failed"
+    assert context.completeness == "incomplete"
+    assert context.failure_count == 1
+    assert context.error_code == "network_retry_exhausted"
+    assert context.error_message == scan.error_message
     report = service.read_report(scan.id)
     assert "- 覆盖告警：0" in report
     assert "- 请求或阶段失败：1" in report
@@ -614,6 +659,38 @@ def test_overall_timeout_preserves_partial_collection_and_finishes_report(tmp_pa
     request_failures = report.split("## 请求失败", 1)[1]
     assert "overall_timeout" in coverage
     assert "overall_timeout" not in request_failures
+
+
+def test_deadline_equality_blocks_the_next_target_request(tmp_path) -> None:
+    class ControlledClock:
+        value = 0.0
+
+        def __call__(self) -> float:
+            return self.value
+
+    clock = ControlledClock()
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/":
+            clock.value = 1.0
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<a href="/must-not-run">Blocked</a>',
+            )
+        raise AssertionError("No target request may start at the deadline")
+
+    service = _service(tmp_path, handler, clock=clock)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=2, overall_timeout_seconds=1, retry_attempts=0),
+    )
+
+    assert calls == ["/"]
+    assert scan.status == "completed_with_warnings"
+    assert [failure.code for failure in scan.failures].count("overall_timeout") == 1
 
 
 def test_two_cross_origin_redirects_and_timeout_are_coverage_warnings(tmp_path) -> None:

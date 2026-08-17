@@ -68,6 +68,10 @@ if [ "${1:-}" = "-m" ] && [ "${2:-}" = "app.cli.main" ]; then
   exit 0
 fi
 if [ "${1:-}" = "-I" ] && [ "$(basename "${2:-}")" = "launcher.py" ]; then
+  if [ ! -f "$2" ]; then
+    echo "launcher does not exist: $2" >&2
+    exit 44
+  fi
   if [ "${3:-}" = "version" ] || [ "${3:-}" = "--version" ]; then
     echo "Garden 0.1.0"
   fi
@@ -90,6 +94,29 @@ exit 0
         "GARDEN_BIN_DIR": str(bin_dir),
     }
     return environment, bin_dir
+
+
+def _add_python312_beside_compatible_old_python3(fake_bin):
+    generic_python = fake_bin / "python3"
+    versioned_python = fake_bin / "python3.12"
+    versioned_python.write_text(generic_python.read_text(encoding="utf-8"), encoding="utf-8")
+    versioned_python.chmod(0o755)
+    generic_python.write_text(
+        f"""#!/bin/sh
+set -eu
+if [ "${{1:-}}" = "-" ]; then
+  script="$(cat)"
+  case "$script" in
+    *"(3, 12)"*) exit 1 ;;
+    *) exit 0 ;;
+  esac
+fi
+exec "{versioned_python}" "$@"
+""",
+        encoding="utf-8",
+    )
+    generic_python.chmod(0o755)
+    return generic_python, versioned_python
 
 
 def test_install_ignores_socks_all_proxy_for_isolated_pip(tmp_path):
@@ -125,6 +152,9 @@ def test_installed_launchers_survive_runtime_move(tmp_path):
         check=False,
     )
     assert installed.returncode == 0, installed.stderr
+
+    legacy_launcher = Path(environment["GARDEN_INSTALL_ROOT"]) / "launcher.py"
+    legacy_launcher.unlink(missing_ok=True)
 
     garden = subprocess.run(
         [str(bin_dir / "garden"), "version"],
@@ -177,6 +207,78 @@ exit 99
 
     assert installed.returncode == 0, installed.stderr
     assert "python3.12" in installed.stdout
+
+
+def test_installer_prefers_python312_over_compatible_old_python3(tmp_path):
+    environment, _ = _fake_installer_environment(tmp_path)
+    fake_bin = Path(environment["PATH"].split(":", 1)[0])
+    _, versioned_python = _add_python312_beside_compatible_old_python3(fake_bin)
+
+    installed = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "install.sh")],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert installed.returncode == 0, installed.stderr
+    assert f"使用 Python：{versioned_python}" in installed.stdout
+
+
+def test_explicit_garden_python_wins_over_discovered_python312(tmp_path):
+    environment, _ = _fake_installer_environment(tmp_path)
+    fake_bin = Path(environment["PATH"].split(":", 1)[0])
+    generic_python, _ = _add_python312_beside_compatible_old_python3(fake_bin)
+    environment["GARDEN_PYTHON"] = str(generic_python)
+
+    installed = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "install.sh")],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert installed.returncode == 0, installed.stderr
+    assert f"使用 Python：{generic_python}" in installed.stdout
+
+
+def test_runtime_swap_already_contains_isolated_launcher(tmp_path):
+    environment, _ = _fake_installer_environment(tmp_path)
+    fake_bin = Path(environment["PATH"].split(":", 1)[0])
+    fake_mv = fake_bin / "mv"
+    fake_mv.write_text(
+        """#!/bin/sh
+set -eu
+destination=""
+for argument do
+  destination="$argument"
+done
+/bin/mv "$@"
+if [ "$destination" = "$GARDEN_INSTALL_ROOT/runtime" ]; then
+  exit 41
+fi
+""",
+        encoding="utf-8",
+    )
+    fake_mv.chmod(0o755)
+
+    installed = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "install.sh")],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert installed.returncode == 41
+    runtime_launcher = Path(environment["GARDEN_INSTALL_ROOT"]) / "runtime" / "launcher.py"
+    assert runtime_launcher.is_file()
+    assert runtime_launcher.stat().st_mode & 0o777 == 0o644
 
 
 def test_upgrade_migrates_legacy_installer_generated_public_target_policy(tmp_path):
