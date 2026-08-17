@@ -272,6 +272,21 @@ def test_partial_page_failure_completes_with_warning_and_diagnostic_report(tmp_p
     assert "completed_with_warnings" in report
 
 
+def test_entry_connection_error_remains_a_fatal_request_failure(tmp_path) -> None:
+    def handler(request):
+        raise httpx.ConnectError("fixture connect failure", request=request)
+
+    service = _service(tmp_path, handler)
+    scan = service.start_scan("http://127.0.0.1/", ScanOptions(retry_attempts=0))
+
+    assert scan.status == "failed"
+    assert scan.error_code == "network_retry_exhausted"
+    report = service.read_report(scan.id)
+    assert "- 覆盖告警：0" in report
+    assert "- 请求或阶段失败：1" in report
+    assert "network_retry_exhausted" in report.split("## 请求失败", 1)[1]
+
+
 def test_empty_success_response_has_explicit_single_asset_result(tmp_path) -> None:
     service = _service(tmp_path, lambda request: httpx.Response(204))
     scan = service.start_scan("http://127.0.0.1/", ScanOptions(max_pages=1, retry_attempts=0))
@@ -423,6 +438,17 @@ def test_collection_blocks_cross_origin_redirect_before_following_it(tmp_path) -
     assert calls == [("127.0.0.1", "/"), ("127.0.0.1", "/redirect")]
     assert scan.status == "completed_with_warnings"
     assert any(failure.code == "cross_origin_redirect_blocked" for failure in scan.failures)
+    assert scan.error_code is None
+    assert scan.contexts[0].collection_status == "completed_with_warnings"
+    assert scan.contexts[0].completeness == "incomplete"
+    assert scan.contexts[0].failure_count == 0
+    report = service.read_report(scan.id)
+    assert "- 覆盖告警：1" in report
+    assert "- 请求或阶段失败：0" in report
+    coverage = report.split("## 覆盖告警", 1)[1].split("## 请求失败", 1)[0]
+    request_failures = report.split("## 请求失败", 1)[1]
+    assert "cross_origin_redirect_blocked" in coverage
+    assert "cross_origin_redirect_blocked" not in request_failures
 
 
 def test_truncated_resource_is_labeled_as_a_collected_fragment(tmp_path) -> None:
@@ -577,7 +603,65 @@ def test_overall_timeout_preserves_partial_collection_and_finishes_report(tmp_pa
     ]
     assert selected == ["completed_with_warnings", "completed", "completed", "completed"]
     assert [failure.code for failure in scan.failures].count("overall_timeout") == 1
-    assert "First" in service.read_report(scan.id)
+    assert scan.contexts[0].collection_status == "completed_with_warnings"
+    assert scan.contexts[0].completeness == "incomplete"
+    assert scan.contexts[0].failure_count == 0
+    report = service.read_report(scan.id)
+    assert "First" in report
+    assert "- 覆盖告警：1" in report
+    assert "- 请求或阶段失败：0" in report
+    coverage = report.split("## 覆盖告警", 1)[1].split("## 请求失败", 1)[0]
+    request_failures = report.split("## 请求失败", 1)[1]
+    assert "overall_timeout" in coverage
+    assert "overall_timeout" not in request_failures
+
+
+def test_two_cross_origin_redirects_and_timeout_are_coverage_warnings(tmp_path) -> None:
+    class ControlledClock:
+        value = 0.0
+
+        def __call__(self) -> float:
+            return self.value
+
+        def advance(self, seconds: float) -> None:
+            self.value += seconds
+
+    clock = ControlledClock()
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<a href="/redirect-one">One</a><a href="/redirect-two">Two</a>',
+            )
+        if request.url.path == "/redirect-two":
+            clock.advance(2.0)
+        return httpx.Response(302, headers={"location": "http://other.example/final"})
+
+    service = _service(tmp_path, handler, clock=clock)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=3, overall_timeout_seconds=1, retry_attempts=0),
+    )
+
+    assert calls == ["/", "/redirect-one", "/redirect-two"]
+    assert scan.status == "completed_with_warnings"
+    assert scan.error_code is None
+    assert scan.contexts[0].collection_status == "completed_with_warnings"
+    assert scan.contexts[0].completeness == "incomplete"
+    assert scan.contexts[0].failure_count == 0
+    report = service.read_report(scan.id)
+    assert "- 覆盖告警：3" in report
+    assert "- 请求或阶段失败：0" in report
+    coverage = report.split("## 覆盖告警", 1)[1].split("## 请求失败", 1)[0]
+    request_failures = report.split("## 请求失败", 1)[1]
+    assert coverage.count("cross_origin_redirect_blocked") == 2
+    assert "overall_timeout" in coverage
+    assert "cross_origin_redirect_blocked" not in request_failures
+    assert "overall_timeout" not in request_failures
 
 
 def test_overall_timeout_after_last_child_preserves_response_and_records_warning(tmp_path) -> None:

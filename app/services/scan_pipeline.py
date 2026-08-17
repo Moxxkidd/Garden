@@ -802,11 +802,23 @@ class ScanPipeline:
         context.status = run.status
         context.login_status = "not_applicable"
         context.session_validation_status = "not_applicable"
-        context.collection_status = "completed"
-        context.completeness = CompletenessStatus.LEGACY_SINGLE_CONTEXT.value
+        coverage_warnings = [
+            failure for failure in run.failures if is_coverage_warning(failure.stage, failure.code)
+        ]
+        request_failures = [
+            failure
+            for failure in run.failures
+            if not is_coverage_warning(failure.stage, failure.code)
+        ]
+        context.collection_status = "completed_with_warnings" if coverage_warnings else "completed"
+        context.completeness = (
+            CompletenessStatus.INCOMPLETE.value
+            if coverage_warnings
+            else CompletenessStatus.LEGACY_SINGLE_CONTEXT.value
+        )
         context.asset_count = len(run.assets)
         context.request_count = len(run.requests)
-        context.failure_count = len(run.failures)
+        context.failure_count = len(request_failures)
         context.started_at = context.started_at or run.started_at
         context.finished_at = run.finished_at
 
