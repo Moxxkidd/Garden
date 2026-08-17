@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -621,6 +622,68 @@ def test_overall_timeout_after_last_child_preserves_response_and_records_warning
     assert scan.evidence_count == 2
     assert [failure.code for failure in scan.failures].count("overall_timeout") == 1
     assert "First" in service.read_report(scan.id)
+
+
+@pytest.mark.parametrize(
+    ("entry_html", "options"),
+    [
+        (
+            '<a href="/first">First</a>',
+            ScanOptions(max_pages=2, overall_timeout_seconds=1, retry_attempts=0),
+        ),
+        (
+            '<img src="/first">First</img>',
+            ScanOptions(
+                max_pages=1,
+                max_resources=1,
+                overall_timeout_seconds=1,
+                retry_attempts=0,
+            ),
+        ),
+    ],
+    ids=("page", "resource"),
+)
+def test_overall_timeout_after_terminal_collection_request_failure_is_recorded(
+    tmp_path,
+    entry_html,
+    options,
+) -> None:
+    class ControlledClock:
+        value = 0.0
+
+        def __call__(self) -> float:
+            return self.value
+
+        def advance(self, seconds: float) -> None:
+            self.value += seconds
+
+    clock = ControlledClock()
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text=entry_html,
+            )
+        if request.url.path == "/first":
+            clock.advance(2.0)
+            raise httpx.ConnectError("terminal failure", request=request)
+        raise AssertionError("No target request may start after the deadline")
+
+    service = _service(tmp_path, handler, clock=clock)
+    scan = service.start_scan("http://127.0.0.1/", options)
+
+    assert calls == ["/", "/first"]
+    assert scan.status == "completed_with_warnings"
+    assert scan.error_code is None
+    assert scan.asset_count == 1
+    assert scan.evidence_count == 1
+    codes = [failure.code for failure in scan.failures]
+    assert codes.count("network_retry_exhausted") == 1
+    assert codes.count("overall_timeout") == 1
 
 
 def test_collection_timeout_warning_is_idempotent_when_running_scan_reenters(tmp_path) -> None:

@@ -448,6 +448,7 @@ class ScanPipeline:
                     attempt=attempts,
                 )
                 session.commit()
+                self._check_deadline(deadline)
                 continue
             self._persist_fetch(
                 session, run, result, depth=depth, asset_type_hint=discovery.asset_type
@@ -484,6 +485,7 @@ class ScanPipeline:
                     attempt=attempts,
                 )
                 session.commit()
+                self._check_deadline(deadline)
                 continue
             self._persist_fetch(
                 session, run, result, depth=depth, asset_type_hint=discovery.asset_type
