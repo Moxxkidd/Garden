@@ -65,8 +65,9 @@ disallows implicit environment proxies, follows redirects itself, and validates
 each redirect destination. Link-local, multicast, unspecified, and non-global
 special-purpose addresses are blocked. Loopback is allowed for safe local tests.
 
-Remote public targets require `GARDEN_ALLOW_NON_LOCAL_TARGETS=true`. RFC1918/ULA
-targets additionally require `GARDEN_ALLOW_PRIVATE_TARGETS=true`. DNS answers
+Authorized remote public targets and loopback targets are enabled by default.
+Operators can restore local-only mode with `GARDEN_ALLOW_NON_LOCAL_TARGETS=false`.
+RFC1918/ULA targets still require `GARDEN_ALLOW_PRIVATE_TARGETS=true`. DNS answers
 containing any disallowed address fail closed.
 
 Requests have a per-request timeout, an overall task deadline, a response-size

@@ -40,7 +40,7 @@ class Settings(BaseSettings):
         alias="GARDEN_DEMO_USER_PASSWORD",
     )
     allow_non_local_targets: bool = Field(
-        default=False,
+        default=True,
         alias="GARDEN_ALLOW_NON_LOCAL_TARGETS",
     )
     allow_private_targets: bool = Field(

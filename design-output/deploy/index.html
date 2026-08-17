@@ -317,7 +317,7 @@ pre{
     <div class="item">
       <div class="label">Safe by default</div>
       <h3>安全护栏默认开启</h3>
-      <p>默认仅允许本地目标、不做破坏性检查、secret 不直接存储、evidence 默认脱敏、所有关键操作记审计日志。</p>
+      <p>默认允许已授权公网与本机目标、不做破坏性检查、secret 不直接存储、evidence 默认脱敏、所有关键操作记审计日志。</p>
     </div>
   </div>
 </section>
@@ -355,7 +355,7 @@ pre{
   <div class="tag">Constraints</div>
   <h2>设计约束</h2>
   <ul class="checks" style="margin-top:12px">
-    <li>默认只允许本地目标</li>
+    <li>默认允许已授权公网与本机目标</li>
     <li>不做破坏性测试 / exploit</li>
     <li>核心逻辑在 service 层</li>
     <li>secret 不直接存储、不直接打印</li>
@@ -497,7 +497,7 @@ $ playwright install chromium</pre>
 
 <h2>环境配置</h2>
 <pre>$ cp .env.example .env
-# ensure GARDEN_ALLOW_NON_LOCAL_TARGETS=false</pre>
+# 默认 GARDEN_ALLOW_NON_LOCAL_TARGETS=true</pre>
 
 <h2>启动服务</h2>
 <pre>$ make demo
@@ -591,7 +591,7 @@ targets:{b:'核心概念 > 目标管理',h:`
 <p>每个安全验证的起点都是一个 Target。Garden 要求所有操作都绑定在明确的目标上，包含 name、base_url、type、owner、tags、status。</p>
 
 <h2>安全护栏</h2>
-<p>默认只允许 localhost / 127.0.0.1 / Docker 网络地址。非本地目标需要显式设置 <code>GARDEN_ALLOW_NON_LOCAL_TARGETS=true</code>。</p>
+<p>默认允许已授权公网目标及 localhost / 127.0.0.1。RFC1918/ULA 私网目标仍需显式设置 <code>GARDEN_ALLOW_PRIVATE_TARGETS=true</code>。</p>
 
 <h2>CLI 操作</h2>
 <pre>$ gardenctl target add --name my-app --base-url http://127.0.0.1:8080 --type web --owner appsec
@@ -1050,8 +1050,8 @@ guardrails:{b:'进阶 > 安全护栏',h:`
 <p>这些限制不是暂时没做，而是 Garden 产品身份的一部分。</p>
 
 <ul class="check-list">
-  <li>默认仅允许本地 / demo 目标</li>
-  <li>非本地目标需 GARDEN_ALLOW_NON_LOCAL_TARGETS=true</li>
+  <li>默认允许已授权公网与本机 / demo 目标</li>
+  <li>可设置 GARDEN_ALLOW_NON_LOCAL_TARGETS=false 恢复仅本机模式</li>
   <li>不做破坏性测试</li>
   <li>不做 exploit execution</li>
   <li>不做 brute-force / fuzzing</li>

@@ -99,7 +99,7 @@ cp .env.example .env
 
 ```bash
 export GARDEN_DATABASE_URL=sqlite+pysqlite:///./data/garden.db
-export GARDEN_ALLOW_NON_LOCAL_TARGETS=false
+export GARDEN_ALLOW_NON_LOCAL_TARGETS=true
 export GARDEN_DEMO_ADMIN_PASSWORD=demo-admin-password
 export GARDEN_DEMO_USER_PASSWORD=demo-user-password
 ```
@@ -166,7 +166,7 @@ docker run --rm -it \
   -p 8000:8000 \
   -v "$(pwd)/exports:/app/exports" \
   -e GARDEN_DATABASE_URL=sqlite+pysqlite:///./data/garden.db \
-  -e GARDEN_ALLOW_NON_LOCAL_TARGETS=false \
+  -e GARDEN_ALLOW_NON_LOCAL_TARGETS=true \
   -e GARDEN_DEMO_ADMIN_PASSWORD=demo-admin-password \
   -e GARDEN_DEMO_USER_PASSWORD=demo-user-password \
   garden:local
@@ -374,10 +374,9 @@ source .venv/bin/activate
 ./.venv/bin/gardenctl --help
 ```
 
-### 2. 非本地 target 被拒绝
+### 2. 公网 target 被意外拒绝
 
-Garden 默认只允许本地目标。  
-如果确实是在授权环境中测试，才显式放开：
+Garden 默认允许已授权的公网目标。如果公网目标被拒绝，先确认没有显式关闭：
 
 ```bash
 export GARDEN_ALLOW_NON_LOCAL_TARGETS=true

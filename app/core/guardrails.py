@@ -12,9 +12,8 @@ SAFE_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
 def ensure_target_allowed(target: str, settings: Settings) -> None:
     """Conservative Phase 1 guardrail for target admission.
 
-    This intentionally allows only clearly local/demo destinations unless the
-    explicit override flag is enabled. Future phases can expand this policy
-    with richer target models and audit context.
+    Garden 默认允许登记公网和本机目标；部署方仍可显式关闭公网目标。
+    实际网络连接会继续执行独立的 DNS/IP 策略检查。
     """
 
     if settings.allow_non_local_targets:
@@ -25,7 +24,7 @@ def ensure_target_allowed(target: str, settings: Settings) -> None:
         return
 
     raise TargetPolicyError(
-        "Non-local targets are disabled by default. Set "
+        "Non-local targets are disabled by configuration. Set "
         "GARDEN_ALLOW_NON_LOCAL_TARGETS=true only for authorized environments."
     )
 
