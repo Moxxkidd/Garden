@@ -329,12 +329,16 @@ Expected: all commands exit 0 with zero test failures.
 ~~~bash
 git diff --check origin/main...HEAD
 git diff --name-only origin/main...HEAD
-git diff --name-only origin/main...HEAD | rg '(^|/)migrations/|(^|/)alembic'
+migration_paths="$(git diff --name-only origin/main...HEAD)" || exit $?
+if printf '%s\n' "$migration_paths" | rg -q '(^|/)migrations/|(^|/)alembic'; then
+  echo "Unexpected migration or Alembic path in combined branch diff" >&2
+  exit 1
+fi
 git diff --check 46784e6..HEAD
 git diff --name-only 46784e6..HEAD
 ~~~
 
-Expected: under the human ruling, do not assert that the combined `origin/main...HEAD` diff contains only this feature's files. Instead, assert that the combined branch adds no Alembic migration path, and that the Task 4 delta from base `46784e6` contains only intended Task 4 documentation and release-gate files.
+Expected: under the human ruling, do not assert that the combined `origin/main...HEAD` diff contains only this feature's files. Instead, the explicit assertion exits 1 only when a migration or Alembic path is present and exits 0 when none is present; separately assert that the Task 4 delta from base `46784e6` contains only intended Task 4 documentation and release-gate files.
 
 - [x] **Step 5: Commit documentation and release-gate fixes**
 
