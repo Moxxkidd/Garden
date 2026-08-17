@@ -13,7 +13,7 @@ from app.db.bootstrap import session_scope
 from app.models.scan_run import ScanAsset
 from app.schemas.scan import ScanOptions
 from app.services.scan_application import InlineScanDispatcher, ScanApplicationService
-from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
+from app.services.scan_network import MAX_RESPONSE_BYTES, HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_pipeline import ScanPipeline
 from app.services.scan_reporting import ScanReportService
 
@@ -383,6 +383,116 @@ def test_static_resources_use_metadata_summary_and_report_positive_controls(tmp_
     assert "source_map_reference" in report
     assert "secret-long-preview-marker" not in report
     assert ".secret-marker" not in report
+    assert "### 静态资源证据索引" in report
+    assert report.count("### E") == 1
+
+
+def test_collection_blocks_cross_origin_redirect_before_following_it(tmp_path) -> None:
+    calls = []
+
+    def handler(request):
+        calls.append((request.url.host, request.url.path))
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<a href="/redirect">Redirect</a>',
+            )
+        return httpx.Response(
+            302,
+            headers={"location": "http://other.example/final"},
+        )
+
+    service = _service(tmp_path, handler)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=2, retry_attempts=0),
+    )
+
+    assert calls == [("127.0.0.1", "/"), ("127.0.0.1", "/redirect")]
+    assert scan.status == "completed_with_warnings"
+    assert any(failure.code == "cross_origin_redirect_blocked" for failure in scan.failures)
+
+
+def test_truncated_resource_is_labeled_as_a_collected_fragment(tmp_path) -> None:
+    oversized = b"x" * (MAX_RESPONSE_BYTES + 32)
+
+    def handler(request):
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<script src="/large.js"></script>',
+            )
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/javascript"},
+            content=oversized,
+        )
+
+    service = _service(tmp_path, handler)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=1, max_resources=1, retry_attempts=0),
+    )
+    report = service.read_report(scan.id)
+
+    assert "truncated=true" in report
+    assert "采集片段 SHA-256=" in report
+    assert f"size={MAX_RESPONSE_BYTES} bytes" in report
+
+
+def test_version_hints_require_context_and_include_version_query(tmp_path) -> None:
+    stylesheet = "path { d: 17.405 20.651 194.423; opacity: 0.18; }"
+
+    def handler(request):
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<link rel="stylesheet" href="/style.css?v=1.0.0">',
+            )
+        return httpx.Response(200, headers={"content-type": "text/css"}, text=stylesheet)
+
+    service = _service(tmp_path, handler)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=1, max_resources=1, retry_attempts=0),
+    )
+    report = service.read_report(scan.id)
+
+    assert "版本线索=1.0.0" in report
+    assert "17.405" not in report
+    assert "20.651" not in report
+    assert "0.18" not in report
+
+
+def test_report_uses_request_buckets_and_aggregates_repeated_findings(tmp_path) -> None:
+    def handler(request):
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<a href="/about">About</a><script src="/html-script.js"></script>',
+            )
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            text="<html><title>Fixture</title></html>",
+        )
+
+    service = _service(tmp_path, handler)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=2, max_resources=1, retry_attempts=0),
+    )
+    report = service.read_report(scan.id)
+
+    assert "页面队列 2/2，资源队列 1/1" in report
+    assert report.count("缺少 Content-Security-Policy 响应头") == 1
+    assert report.count("缺少 X-Content-Type-Options 响应头") == 1
+    assert "3 个资产" in report
+    assert "2 类（6 条原始观察）" in report
 
 
 def test_active_duplicate_submission_returns_same_parent_task(tmp_path) -> None:

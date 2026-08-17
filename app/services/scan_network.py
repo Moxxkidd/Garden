@@ -229,14 +229,22 @@ class HttpScanGateway:
         self.transport = transport
         self.sleeper = sleeper
 
-    def fetch(self, url: str, options: ScanOptions) -> FetchResult:
+    def fetch(
+        self,
+        url: str,
+        options: ScanOptions,
+        *,
+        expected_origin: tuple[str, str, int] | None = None,
+    ) -> FetchResult:
         started = time.monotonic()
         current = self.policy.normalize_url(url)
         redirects: list[str] = []
         total_attempts = 0
         for redirect_index in range(options.max_redirects + 1):
             self.policy.ensure_destination_allowed(current)
-            response, body, attempts = self._request_once_with_retry(current, options)
+            response, body, attempts, body_truncated = self._request_once_with_retry(
+                current, options
+            )
             total_attempts += attempts
             if response.status_code in {301, 302, 303, 307, 308}:
                 location = response.headers.get("location")
@@ -254,8 +262,16 @@ class HttpScanGateway:
                         url=current,
                         attempts=total_attempts,
                     )
-                current = self.policy.normalize_url(urljoin(current, location))
-                self.policy.ensure_destination_allowed(current)
+                next_url = self.policy.normalize_url(urljoin(current, location))
+                if expected_origin is not None and self._origin(next_url) != expected_origin:
+                    raise FetchError(
+                        "cross_origin_redirect_blocked",
+                        "Redirect left the configured same-origin collection boundary.",
+                        url=next_url,
+                        attempts=total_attempts,
+                    )
+                self.policy.ensure_destination_allowed(next_url)
+                current = next_url
                 redirects.append(current)
                 continue
             content_type = response.headers.get("content-type")
@@ -275,6 +291,7 @@ class HttpScanGateway:
                 discovered_urls=[item.url for item in discovered_assets],
                 discovered_assets=discovered_assets,
                 body_sha256=hashlib.sha256(body).hexdigest(),
+                body_truncated=body_truncated,
                 redirects=redirects,
                 attempts=total_attempts,
                 elapsed_ms=int((time.monotonic() - started) * 1000),
@@ -283,7 +300,7 @@ class HttpScanGateway:
 
     def _request_once_with_retry(
         self, url: str, options: ScanOptions
-    ) -> tuple[httpx.Response, bytes, int]:
+    ) -> tuple[httpx.Response, bytes, int, bool]:
         retries = options.retry_attempts or 0
         proxy = self.policy.proxy_for_url(url)
         timeout = options.request_timeout_seconds or 5.0
@@ -300,15 +317,24 @@ class HttpScanGateway:
                     with client.stream("GET", url) as response:
                         chunks: list[bytes] = []
                         size = 0
+                        body_truncated = False
                         for chunk in response.iter_bytes():
                             remaining = MAX_RESPONSE_BYTES - size
                             if remaining <= 0:
+                                body_truncated = True
                                 break
+                            if len(chunk) > remaining:
+                                body_truncated = True
                             chunks.append(chunk[:remaining])
                             size += min(len(chunk), remaining)
+                            if body_truncated:
+                                break
                         body = b"".join(chunks)
+                        content_length = response.headers.get("content-length")
+                        if content_length and content_length.isdigit():
+                            body_truncated = body_truncated or int(content_length) > len(body)
                 if response.status_code not in TRANSIENT_STATUS_CODES:
-                    return response, body, attempt
+                    return response, body, attempt, body_truncated
                 if attempt > retries:
                     raise FetchError(
                         "transient_http_exhausted",
@@ -329,6 +355,11 @@ class HttpScanGateway:
             if attempt <= retries:
                 self.sleeper(0.2 * (2 ** (attempt - 1)))
         raise AssertionError("unreachable retry state")
+
+    def _origin(self, url: str) -> tuple[str, str, int]:
+        parsed = urlparse(url)
+        effective_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        return parsed.scheme, parsed.hostname or "", effective_port
 
     def _decode(self, body: bytes, encoding: str | None) -> str:
         return body.decode(encoding or "utf-8", errors="replace")

@@ -26,6 +26,24 @@ def test_redaction_masks_sensitive_material() -> None:
     assert 'token":"supersecretvalue' not in redacted
 
 
+def test_http_header_redaction_preserves_safe_content_type_metadata() -> None:
+    service = RedactionService()
+
+    redacted = service.redact_http_headers(
+        {
+            "content-type": (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ),
+            "set-cookie": "session=secret-value",
+        }
+    )
+
+    assert redacted["content-type"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert redacted["set-cookie"] == "***"
+
+
 def test_evidence_export_outputs_are_redacted(seeded_inventory, fake_evidence_service) -> None:
     check_service = CheckRunService(evidence_service=fake_evidence_service)
     with session_scope() as session:

@@ -67,6 +67,12 @@ if [ "${1:-}" = "-m" ] && [ "${2:-}" = "app.cli.main" ]; then
   fi
   exit 0
 fi
+if [ "${1:-}" = "-I" ] && [ "$(basename "${2:-}")" = "launcher.py" ]; then
+  if [ "${3:-}" = "version" ] || [ "${3:-}" = "--version" ]; then
+    echo "Garden 0.1.0"
+  fi
+  exit 0
+fi
 exit 0
 """,
         encoding="utf-8",
@@ -141,3 +147,118 @@ def test_installed_launchers_survive_runtime_move(tmp_path):
     assert garden.stdout.strip() == "Garden 0.1.0"
     assert gardenctl.returncode == 0, gardenctl.stderr
     assert gardenctl.stdout.strip() == "Garden 0.1.0"
+
+
+def test_installer_discovers_usable_versioned_python_after_old_python3(tmp_path):
+    environment, _ = _fake_installer_environment(tmp_path)
+    fake_bin = Path(environment["PATH"].split(":", 1)[0])
+    usable_python = fake_bin / "python3.12"
+    (fake_bin / "python3").replace(usable_python)
+    old_python = fake_bin / "python3"
+    old_python.write_text(
+        """#!/bin/sh
+if [ "${1:-}" = "-" ]; then
+  exit 1
+fi
+exit 99
+""",
+        encoding="utf-8",
+    )
+    old_python.chmod(0o755)
+
+    installed = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "install.sh")],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert installed.returncode == 0, installed.stderr
+    assert "python3.12" in installed.stdout
+
+
+def test_upgrade_migrates_legacy_installer_generated_public_target_policy(tmp_path):
+    environment, _ = _fake_installer_environment(tmp_path)
+    config_path = Path(environment["GARDEN_HOME"]) / "config.env"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """# Garden local demo defaults
+# Copy this file to .env for local development.
+# Safe-by-default guardrail: keep false for local/demo use only
+GARDEN_ALLOW_NON_LOCAL_TARGETS=false
+GARDEN_ALLOW_PRIVATE_TARGETS=false
+""",
+        encoding="utf-8",
+    )
+
+    installed = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "install.sh")],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert installed.returncode == 0, installed.stderr
+    migrated = config_path.read_text(encoding="utf-8")
+    assert "GARDEN_ALLOW_NON_LOCAL_TARGETS=true" in migrated
+    assert "GARDEN_INSTALLER_MANAGED_CONFIG_VERSION=2" in migrated
+    assert "已迁移旧版自动生成的公网目标策略" in installed.stdout
+
+
+def test_upgrade_preserves_explicit_custom_local_only_policy(tmp_path):
+    environment, _ = _fake_installer_environment(tmp_path)
+    config_path = Path(environment["GARDEN_HOME"]) / "config.env"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        "GARDEN_ALLOW_NON_LOCAL_TARGETS=false\nGARDEN_ALLOW_PRIVATE_TARGETS=false\n",
+        encoding="utf-8",
+    )
+
+    installed = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "install.sh")],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert installed.returncode == 0, installed.stderr
+    assert "GARDEN_ALLOW_NON_LOCAL_TARGETS=false" in config_path.read_text(encoding="utf-8")
+
+
+def test_installed_launcher_does_not_use_module_mode_from_repository_cwd(tmp_path):
+    environment, bin_dir = _fake_installer_environment(tmp_path)
+    installed = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "install.sh")],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert installed.returncode == 0, installed.stderr
+
+    repository_cwd = tmp_path / "repository"
+    (repository_cwd / "app" / "cli").mkdir(parents=True)
+    (repository_cwd / "app" / "cli" / "main.py").write_text(
+        "raise RuntimeError('shadowed source tree')\n", encoding="utf-8"
+    )
+    launched = subprocess.run(
+        [str(bin_dir / "garden"), "version"],
+        cwd=repository_cwd,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert launched.returncode == 0, launched.stderr
+    assert launched.stdout.strip() == "Garden 0.1.0"
+    launcher = (bin_dir / "garden").read_text(encoding="utf-8")
+    assert "-m app.cli.main" not in launcher
+    assert "launcher.py" in launcher

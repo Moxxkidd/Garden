@@ -6,7 +6,7 @@ import re
 import time
 from collections import Counter
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -379,13 +379,12 @@ class ScanPipeline:
         page_requests = 1
         resource_count = 0
         resource_requests = 0
-        skipped_external = 0
+        skipped_external: set[str] = set()
         depth_limited: list[DiscoveredAsset] = []
 
         def enqueue(discovery: DiscoveredAsset, depth: int) -> None:
-            nonlocal skipped_external
             if self._origin(discovery.url) != origin:
-                skipped_external += 1
+                skipped_external.add(discovery.url)
                 return
             candidates.setdefault(discovery.url, discovery)
             if discovery.url in seen:
@@ -410,7 +409,7 @@ class ScanPipeline:
             requested.add(url)
             page_requests += 1
             try:
-                result = self.gateway.fetch(url, options)
+                result = self.gateway.fetch(url, options, expected_origin=origin)
                 self._check_interrupted(session, run.id)
             except (FetchError, InputValidationError, TargetPolicyError) as error:
                 code, retryable, attempts, failed_url = self._error_details(error, url)
@@ -445,7 +444,7 @@ class ScanPipeline:
             requested.add(url)
             resource_requests += 1
             try:
-                result = self.gateway.fetch(url, options)
+                result = self.gateway.fetch(url, options, expected_origin=origin)
                 self._check_interrupted(session, run.id)
             except (FetchError, InputValidationError, TargetPolicyError) as error:
                 code, retryable, attempts, failed_url = self._error_details(error, url)
@@ -501,7 +500,7 @@ class ScanPipeline:
             )
         return None, (
             f"Recorded {page_count} page(s) and {resource_count} resource(s); skipped "
-            f"{skipped_external} external link(s); {len(uncovered)} URL(s) remained "
+            f"{len(skipped_external)} unique external link(s); {len(uncovered)} URL(s) remained "
             "outside configured bounds."
         )
 
@@ -582,8 +581,9 @@ class ScanPipeline:
         asset_type = classify_asset_type(
             result.final_url, result.content_type, hint=asset_type_hint
         )
-        version_hints = self._version_hints(result.final_url, result.body_text)
+        version_hints = self._version_hints(result.final_url, result.body_text, asset_type)
         security_signals = self._resource_security_signals(asset_type, result.body_text)
+        collection_bucket = "page" if asset_type_hint in {None, "page"} else "resource"
         attributes = {
             "content_type": result.content_type,
             "body_size_bytes": result.body_size_bytes,
@@ -594,6 +594,8 @@ class ScanPipeline:
             "redirects": result.redirects,
             "discovered_urls": result.discovered_urls,
             "body_sha256": result.body_sha256,
+            "body_truncated": result.body_truncated,
+            "collection_bucket": collection_bucket,
             "version_hints": version_hints,
             "security_signals": security_signals,
         }
@@ -612,12 +614,13 @@ class ScanPipeline:
             )
             session.add(asset)
             session.flush()
-        headers = self.redaction_service.redact_mapping(result.headers)
+        headers = self.redaction_service.redact_http_headers(result.headers)
         resource_summary = None
         if asset_type in {"stylesheet", "script", "image", "document"}:
             resource_summary = {
                 "size_bytes": result.body_size_bytes,
                 "sha256": result.body_sha256,
+                "truncated": result.body_truncated,
                 "version_hints": version_hints,
                 "security_signals": security_signals,
             }
@@ -652,6 +655,7 @@ class ScanPipeline:
                     "headers": headers,
                     "preview": preview,
                     "resource_summary": resource_summary,
+                    "collection_bucket": collection_bucket,
                 },
                 collected_at=now,
             )
@@ -667,11 +671,24 @@ class ScanPipeline:
             for url in result.discovered_urls
         ]
 
-    def _version_hints(self, url: str, body: str) -> list[str]:
-        values = re.findall(
-            r"(?<!\d)(\d+\.\d+(?:\.\d+)?)(?!\d)",
-            f"{urlparse(url).path}\n{body[:4096]}",
-        )
+    def _version_hints(self, url: str, body: str, asset_type: str) -> list[str]:
+        parsed = urlparse(url)
+        values: list[str] = []
+        version_pattern = r"(?<!\d)(\d+\.\d+(?:\.\d+)?)(?!\d)"
+        values.extend(re.findall(version_pattern, parsed.path))
+        query = parse_qs(parsed.query)
+        for key in ("v", "ver", "version"):
+            for candidate in query.get(key, []):
+                match = re.fullmatch(version_pattern, candidate.strip())
+                if match:
+                    values.append(match.group(1))
+        if asset_type in {"stylesheet", "script"}:
+            context_pattern = (
+                r"(?i)(?:\bversion\b|\bver\b|\bv\b|\bjquery\b|\bswiper\b|"
+                r"\bslick\b|\bjwplayer\b|\bpdf\.js\b|\blibrary\b|\bwidget\b)"
+                r"\s*[:=_-]?\s*" + version_pattern
+            )
+            values.extend(re.findall(context_pattern, body[:4096]))
         return list(dict.fromkeys(values))[:5]
 
     def _resource_security_signals(self, asset_type: str, body: str) -> list[str]:
