@@ -48,7 +48,7 @@ def test_position_url_is_foreground_and_detach_returns_immediately(monkeypatch):
             assert base_url == Runtime.base_url
 
         def start_scan(self, url, options):
-            calls.append(("start", url, options.max_pages))
+            calls.append(("start", url, options.max_pages, options.max_resources))
             return _view()
 
         def get_scan(self, scan_run_id):
@@ -66,6 +66,7 @@ def test_position_url_is_foreground_and_detach_returns_immediately(monkeypatch):
     assert detached.exit_code == 0
     assert "已后台提交" in detached.stdout
     assert calls.count(("get", 7)) == 1
+    assert ("start", "http://127.0.0.1:3000/", 50, 200) in calls
 
 
 def test_position_url_and_legacy_url_cannot_be_mixed():

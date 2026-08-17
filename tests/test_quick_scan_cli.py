@@ -55,7 +55,15 @@ def test_legacy_scan_url_option_submits_through_local_web_ui(monkeypatch) -> Non
             assert base_url == Runtime.base_url
 
         def start_scan(self, url, options):
-            calls.append((url, options.max_pages, options.max_depth, options.retry_attempts))
+            calls.append(
+                (
+                    url,
+                    options.max_pages,
+                    options.max_resources,
+                    options.max_depth,
+                    options.retry_attempts,
+                )
+            )
             return ScanRunView(
                 id=41,
                 input_url=url,
@@ -85,6 +93,8 @@ def test_legacy_scan_url_option_submits_through_local_web_ui(monkeypatch) -> Non
             "http://127.0.0.1:8888/",
             "--max-pages",
             "3",
+            "--max-resources",
+            "4",
             "--max-depth",
             "1",
             "--retries",
@@ -93,7 +103,7 @@ def test_legacy_scan_url_option_submits_through_local_web_ui(monkeypatch) -> Non
     )
 
     assert result.exit_code == 0
-    assert calls == [("http://127.0.0.1:8888/", 3, 1, 0)]
+    assert calls == [("http://127.0.0.1:8888/", 3, 4, 1, 0)]
     assert "Web UI：http://127.0.0.1:8000" in result.stdout
     assert "Garden 扫描结果" in result.stdout
     assert "exports/scan-reports/scan-41.md" in result.stdout

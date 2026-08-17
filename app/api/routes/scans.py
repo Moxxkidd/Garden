@@ -63,12 +63,17 @@ def scans_page(request: Request) -> HTMLResponse:
 def start_scan_page(
     request: Request,
     url: str = Form(...),
-    max_pages: int = Form(default=10, ge=1, le=100),
+    max_pages: int = Form(default=50, ge=1, le=500),
+    max_resources: int = Form(default=200, ge=0, le=2000),
     max_depth: int = Form(default=2, ge=0, le=5),
 ) -> RedirectResponse:
     scan = request.app.state.scan_service.start_scan(
         url,
-        ScanOptions(max_pages=max_pages, max_depth=max_depth),
+        ScanOptions(
+            max_pages=max_pages,
+            max_resources=max_resources,
+            max_depth=max_depth,
+        ),
     )
     return RedirectResponse(url=f"/scans/{scan.id}", status_code=303)
 

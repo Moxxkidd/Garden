@@ -53,11 +53,12 @@ class ScanReportService:
 
     def _render(self, run: ScanRun, generated_at: datetime) -> list[str]:
         failures = sorted(run.failures, key=lambda item: item.id)
+        coverage_warnings = [item for item in failures if item.code == "coverage_limit_reached"]
+        request_failures = [item for item in failures if item.code != "coverage_limit_reached"]
         assets = sorted(run.assets, key=lambda item: item.id)
         evidence = sorted(run.evidence, key=lambda item: item.id)
         findings = sorted(run.findings, key=lambda item: item.id)
         stages = sorted(run.stages, key=lambda item: item.position)
-        warning_count = len(failures)
         summary_status = run.status
         if summary_status == "running":
             summary_status = "completed_with_warnings" if failures else "completed"
@@ -71,12 +72,14 @@ class ScanReportService:
             f"- 发现资产：{len(assets)}",
             f"- 证据记录：{len(evidence)}",
             f"- 风险或关注项：{len(findings)}",
-            f"- 失败或未覆盖项：{warning_count}",
+            f"- 覆盖告警：{len(coverage_warnings)}",
+            f"- 请求或阶段失败：{len(request_failures)}",
             "",
             "## 扫描范围",
             "",
             f"- 起始地址：{run.normalized_url}",
             f"- 最大页面数：{run.options.get('max_pages', '-')}",
+            f"- 最大静态资源数：{run.options.get('max_resources', '-')}",
             f"- 最大深度：{run.options.get('max_depth', '-')}",
             f"- 单请求超时：{run.options.get('request_timeout_seconds', '-')} 秒",
             f"- 整体超时：{run.options.get('overall_timeout_seconds', '-')} 秒",
@@ -114,19 +117,40 @@ class ScanReportService:
             rendered_headers = ", ".join(
                 f"{key}={self._inline(str(value))}" for key, value in sorted(headers.items())[:12]
             )
-            preview = self._inline(str(item.data.get("preview") or "-"))[:500]
-            lines.extend(
-                [
-                    f"### E{item.id}：{item.title}",
-                    "",
-                    f"- 来源：{item.source_url}",
-                    f"- 资产：A{item.asset_id}" if item.asset_id else "- 资产：未关联",
-                    f"- 摘要：{item.summary}",
-                    f"- 响应头证据：{rendered_headers or '-'}",
-                    f"- 脱敏内容预览：{preview}",
-                    "",
-                ]
-            )
+            evidence_lines = [
+                f"### E{item.id}：{item.title}",
+                "",
+                f"- 来源：{item.source_url}",
+                f"- 资产：A{item.asset_id}" if item.asset_id else "- 资产：未关联",
+                f"- 摘要：{item.summary}",
+                f"- 响应头证据：{rendered_headers or '-'}",
+            ]
+            resource_summary = item.data.get("resource_summary")
+            if resource_summary:
+                versions = ", ".join(resource_summary.get("version_hints") or []) or "未识别"
+                signals = ", ".join(resource_summary.get("security_signals") or []) or "未观察到"
+                evidence_lines.append(
+                    "- 资源摘要："
+                    f"size={resource_summary.get('size_bytes', 0)} bytes；"
+                    f"SHA-256={resource_summary.get('sha256') or '-'}；"
+                    f"版本线索={versions}；安全信号={signals}"
+                )
+                preview = str(item.data.get("preview") or "")
+                if preview.startswith("[non-text response omitted"):
+                    evidence_lines.append(f"- 内容说明：{self._inline(preview)}")
+            else:
+                preview = self._inline(str(item.data.get("preview") or "-"))[:500]
+                evidence_lines.append(f"- 脱敏内容预览：{preview}")
+            lines.extend([*evidence_lines, ""])
+
+        observed_controls = self._observed_security_controls(evidence)
+        lines.extend(["## 已观察到的安全控制", ""])
+        if not observed_controls:
+            lines.append("在本次采集的 HTML 响应中未观察到可确认的响应头安全控制。")
+        else:
+            for name, value in observed_controls:
+                lines.append(f"- {name}={self._inline(value)}")
+        lines.append("")
         lines.extend(["## 风险或关注项", ""])
         if not findings:
             lines.append("未识别到风险或关注项。这不代表目标不存在未覆盖风险。")
@@ -158,7 +182,11 @@ class ScanReportService:
                 "## 扫描覆盖范围",
                 "",
                 f"- 阶段完成：{completed_stages}/{len(stages)}",
-                f"- 已请求并记录的页面：{len(assets)}/{run.options.get('max_pages', '-')}",
+                "- 已请求并记录："
+                f"页面 {sum(asset.asset_type == 'page' for asset in assets)}/"
+                f"{run.options.get('max_pages', '-')}，静态资源 "
+                f"{sum(asset.asset_type != 'page' for asset in assets)}/"
+                f"{run.options.get('max_resources', '-')}",
             ]
         )
         for stage in stages:
@@ -167,9 +195,16 @@ class ScanReportService:
                 summary = "本结构化报告已生成。"
             lines.append(f"- {stage.name}：{report_status(stage)}；{summary or '-'}")
         lines.extend(["", "## 失败或未覆盖部分", ""])
-        if not failures:
-            lines.append("未记录阶段失败或单页采集失败。")
-        for failure in failures:
+        lines.append("覆盖边界告警与实际请求失败分开列示，避免把预算耗尽误判为网络失败。")
+        lines.extend(["", "## 覆盖告警", ""])
+        if not coverage_warnings:
+            lines.append("未记录由页面、资源或深度预算导致的覆盖告警。")
+        for warning in coverage_warnings:
+            lines.append(f"- [{warning.stage}/{warning.code}] {warning.message}")
+        lines.extend(["", "## 请求失败", ""])
+        if not request_failures:
+            lines.append("未记录阶段失败或单个 URL 请求失败。")
+        for failure in request_failures:
             location = f"（{failure.url}）" if failure.url else ""
             lines.append(
                 f"- [{failure.stage}/{failure.code}] {failure.message}{location}；"
@@ -187,6 +222,27 @@ class ScanReportService:
             ]
         )
         return lines
+
+    def _observed_security_controls(self, evidence) -> list[tuple[str, str]]:
+        names = {
+            "strict-transport-security": "Strict-Transport-Security",
+            "content-security-policy": "Content-Security-Policy",
+            "x-frame-options": "X-Frame-Options",
+            "x-content-type-options": "X-Content-Type-Options",
+            "referrer-policy": "Referrer-Policy",
+            "permissions-policy": "Permissions-Policy",
+        }
+        observed: dict[str, str] = {}
+        for item in evidence:
+            headers = item.data.get("headers", {})
+            content_type = str(headers.get("content-type", "")).lower()
+            if "html" not in content_type:
+                continue
+            for key, label in names.items():
+                value = headers.get(key)
+                if value and label not in observed:
+                    observed[label] = str(value)
+        return list(observed.items())
 
     def _cell(self, value: str) -> str:
         return self._clean(value).replace("|", "\\|").replace("\n", " ")

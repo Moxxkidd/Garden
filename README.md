@@ -84,7 +84,8 @@ gardenctl scan --url http://127.0.0.1:13000/  # 兼容写法
 
 ```bash
 garden scan http://127.0.0.1:13000/ \
-  --max-pages 10 \
+  --max-pages 50 \
+  --max-resources 200 \
   --max-depth 2 \
   --request-timeout 5 \
   --overall-timeout 90 \
@@ -112,10 +113,12 @@ curl -X POST http://127.0.0.1:8000/api/scans \
 
 - 执行摘要与扫描范围
 - 发现的资产及关键属性
-- 来源明确且默认脱敏的证据
+- `page`、`stylesheet`、`script`、`image`、`document` 分类资产
+- 来源明确且默认脱敏的证据；静态资源使用大小、SHA-256、版本线索和安全信号摘要
+- 已观察到的正向安全控制，例如 HSTS 和 X-Frame-Options
 - 风险或关注项
 - 阶段完成情况和扫描覆盖范围
-- 失败、重试及未覆盖部分
+- 分开列示的覆盖告警与请求失败；覆盖告警包含候选数、已请求数、未覆盖分类、命中限制和代表样本
 - 报告生成时间
 
 默认输出目录：
@@ -135,7 +138,8 @@ Garden 只应用于已获得授权的目标，并采用以下有界策略：
 - 如需恢复仅本机模式，可显式设置 `GARDEN_ALLOW_NON_LOCAL_TARGETS=false`
 - RFC1918/ULA 内网目标还需要设置 `GARDEN_ALLOW_PRIVATE_TARGETS=true`
 - link-local、云元数据常用地址、组播和未指定地址始终拒绝
-- 请求超时、整体超时、并发、重试、页面数和深度均有限制
+- 请求超时、整体超时、并发、重试、页面数、资源数和深度均有限制
+- 页面与静态资源使用独立预算，默认优先采集最多 50 个 HTML 页面，再采集最多 200 个静态资源
 - 非文本响应只记录类型和大小，不把二进制内容写入报告
 
 ## 核心架构

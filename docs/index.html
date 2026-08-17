@@ -515,7 +515,8 @@ quickstart:{b:'快速开始 > Demo 演练',h:`
 <h2>1. 一条命令扫描已授权本地目标</h2>
 <pre>$ gardenctl scan \
     --url http://127.0.0.1:8888/ \
-    --max-pages 10 \
+    --max-pages 50 \
+    --max-resources 200 \
     --max-depth 1 \
     --request-timeout 5 \
     --overall-timeout 90 \
@@ -949,13 +950,14 @@ report:{b:'证据与报告 > 报告生成',h:`
 'cli-scan':{b:'CLI 参考 > gardenctl scan',h:`
 <h1>gardenctl scan</h1>
 <div class="meta-row"><div>字数<span>160</span></div><div>阅读时间<span>1 min</span></div></div>
-<pre>gardenctl scan --url URL [--max-pages N] [--max-depth N]
+<pre>gardenctl scan --url URL [--max-pages N] [--max-resources N] [--max-depth N]
                [--request-timeout SECONDS] [--overall-timeout SECONDS]
                [--retries 0|1|2]</pre>
 <p><code>scan</code> 是核心 URL 流水线的终端适配器：只输入一个 URL，自动完成预检、发现、采集、标准化、分析和 Markdown 报告。</p>
 <pre>gardenctl scan \\
   --url http://127.0.0.1:8888/ \\
-  --max-pages 10 --max-depth 1 --retries 1</pre>
+  --max-pages 50 --max-resources 200 --max-depth 1 --retries 1</pre>
+<p>页面和静态资源使用独立预算，并优先采集 HTML 页面。默认最多请求 50 个页面和 200 个 CSS、JavaScript、图片或文档资源。</p>
 <div class="tip">已授权公网目标默认允许；RFC1918/ULA 内网仍需设置 <code>GARDEN_ALLOW_PRIVATE_TARGETS=true</code>。</div>
 `},
 'cli-target':{b:'CLI 参考 > gardenctl target',h:`
