@@ -14,7 +14,8 @@ from app.cli.web_runtime import WebRuntimeError, WebRuntimeManager
 from app.core.errors import GardenError, InputValidationError
 from app.core.settings import get_settings
 from app.models.scan_run import TERMINAL_SCAN_RUN_STATUSES
-from app.schemas.scan import ScanOptions, ScanRunView
+from app.schemas.scan import ScanFailureView, ScanOptions, ScanRunView
+from app.services.scan_failure_classification import is_coverage_warning
 
 
 def scan(
@@ -109,6 +110,28 @@ def _print_result(result: ScanRunView) -> None:
         ],
         title="Garden 扫描结果",
     )
+    coverage_warnings = [
+        failure for failure in result.failures if is_coverage_warning(failure.stage, failure.code)
+    ]
+    request_failures = [
+        failure
+        for failure in result.failures
+        if not is_coverage_warning(failure.stage, failure.code)
+    ]
+    _print_diagnostics("覆盖告警", coverage_warnings)
+    _print_diagnostics("请求或阶段失败", request_failures)
+
+
+def _print_diagnostics(title: str, failures: list[ScanFailureView]) -> None:
+    if not failures:
+        return
+    console.print(f"{title}（{len(failures)}）：")
+    for failure in failures:
+        console.print(f"- [{failure.stage}/{failure.code}]", markup=False)
+        console.print(f"  URL={failure.url or '未记录'}")
+        console.print(f"  尝试={failure.attempt}")
+        console.print(f"  可重试={'是' if failure.retryable else '否'}")
+        console.print(f"  说明={failure.message}")
 
 
 def _cancel_from_interrupt(api, scan_run_id, manager) -> None:

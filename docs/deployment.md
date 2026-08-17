@@ -36,7 +36,7 @@ garden scan http://127.0.0.1:8080/
 
 安装器不使用 `sudo`，也不会修改 shell 配置。运行环境位于 `~/.local/share/garden/runtime/`，命令入口是 `~/.local/bin/garden` 与兼容入口 `~/.local/bin/gardenctl`。若 `~/.local/bin` 不在 PATH，按安装器输出的命令配置后重新打开终端。
 
-安装器会从 `python3` 和版本化命令中选择首个满足 3.10+ 的解释器，并识别 macOS 上常见的 Homebrew `python@3.x` 路径。若要固定解释器，执行 `GARDEN_PYTHON=/path/to/python3 ./install.sh`。正式启动器通过隔离模式和绝对 bootstrap 文件加载运行环境中的 Garden 包，因此当前目录下的同名 `app` 源码或 `PYTHONPATH` 不会遮蔽已安装版本。
+安装器会从 `python3`、版本化命令和 macOS 上常见的 Homebrew `python@3.x` 路径中选择满足 3.10+ 的解释器。若通用 `python3` 是 3.10/3.11，但已有 Python 3.12/3.13，则优先版本化的新解释器；没有较新版本时仍使用兼容的通用解释器。若要固定解释器，执行 `GARDEN_PYTHON=/path/to/python3 ./install.sh`，显式指定始终优先。正式启动器通过隔离模式加载 runtime 内的绝对 bootstrap 文件；bootstrap 与运行环境随同一目录替换，因此当前目录下的同名 `app` 源码或 `PYTHONPATH` 不会遮蔽已安装版本。
 
 若当前 shell 设置了 SOCKS `ALL_PROXY`，安装器会在创建隔离运行环境时临时忽略该变量，并增加依赖下载重试；不会修改当前 shell 或其他项目的代理配置。
 

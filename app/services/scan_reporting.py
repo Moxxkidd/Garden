@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.cli.paths import formal_runtime_paths
 from app.core.errors import ResourceNotFoundError
 from app.models.scan_run import ScanRun
+from app.services.scan_failure_classification import is_coverage_warning
 
 
 class ScanReportService:
@@ -53,8 +54,12 @@ class ScanReportService:
 
     def _render(self, run: ScanRun, generated_at: datetime) -> list[str]:
         failures = sorted(run.failures, key=lambda item: item.id)
-        coverage_warnings = [item for item in failures if item.code == "coverage_limit_reached"]
-        request_failures = [item for item in failures if item.code != "coverage_limit_reached"]
+        coverage_warnings = [
+            item for item in failures if is_coverage_warning(item.stage, item.code)
+        ]
+        request_failures = [
+            item for item in failures if not is_coverage_warning(item.stage, item.code)
+        ]
         assets = sorted(run.assets, key=lambda item: item.id)
         evidence = sorted(run.evidence, key=lambda item: item.id)
         findings = sorted(run.findings, key=lambda item: item.id)
@@ -200,7 +205,11 @@ class ScanReportService:
                 return "completed"
             return stage.status
 
-        completed_stages = sum(1 for stage in stages if report_status(stage) == "completed")
+        completed_stages = sum(
+            1
+            for stage in stages
+            if report_status(stage) in {"completed", "completed_with_warnings"}
+        )
         has_collection_buckets = any("collection_bucket" in item.data for item in evidence)
         if has_collection_buckets:
             page_requests = sum(item.data.get("collection_bucket") == "page" for item in evidence)
@@ -235,9 +244,13 @@ class ScanReportService:
         lines.append("覆盖边界告警与实际请求失败分开列示，避免把预算耗尽误判为网络失败。")
         lines.extend(["", "## 覆盖告警", ""])
         if not coverage_warnings:
-            lines.append("未记录由页面、资源或深度预算导致的覆盖告警。")
+            lines.append("未记录由同源边界、页面/资源/深度预算或采集时限导致的覆盖告警。")
         for warning in coverage_warnings:
-            lines.append(f"- [{warning.stage}/{warning.code}] {warning.message}")
+            location = f"（{warning.url}）" if warning.url else ""
+            lines.append(
+                f"- [{warning.stage}/{warning.code}] {warning.message}{location}；"
+                f"尝试次数={warning.attempt}，可重试={str(warning.retryable).lower()}"
+            )
         lines.extend(["", "## 请求失败", ""])
         if not request_failures:
             lines.append("未记录阶段失败或单个 URL 请求失败。")

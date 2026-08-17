@@ -4,7 +4,7 @@ from typer.testing import CliRunner
 
 import app.cli.scan as scan_cli
 from app.cli.main import app
-from app.schemas.scan import ScanOptions, ScanRunView
+from app.schemas.scan import ScanFailureView, ScanOptions, ScanRunView
 from app.services.login_configs import LoginConfigService, encode_inline_login_config
 
 runner = CliRunner()
@@ -77,6 +77,26 @@ def test_legacy_scan_url_option_submits_through_local_web_ui(monkeypatch) -> Non
                 asset_count=2,
                 evidence_count=2,
                 finding_count=1,
+                failures=[
+                    ScanFailureView(
+                        stage="collect",
+                        code="overall_timeout",
+                        message="The overall scan timeout was exceeded.",
+                        url="http://127.0.0.1:8888/",
+                        retryable=False,
+                        attempt=1,
+                        occurred_at=datetime.now(timezone.utc),
+                    ),
+                    ScanFailureView(
+                        stage="collect",
+                        code="network_retry_exhausted",
+                        message="Connection failed.",
+                        url="http://127.0.0.1:8888/broken",
+                        retryable=True,
+                        attempt=2,
+                        occurred_at=datetime.now(timezone.utc),
+                    ),
+                ],
             )
 
         def get_scan(self, scan_run_id):
@@ -107,3 +127,13 @@ def test_legacy_scan_url_option_submits_through_local_web_ui(monkeypatch) -> Non
     assert "Web UI：http://127.0.0.1:8000" in result.stdout
     assert "Garden 扫描结果" in result.stdout
     assert "exports/scan-reports/scan-41.md" in result.stdout
+    assert "覆盖告警" in result.stdout
+    assert "[collect/overall_timeout]" in result.stdout
+    assert "URL=http://127.0.0.1:8888/" in result.stdout
+    assert "尝试=1" in result.stdout
+    assert "可重试=否" in result.stdout
+    assert "请求或阶段失败" in result.stdout
+    assert "[collect/network_retry_exhausted]" in result.stdout
+    assert "URL=http://127.0.0.1:8888/broken" in result.stdout
+    assert "尝试=2" in result.stdout
+    assert "可重试=是" in result.stdout

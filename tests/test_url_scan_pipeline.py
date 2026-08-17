@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -10,12 +11,22 @@ import app.main as main_app
 from app.core.errors import InputValidationError, TargetPolicyError
 from app.core.settings import get_settings
 from app.db.bootstrap import session_scope
-from app.models.scan_run import ScanAsset
+from app.models.scan_run import ScanAsset, ScanRun
 from app.schemas.scan import ScanOptions
 from app.services.scan_application import InlineScanDispatcher, ScanApplicationService
+from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_network import MAX_RESPONSE_BYTES, HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_pipeline import ScanPipeline
 from app.services.scan_reporting import ScanReportService
+
+
+def test_only_collect_boundary_and_budget_codes_are_coverage_warnings() -> None:
+    assert is_coverage_warning("collect", "coverage_limit_reached")
+    assert is_coverage_warning("collect", "cross_origin_redirect_blocked")
+    assert is_coverage_warning("collect", "overall_timeout")
+    assert not is_coverage_warning("validate", "cross_origin_redirect_blocked")
+    assert not is_coverage_warning("collect", "connect_error")
+    assert not is_coverage_warning("report", "stage_execution_failed")
 
 
 def _loopback_resolver(host, port, **kwargs):
@@ -93,6 +104,44 @@ def test_network_retry_is_single_and_only_for_transient_failure() -> None:
     )
     assert result.attempts == 2
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize("scenario", ["redirect", "retry"])
+def test_network_guard_runs_before_redirect_and_retry_requests(scenario) -> None:
+    class GuardStopped(RuntimeError):
+        pass
+
+    requests: list[str] = []
+    guard_checks = 0
+
+    def handler(request):
+        requests.append(str(request.url))
+        if scenario == "redirect":
+            return httpx.Response(302, headers={"location": "/next"})
+        raise httpx.ConnectError("retry me", request=request)
+
+    def guard() -> None:
+        nonlocal guard_checks
+        guard_checks += 1
+        if guard_checks == 2:
+            raise GuardStopped
+
+    policy = TargetNetworkPolicy(get_settings(), resolver=_loopback_resolver)
+    gateway = HttpScanGateway(
+        policy,
+        transport=httpx.MockTransport(handler),
+        sleeper=lambda _: None,
+    )
+
+    with pytest.raises(GuardStopped):
+        gateway.fetch(
+            "http://127.0.0.1/",
+            ScanOptions(max_redirects=1, retry_attempts=1),
+            before_request=guard,
+        )
+
+    assert guard_checks == 2
+    assert requests == ["http://127.0.0.1/"]
 
 
 def test_scan_defaults_expand_page_and_resource_budgets() -> None:
@@ -261,6 +310,73 @@ def test_partial_page_failure_completes_with_warning_and_diagnostic_report(tmp_p
     assert "completed_with_warnings" in report
 
 
+def test_entry_connection_error_remains_a_fatal_request_failure(tmp_path) -> None:
+    def handler(request):
+        raise httpx.ConnectError("fixture connect failure", request=request)
+
+    service = _service(tmp_path, handler)
+    scan = service.start_scan("http://127.0.0.1/", ScanOptions(retry_attempts=0))
+
+    assert scan.status == "failed"
+    assert scan.error_code == "network_retry_exhausted"
+    context = scan.contexts[0]
+    assert context.status == "failed"
+    assert context.collection_status == "failed"
+    assert context.completeness == "incomplete"
+    assert context.failure_count == 1
+    assert context.error_code == "network_retry_exhausted"
+    assert context.error_message == scan.error_message
+    report = service.read_report(scan.id)
+    assert "- 覆盖告警：0" in report
+    assert "- 请求或阶段失败：1" in report
+    assert "network_retry_exhausted" in report.split("## 请求失败", 1)[1]
+
+
+@pytest.mark.parametrize(
+    ("with_coverage_warning", "expected_collection_status", "expected_completeness"),
+    [
+        (False, "completed", "legacy_single_context"),
+        (True, "completed_with_warnings", "incomplete"),
+    ],
+)
+def test_later_stage_failure_preserves_finalized_collection_state(
+    tmp_path,
+    with_coverage_warning,
+    expected_collection_status,
+    expected_completeness,
+) -> None:
+    class FailingAnalyzer:
+        def analyze(self, assets, evidence):
+            raise RuntimeError("fixture analyze failure")
+
+    def handler(request):
+        if request.url.path == "/":
+            body = '<a href="/redirect">Redirect</a>' if with_coverage_warning else ""
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text=body,
+            )
+        return httpx.Response(302, headers={"location": "http://other.example/final"})
+
+    service = _service(tmp_path, handler)
+    service.pipeline.analyzer = FailingAnalyzer()
+
+    scan = service.start_scan("http://127.0.0.1/", ScanOptions(retry_attempts=0))
+
+    assert scan.status == "failed"
+    assert scan.error_code == "stage_execution_failed"
+    collect = next(stage for stage in scan.stages if stage.name == "collect")
+    assert collect.status == expected_collection_status
+    context = scan.contexts[0]
+    assert context.status == "failed"
+    assert context.collection_status == expected_collection_status
+    assert context.completeness == expected_completeness
+    assert context.failure_count == 1
+    assert context.error_code == "stage_execution_failed"
+    assert context.error_message == "fixture analyze failure"
+
+
 def test_empty_success_response_has_explicit_single_asset_result(tmp_path) -> None:
     service = _service(tmp_path, lambda request: httpx.Response(204))
     scan = service.start_scan("http://127.0.0.1/", ScanOptions(max_pages=1, retry_attempts=0))
@@ -412,6 +528,17 @@ def test_collection_blocks_cross_origin_redirect_before_following_it(tmp_path) -
     assert calls == [("127.0.0.1", "/"), ("127.0.0.1", "/redirect")]
     assert scan.status == "completed_with_warnings"
     assert any(failure.code == "cross_origin_redirect_blocked" for failure in scan.failures)
+    assert scan.error_code is None
+    assert scan.contexts[0].collection_status == "completed_with_warnings"
+    assert scan.contexts[0].completeness == "incomplete"
+    assert scan.contexts[0].failure_count == 0
+    report = service.read_report(scan.id)
+    assert "- 覆盖告警：1" in report
+    assert "- 请求或阶段失败：0" in report
+    coverage = report.split("## 覆盖告警", 1)[1].split("## 请求失败", 1)[0]
+    request_failures = report.split("## 请求失败", 1)[1]
+    assert "cross_origin_redirect_blocked" in coverage
+    assert "cross_origin_redirect_blocked" not in request_failures
 
 
 def test_truncated_resource_is_labeled_as_a_collected_fragment(tmp_path) -> None:
@@ -518,27 +645,338 @@ def test_active_duplicate_submission_returns_same_parent_task(tmp_path) -> None:
     assert dispatcher.ids == [first.id]
 
 
-def test_overall_timeout_is_persisted_and_gets_failure_report(tmp_path) -> None:
-    class AdvancingClock:
-        def __init__(self):
-            self.value = 0.0
+def test_overall_timeout_preserves_partial_collection_and_finishes_report(tmp_path) -> None:
+    class ControlledClock:
+        value = 0.0
 
-        def __call__(self):
-            self.value += 0.6
+        def __call__(self) -> float:
             return self.value
 
-    service = _service(
-        tmp_path,
-        lambda request: httpx.Response(204),
-        clock=AdvancingClock(),
-    )
+        def advance(self, seconds: float) -> None:
+            self.value += seconds
+
+    clock = ControlledClock()
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<a href="/first">First</a><a href="/never">Never</a>',
+            )
+        if request.url.path == "/first":
+            clock.advance(2.0)
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text="<title>First</title>",
+            )
+        raise AssertionError("No request may start after the deadline")
+
+    service = _service(tmp_path, handler, clock=clock)
     scan = service.start_scan(
-        "http://127.0.0.1/", ScanOptions(overall_timeout_seconds=1, retry_attempts=0)
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=3, overall_timeout_seconds=1, retry_attempts=0),
     )
-    assert scan.status == "failed"
-    assert scan.error_code == "overall_timeout"
-    assert scan.report_path is not None
-    assert "overall_timeout" in service.read_report(scan.id)
+
+    assert calls == ["/", "/first"]
+    assert scan.status == "completed_with_warnings"
+    assert scan.error_code is None
+    assert scan.asset_count == 2
+    assert scan.evidence_count == 2
+    selected = [
+        stage.status
+        for stage in scan.stages
+        if stage.name in {"collect", "normalize", "analyze", "report"}
+    ]
+    assert selected == ["completed_with_warnings", "completed", "completed", "completed"]
+    assert [failure.code for failure in scan.failures].count("overall_timeout") == 1
+    assert scan.contexts[0].collection_status == "completed_with_warnings"
+    assert scan.contexts[0].completeness == "incomplete"
+    assert scan.contexts[0].failure_count == 0
+    report = service.read_report(scan.id)
+    assert "First" in report
+    assert "- 覆盖告警：1" in report
+    assert "- 请求或阶段失败：0" in report
+    coverage = report.split("## 覆盖告警", 1)[1].split("## 请求失败", 1)[0]
+    request_failures = report.split("## 请求失败", 1)[1]
+    assert "overall_timeout" in coverage
+    assert "overall_timeout" not in request_failures
+
+
+def test_deadline_equality_blocks_the_next_target_request(tmp_path) -> None:
+    class ControlledClock:
+        value = 0.0
+
+        def __call__(self) -> float:
+            return self.value
+
+    clock = ControlledClock()
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/":
+            clock.value = 1.0
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<a href="/must-not-run">Blocked</a>',
+            )
+        raise AssertionError("No target request may start at the deadline")
+
+    service = _service(tmp_path, handler, clock=clock)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=2, overall_timeout_seconds=1, retry_attempts=0),
+    )
+
+    assert calls == ["/"]
+    assert scan.status == "completed_with_warnings"
+    assert [failure.code for failure in scan.failures].count("overall_timeout") == 1
+
+
+@pytest.mark.parametrize("scenario", ["redirect", "retry"])
+def test_entry_request_timeout_is_a_graceful_coverage_warning(tmp_path, scenario) -> None:
+    class ControlledClock:
+        value = 0.0
+
+        def __call__(self) -> float:
+            return self.value
+
+    clock = ControlledClock()
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        clock.value = 1.0
+        if scenario == "redirect":
+            return httpx.Response(302, headers={"location": "/never"})
+        raise httpx.ConnectError("retry after deadline", request=request)
+
+    service = _service(tmp_path, handler, clock=clock)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(
+            overall_timeout_seconds=1,
+            retry_attempts=1,
+            max_redirects=1,
+        ),
+    )
+
+    assert calls == ["/"]
+    assert scan.status == "completed_with_warnings"
+    assert scan.error_code is None
+    assert scan.asset_count == 0
+    assert scan.evidence_count == 0
+    assert [failure.code for failure in scan.failures].count("overall_timeout") == 1
+    collect = next(stage for stage in scan.stages if stage.name == "collect")
+    assert collect.status == "completed_with_warnings"
+    for stage_name in ("normalize", "analyze", "report"):
+        stage = next(stage for stage in scan.stages if stage.name == stage_name)
+        assert stage.status == "completed"
+
+
+def test_two_cross_origin_redirects_and_timeout_are_coverage_warnings(tmp_path) -> None:
+    class ControlledClock:
+        value = 0.0
+
+        def __call__(self) -> float:
+            return self.value
+
+        def advance(self, seconds: float) -> None:
+            self.value += seconds
+
+    clock = ControlledClock()
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<a href="/redirect-one">One</a><a href="/redirect-two">Two</a>',
+            )
+        if request.url.path == "/redirect-two":
+            clock.advance(2.0)
+        return httpx.Response(302, headers={"location": "http://other.example/final"})
+
+    service = _service(tmp_path, handler, clock=clock)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=3, overall_timeout_seconds=1, retry_attempts=0),
+    )
+
+    assert calls == ["/", "/redirect-one", "/redirect-two"]
+    assert scan.status == "completed_with_warnings"
+    assert scan.error_code is None
+    assert scan.contexts[0].collection_status == "completed_with_warnings"
+    assert scan.contexts[0].completeness == "incomplete"
+    assert scan.contexts[0].failure_count == 0
+    report = service.read_report(scan.id)
+    assert "- 覆盖告警：3" in report
+    assert "- 请求或阶段失败：0" in report
+    coverage = report.split("## 覆盖告警", 1)[1].split("## 请求失败", 1)[0]
+    request_failures = report.split("## 请求失败", 1)[1]
+    assert coverage.count("cross_origin_redirect_blocked") == 2
+    assert "overall_timeout" in coverage
+    assert "cross_origin_redirect_blocked" not in request_failures
+    assert "overall_timeout" not in request_failures
+
+
+def test_overall_timeout_after_last_child_preserves_response_and_records_warning(tmp_path) -> None:
+    class ControlledClock:
+        value = 0.0
+
+        def __call__(self) -> float:
+            return self.value
+
+        def advance(self, seconds: float) -> None:
+            self.value += seconds
+
+    clock = ControlledClock()
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<a href="/first">First</a>',
+            )
+        if request.url.path == "/first":
+            clock.advance(2.0)
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text="<title>First</title>",
+            )
+        raise AssertionError("Unexpected target request")
+
+    service = _service(tmp_path, handler, clock=clock)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=2, overall_timeout_seconds=1, retry_attempts=0),
+    )
+
+    assert calls == ["/", "/first"]
+    assert scan.status == "completed_with_warnings"
+    assert scan.asset_count == 2
+    assert scan.evidence_count == 2
+    assert [failure.code for failure in scan.failures].count("overall_timeout") == 1
+    assert "First" in service.read_report(scan.id)
+
+
+@pytest.mark.parametrize(
+    ("entry_html", "options"),
+    [
+        (
+            '<a href="/first">First</a>',
+            ScanOptions(max_pages=2, overall_timeout_seconds=1, retry_attempts=0),
+        ),
+        (
+            '<img src="/first">First</img>',
+            ScanOptions(
+                max_pages=1,
+                max_resources=1,
+                overall_timeout_seconds=1,
+                retry_attempts=0,
+            ),
+        ),
+    ],
+    ids=("page", "resource"),
+)
+def test_overall_timeout_after_terminal_collection_request_failure_is_recorded(
+    tmp_path,
+    entry_html,
+    options,
+) -> None:
+    class ControlledClock:
+        value = 0.0
+
+        def __call__(self) -> float:
+            return self.value
+
+        def advance(self, seconds: float) -> None:
+            self.value += seconds
+
+    clock = ControlledClock()
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text=entry_html,
+            )
+        if request.url.path == "/first":
+            clock.advance(2.0)
+            raise httpx.ConnectError("terminal failure", request=request)
+        raise AssertionError("No target request may start after the deadline")
+
+    service = _service(tmp_path, handler, clock=clock)
+    scan = service.start_scan("http://127.0.0.1/", options)
+
+    assert calls == ["/", "/first"]
+    assert scan.status == "completed_with_warnings"
+    assert scan.error_code is None
+    assert scan.asset_count == 1
+    assert scan.evidence_count == 1
+    codes = [failure.code for failure in scan.failures]
+    assert codes.count("network_retry_exhausted") == 1
+    assert codes.count("overall_timeout") == 1
+
+
+def test_collection_timeout_warning_is_idempotent_when_running_scan_reenters(tmp_path) -> None:
+    class ControlledClock:
+        value = 0.0
+
+        def __call__(self) -> float:
+            return self.value
+
+        def advance(self, seconds: float) -> None:
+            self.value += seconds
+
+    clock = ControlledClock()
+
+    def handler(request):
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<a href="/first">First</a>',
+            )
+        if request.url.path == "/first":
+            clock.advance(2.0)
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text="<title>First</title>",
+            )
+        raise AssertionError("Unexpected target request")
+
+    service = _service(tmp_path, handler, clock=clock)
+    initial = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=2, overall_timeout_seconds=1, retry_attempts=0),
+    )
+    with session_scope() as session:
+        run = session.get(ScanRun, initial.id)
+        assert run is not None
+        run.status = "running"
+        run.finished_at = None
+
+    service.execute_scan(initial.id)
+    reentered = service.get_scan(initial.id)
+
+    assert reentered.status == "completed_with_warnings"
+    assert [failure.code for failure in reentered.failures].count("overall_timeout") == 1
 
 
 def test_web_and_http_entry_run_end_to_end(tmp_path, monkeypatch) -> None:

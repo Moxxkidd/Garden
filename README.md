@@ -28,7 +28,7 @@ garden scan http://127.0.0.1:13000/
 
 首次运行会自动启动或复用仅监听本机回环地址的 Web UI，并输出首页和本次扫描详情地址；默认前台显示进度，但不会自动打开浏览器。用户数据默认保存于 `~/.garden`，可用 `GARDEN_HOME` 覆盖。若安装后找不到命令，请按安装器输出将 `~/.local/bin` 加入 PATH。
 
-安装器会自动寻找首个满足 3.10+ 的 `python3`、`python3.13`、`python3.12`、`python3.11` 或 `python3.10`；也会识别常见 Homebrew 版本化安装路径。需要固定解释器时可设置 `GARDEN_PYTHON=/path/to/python3`。正式命令使用隔离入口加载已安装包，即使从 Garden 仓库目录执行，也不会被当前源码覆盖。
+安装器会自动寻找满足 3.10+ 的解释器；若通用 `python3` 是 3.10/3.11，但系统已有版本化的 Python 3.12/3.13，则优先使用较新的版本化解释器，否则继续兼容通用解释器。安装器也会识别常见 Homebrew 版本化安装路径。需要固定解释器时可设置 `GARDEN_PYTHON=/path/to/python3`，显式指定始终优先。正式命令使用 runtime 内随环境一起替换的隔离入口加载已安装包，即使从 Garden 仓库目录执行，也不会被当前源码覆盖。
 
 ```bash
 garden scan http://127.0.0.1:13000/ --detach  # 仅提交，立即返回
@@ -93,6 +93,8 @@ garden scan http://127.0.0.1:13000/ \
   --overall-timeout 90 \
   --retries 1
 ```
+
+--overall-timeout bounds target network collection. When it expires, Garden stops new requests, marks coverage incomplete, and finishes local normalization, analysis, and report generation for evidence already collected.
 
 ### HTTP API
 
