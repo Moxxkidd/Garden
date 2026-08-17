@@ -376,17 +376,7 @@ class ScanPipeline:
             self._check_deadline(deadline)
             result, collection_summary = self._collect(session, run, entry, options, deadline)
         except OverallScanTimeout as error:
-            self._record_failure(
-                session,
-                run,
-                stage=ScanStageName.COLLECT.value,
-                code="overall_timeout",
-                message=str(error),
-                url=run.normalized_url,
-                retryable=False,
-                attempt=1,
-            )
-            session.commit()
+            self._record_collection_timeout(session, run, error)
             return None, (
                 f"{discovery_summary} Collection deadline was reached; partial assets and "
                 "evidence will be finalized locally."
@@ -466,6 +456,7 @@ class ScanPipeline:
             for child in self._discoveries(result):
                 enqueue(child, depth + 1)
             session.commit()
+            self._check_deadline(deadline)
 
         while resource_queue and resource_requests < options.max_resources:
             self._check_interrupted(session, run.id)
@@ -499,6 +490,7 @@ class ScanPipeline:
             )
             resource_count += 1
             session.commit()
+            self._check_deadline(deadline)
 
         uncovered = [item for url, item in candidates.items() if url not in requested]
         limits: list[str] = []
@@ -767,6 +759,32 @@ class ScanPipeline:
             )
         )
         run.retry_count += max(0, attempt - 1)
+
+    def _record_collection_timeout(
+        self,
+        session: Session,
+        run: ScanRun,
+        error: OverallScanTimeout,
+    ) -> None:
+        existing = session.scalar(
+            select(ScanFailure.id).where(
+                ScanFailure.scan_run_id == run.id,
+                ScanFailure.stage == ScanStageName.COLLECT.value,
+                ScanFailure.code == "overall_timeout",
+            )
+        )
+        if existing is None:
+            self._record_failure(
+                session,
+                run,
+                stage=ScanStageName.COLLECT.value,
+                code="overall_timeout",
+                message=str(error),
+                url=run.normalized_url,
+                retryable=False,
+                attempt=1,
+            )
+        session.commit()
 
     def _finalize_quick_context(self, session: Session, run: ScanRun) -> None:
         if run.mode != AssessmentMode.QUICK.value:

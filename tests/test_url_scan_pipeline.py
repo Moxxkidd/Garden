@@ -10,7 +10,7 @@ import app.main as main_app
 from app.core.errors import InputValidationError, TargetPolicyError
 from app.core.settings import get_settings
 from app.db.bootstrap import session_scope
-from app.models.scan_run import ScanAsset
+from app.models.scan_run import ScanAsset, ScanRun
 from app.schemas.scan import ScanOptions
 from app.services.scan_application import InlineScanDispatcher, ScanApplicationService
 from app.services.scan_failure_classification import is_coverage_warning
@@ -577,6 +577,96 @@ def test_overall_timeout_preserves_partial_collection_and_finishes_report(tmp_pa
     assert selected == ["completed_with_warnings", "completed", "completed", "completed"]
     assert [failure.code for failure in scan.failures].count("overall_timeout") == 1
     assert "First" in service.read_report(scan.id)
+
+
+def test_overall_timeout_after_last_child_preserves_response_and_records_warning(tmp_path) -> None:
+    class ControlledClock:
+        value = 0.0
+
+        def __call__(self) -> float:
+            return self.value
+
+        def advance(self, seconds: float) -> None:
+            self.value += seconds
+
+    clock = ControlledClock()
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<a href="/first">First</a>',
+            )
+        if request.url.path == "/first":
+            clock.advance(2.0)
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text="<title>First</title>",
+            )
+        raise AssertionError("Unexpected target request")
+
+    service = _service(tmp_path, handler, clock=clock)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=2, overall_timeout_seconds=1, retry_attempts=0),
+    )
+
+    assert calls == ["/", "/first"]
+    assert scan.status == "completed_with_warnings"
+    assert scan.asset_count == 2
+    assert scan.evidence_count == 2
+    assert [failure.code for failure in scan.failures].count("overall_timeout") == 1
+    assert "First" in service.read_report(scan.id)
+
+
+def test_collection_timeout_warning_is_idempotent_when_running_scan_reenters(tmp_path) -> None:
+    class ControlledClock:
+        value = 0.0
+
+        def __call__(self) -> float:
+            return self.value
+
+        def advance(self, seconds: float) -> None:
+            self.value += seconds
+
+    clock = ControlledClock()
+
+    def handler(request):
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<a href="/first">First</a>',
+            )
+        if request.url.path == "/first":
+            clock.advance(2.0)
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text="<title>First</title>",
+            )
+        raise AssertionError("Unexpected target request")
+
+    service = _service(tmp_path, handler, clock=clock)
+    initial = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=2, overall_timeout_seconds=1, retry_attempts=0),
+    )
+    with session_scope() as session:
+        run = session.get(ScanRun, initial.id)
+        assert run is not None
+        run.status = "running"
+        run.finished_at = None
+
+    service.execute_scan(initial.id)
+    reentered = service.get_scan(initial.id)
+
+    assert reentered.status == "completed_with_warnings"
+    assert [failure.code for failure in reentered.failures].count("overall_timeout") == 1
 
 
 def test_web_and_http_entry_run_end_to_end(tmp_path, monkeypatch) -> None:
