@@ -332,6 +332,51 @@ def test_entry_connection_error_remains_a_fatal_request_failure(tmp_path) -> Non
     assert "network_retry_exhausted" in report.split("## 请求失败", 1)[1]
 
 
+@pytest.mark.parametrize(
+    ("with_coverage_warning", "expected_collection_status", "expected_completeness"),
+    [
+        (False, "completed", "legacy_single_context"),
+        (True, "completed_with_warnings", "incomplete"),
+    ],
+)
+def test_later_stage_failure_preserves_finalized_collection_state(
+    tmp_path,
+    with_coverage_warning,
+    expected_collection_status,
+    expected_completeness,
+) -> None:
+    class FailingAnalyzer:
+        def analyze(self, assets, evidence):
+            raise RuntimeError("fixture analyze failure")
+
+    def handler(request):
+        if request.url.path == "/":
+            body = '<a href="/redirect">Redirect</a>' if with_coverage_warning else ""
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text=body,
+            )
+        return httpx.Response(302, headers={"location": "http://other.example/final"})
+
+    service = _service(tmp_path, handler)
+    service.pipeline.analyzer = FailingAnalyzer()
+
+    scan = service.start_scan("http://127.0.0.1/", ScanOptions(retry_attempts=0))
+
+    assert scan.status == "failed"
+    assert scan.error_code == "stage_execution_failed"
+    collect = next(stage for stage in scan.stages if stage.name == "collect")
+    assert collect.status == expected_collection_status
+    context = scan.contexts[0]
+    assert context.status == "failed"
+    assert context.collection_status == expected_collection_status
+    assert context.completeness == expected_completeness
+    assert context.failure_count == 1
+    assert context.error_code == "stage_execution_failed"
+    assert context.error_message == "fixture analyze failure"
+
+
 def test_empty_success_response_has_explicit_single_asset_result(tmp_path) -> None:
     service = _service(tmp_path, lambda request: httpx.Response(204))
     scan = service.start_scan("http://127.0.0.1/", ScanOptions(max_pages=1, retry_attempts=0))
@@ -691,6 +736,47 @@ def test_deadline_equality_blocks_the_next_target_request(tmp_path) -> None:
     assert calls == ["/"]
     assert scan.status == "completed_with_warnings"
     assert [failure.code for failure in scan.failures].count("overall_timeout") == 1
+
+
+@pytest.mark.parametrize("scenario", ["redirect", "retry"])
+def test_entry_request_timeout_is_a_graceful_coverage_warning(tmp_path, scenario) -> None:
+    class ControlledClock:
+        value = 0.0
+
+        def __call__(self) -> float:
+            return self.value
+
+    clock = ControlledClock()
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        clock.value = 1.0
+        if scenario == "redirect":
+            return httpx.Response(302, headers={"location": "/never"})
+        raise httpx.ConnectError("retry after deadline", request=request)
+
+    service = _service(tmp_path, handler, clock=clock)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(
+            overall_timeout_seconds=1,
+            retry_attempts=1,
+            max_redirects=1,
+        ),
+    )
+
+    assert calls == ["/"]
+    assert scan.status == "completed_with_warnings"
+    assert scan.error_code is None
+    assert scan.asset_count == 0
+    assert scan.evidence_count == 0
+    assert [failure.code for failure in scan.failures].count("overall_timeout") == 1
+    collect = next(stage for stage in scan.stages if stage.name == "collect")
+    assert collect.status == "completed_with_warnings"
+    for stage_name in ("normalize", "analyze", "report"):
+        stage = next(stage for stage in scan.stages if stage.name == stage_name)
+        assert stage.status == "completed"
 
 
 def test_two_cross_origin_redirects_and_timeout_are_coverage_warnings(tmp_path) -> None:

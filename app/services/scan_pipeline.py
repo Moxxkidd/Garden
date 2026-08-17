@@ -383,8 +383,9 @@ class ScanPipeline:
         options: ScanOptions,
         deadline: float,
     ):
-        entry, discovery_summary = self._discover(session, run, options, deadline)
+        discovery_summary = "Entry URL was not fully fetched before the deadline."
         try:
+            entry, discovery_summary = self._discover(session, run, options, deadline)
             self._check_deadline(deadline)
             result, collection_summary = self._collect(session, run, entry, options, deadline)
         except OverallScanTimeout as error:
@@ -833,20 +834,28 @@ class ScanPipeline:
         request_failures = [
             failure for failure in failures if not is_coverage_warning(failure.stage, failure.code)
         ]
-        if run.status == ScanRunStatus.FAILED.value:
-            context.collection_status = "failed"
-            context.completeness = CompletenessStatus.INCOMPLETE.value
-            context.error_code = run.error_code
-            context.error_message = run.error_message
-        else:
+        collect_stage = self._stage(session, run.id, ScanStageName.COLLECT.value)
+        collection_completed = collect_stage is not None and collect_stage.status in {
+            "completed",
+            "completed_with_warnings",
+        }
+        if collection_completed:
             context.collection_status = (
-                "completed_with_warnings" if coverage_warnings else "completed"
+                "completed_with_warnings"
+                if coverage_warnings or collect_stage.status == "completed_with_warnings"
+                else "completed"
             )
             context.completeness = (
                 CompletenessStatus.INCOMPLETE.value
-                if coverage_warnings
+                if context.collection_status == "completed_with_warnings"
                 else CompletenessStatus.LEGACY_SINGLE_CONTEXT.value
             )
+        else:
+            context.collection_status = "failed"
+            context.completeness = CompletenessStatus.INCOMPLETE.value
+        if run.status == ScanRunStatus.FAILED.value:
+            context.error_code = run.error_code
+            context.error_message = run.error_message
         context.asset_count = len(run.assets)
         context.request_count = len(run.requests)
         context.failure_count = len(request_failures)
