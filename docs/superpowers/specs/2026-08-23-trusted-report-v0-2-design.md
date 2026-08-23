@@ -213,7 +213,7 @@ FetchResult
 - 现有 Web 扫描路由和表单字段名称；
 - 报告章节标题和顺序；
 - API、Web、CLI 的原始发现数量与报告聚合数量之间的关系；
-- `completed`、`completed_with_warnings`、`failed` 和 `cancelled` 的状态含义；
+- `completed`、`completed_with_warnings`、`failed` 和 `interrupted` 的状态含义；
 - 当前报告输出路径，以及覆盖告警与请求失败的分区方式。
 
 测试允许版本值按预期变成 `0.2.0`，也允许报告内容更加准确；但不允许增加必填输入、删除字段、重命名报告章节或改变工作流语义。
