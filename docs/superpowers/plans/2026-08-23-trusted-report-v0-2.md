@@ -776,18 +776,20 @@ for group in finding_groups:
     evidence_refs = self._sample_refs("E", list(group.evidence_ids))
     asset_refs = self._sample_refs("A", list(group.asset_ids))
     heading_id = f"F{first.id} 等" if group.observation_count > 1 else f"F{first.id}"
-    lines.extend([
-        f"### {heading_id}：{first.title}",
-        "",
-        f"- 严重性 / 置信度：{first.severity} / {first.confidence}",
-        f"- 类别：{first.category}",
-        (f"- 影响范围：{len(group.asset_ids)} 个资产，{len(group.evidence_ids)} 条证据"),
-        f"- 关联资产样本：{asset_refs}",
-        f"- 关联证据样本：{evidence_refs}",
-        f"- 说明：{first.summary}",
-        f"- 建议：{first.remediation}",
-        "",
-    ])
+    lines.extend(
+        [
+            f"### {heading_id}：{first.title}",
+            "",
+            f"- 严重性 / 置信度：{first.severity} / {first.confidence}",
+            f"- 类别：{first.category}",
+            (f"- 影响范围：{len(group.asset_ids)} 个资产，{len(group.evidence_ids)} 条证据"),
+            f"- 关联资产样本：{asset_refs}",
+            f"- 关联证据样本：{evidence_refs}",
+            f"- 说明：{first.summary}",
+            f"- 建议：{first.remediation}",
+            "",
+        ]
+    )
 ```
 
 删除 `ScanReportService._group_findings()`，不得修改报告章节、标题或摘要格式。
