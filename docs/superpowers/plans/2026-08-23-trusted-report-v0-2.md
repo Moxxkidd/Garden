@@ -281,22 +281,27 @@ def test_extract_version_hints_rejects_css_svg_dates_and_bare_numeric_paths() ->
     article-date: 2026-08-17;
     """
 
-    assert extract_version_hints(
-        "https://example.test/2026.08.17/assets/style.css",
-        body,
-        "stylesheet",
-    ) == ()
-    assert extract_version_hints(
-        "https://example.test/app.js?v=123456.1.1",
-        "@version 123456.1.1",
-        "script",
-    ) == ()
+    assert (
+        extract_version_hints(
+            "https://example.test/2026.08.17/assets/style.css",
+            body,
+            "stylesheet",
+        )
+        == ()
+    )
+    assert (
+        extract_version_hints(
+            "https://example.test/app.js?v=123456.1.1",
+            "@version 123456.1.1",
+            "script",
+        )
+        == ()
+    )
 
 
 def test_extract_version_hints_is_bounded_deduplicated_and_capped() -> None:
     body = " ".join(
-        ["@version 1.0.0", "@version 1.0.0"]
-        + [f"@version 2.0.{index}" for index in range(10)]
+        ["@version 1.0.0", "@version 1.0.0"] + [f"@version 2.0.{index}" for index in range(10)]
     )
     hints = extract_version_hints("https://example.test/app.js", body, "script")
 
@@ -307,11 +312,14 @@ def test_extract_version_hints_is_bounded_deduplicated_and_capped() -> None:
         "2.0.2",
         "2.0.3",
     ]
-    assert extract_version_hints(
-        "https://example.test/app.js",
-        "x" * 4096 + " @version 9.9.9",
-        "script",
-    ) == ()
+    assert (
+        extract_version_hints(
+            "https://example.test/app.js",
+            "x" * 4096 + " @version 9.9.9",
+            "script",
+        )
+        == ()
+    )
 ```
 
 - [ ] **Step 3：运行测试并确认红灯原因是质量模块尚不存在**
@@ -372,9 +380,7 @@ def extract_version_hints(url: str, body: str, asset_type: str) -> tuple[Version
     candidates: list[VersionHint] = []
 
     for match in _PATH_VERSION.finditer(parsed.path):
-        candidates.append(
-            VersionHint(match.group("value"), "path", match.group("label").lower())
-        )
+        candidates.append(VersionHint(match.group("value"), "path", match.group("label").lower()))
 
     query = parse_qs(parsed.query)
     for key in _VERSION_QUERY_KEYS:
@@ -494,10 +500,7 @@ def test_njau_style_report_keeps_104_raw_findings_and_trusted_versions(tmp_path)
             return httpx.Response(
                 200,
                 headers={"content-type": "text/css"},
-                text=(
-                    "/* @version 2.4.1 */ "
-                    "path { d: 17.405 20.651 194.423; opacity: 0.18; }"
-                ),
+                text=("/* @version 2.4.1 */ path { d: 17.405 20.651 194.423; opacity: 0.18; }"),
             )
         if request.url.path == "/swiper-11.0.3.js":
             return httpx.Response(
@@ -751,9 +754,7 @@ def project_finding_groups(findings: Sequence[ScanFinding]) -> tuple[FindingGrou
             representative=items[0],
             observation_count=len(items),
             asset_ids=tuple(sorted({value for item in items for value in item.asset_ids})),
-            evidence_ids=tuple(
-                sorted({value for item in items for value in item.evidence_ids})
-            ),
+            evidence_ids=tuple(sorted({value for item in items for value in item.evidence_ids})),
         )
         for items in grouped.values()
     )
@@ -770,28 +771,23 @@ from app.services.scan_report_quality import project_finding_groups
 把 `self._group_findings(findings)` 改为 `project_finding_groups(findings)`；把发现渲染循环改为：
 
 ```python
-        for group in finding_groups:
-            first = group.representative
-            evidence_refs = self._sample_refs("E", list(group.evidence_ids))
-            asset_refs = self._sample_refs("A", list(group.asset_ids))
-            heading_id = f"F{first.id} 等" if group.observation_count > 1 else f"F{first.id}"
-            lines.extend(
-                [
-                    f"### {heading_id}：{first.title}",
-                    "",
-                    f"- 严重性 / 置信度：{first.severity} / {first.confidence}",
-                    f"- 类别：{first.category}",
-                    (
-                        f"- 影响范围：{len(group.asset_ids)} 个资产，"
-                        f"{len(group.evidence_ids)} 条证据"
-                    ),
-                    f"- 关联资产样本：{asset_refs}",
-                    f"- 关联证据样本：{evidence_refs}",
-                    f"- 说明：{first.summary}",
-                    f"- 建议：{first.remediation}",
-                    "",
-                ]
-            )
+for group in finding_groups:
+    first = group.representative
+    evidence_refs = self._sample_refs("E", list(group.evidence_ids))
+    asset_refs = self._sample_refs("A", list(group.asset_ids))
+    heading_id = f"F{first.id} 等" if group.observation_count > 1 else f"F{first.id}"
+    lines.extend([
+        f"### {heading_id}：{first.title}",
+        "",
+        f"- 严重性 / 置信度：{first.severity} / {first.confidence}",
+        f"- 类别：{first.category}",
+        (f"- 影响范围：{len(group.asset_ids)} 个资产，{len(group.evidence_ids)} 条证据"),
+        f"- 关联资产样本：{asset_refs}",
+        f"- 关联证据样本：{evidence_refs}",
+        f"- 说明：{first.summary}",
+        f"- 建议：{first.remediation}",
+        "",
+    ])
 ```
 
 删除 `ScanReportService._group_findings()`，不得修改报告章节、标题或摘要格式。
@@ -863,19 +859,25 @@ def test_report_version_values_revalidates_legacy_hints_from_url_only() -> None:
 
 
 def test_report_version_values_ignores_malformed_optional_metadata() -> None:
-    assert report_version_values(
-        "https://example.test/app.js",
-        {"version_hints": ["9.9.9"], "version_hint_details": "malformed"},
-    ) == []
-    assert report_version_values(
-        "https://example.test/app.js",
-        {
-            "version_hint_details": [
-                {"value": "1.2.3", "source": [], "detail": "version"},
-                {"value": "17.405", "source": "path", "detail": "not-in-url"},
-            ]
-        },
-    ) == []
+    assert (
+        report_version_values(
+            "https://example.test/app.js",
+            {"version_hints": ["9.9.9"], "version_hint_details": "malformed"},
+        )
+        == []
+    )
+    assert (
+        report_version_values(
+            "https://example.test/app.js",
+            {
+                "version_hint_details": [
+                    {"value": "1.2.3", "source": [], "detail": "version"},
+                    {"value": "17.405", "source": "path", "detail": "not-in-url"},
+                ]
+            },
+        )
+        == []
+    )
 ```
 
 - [ ] **Step 2：运行测试并确认红灯**
@@ -945,9 +947,7 @@ def report_version_values(
     raw_values = resource_summary.get("version_hints")
     if not isinstance(raw_values, list):
         return []
-    url_values = {
-        hint.value for hint in extract_version_hints(source_url, "", "document")
-    }
+    url_values = {hint.value for hint in extract_version_hints(source_url, "", "document")}
     values: list[str] = []
     for value in raw_values:
         if isinstance(value, str) and value in url_values and value not in values:
@@ -1029,9 +1029,7 @@ Expected / 预期：失败，报告中仍包含 `17.405` 或 `0.18`。
 在 `app/services/scan_reporting.py` 导入 `report_version_values`，把静态资源索引中的版本值构造替换为：
 
 ```python
-            versions = ", ".join(
-                report_version_values(item.source_url, resource_summary)
-            ) or "未识别"
+versions = ", ".join(report_version_values(item.source_url, resource_summary)) or "未识别"
 ```
 
 - [ ] **Step 8：运行旧记录、新记录和报告结构回归**
