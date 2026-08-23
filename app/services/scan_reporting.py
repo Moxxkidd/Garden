@@ -13,6 +13,7 @@ from app.cli.paths import formal_runtime_paths
 from app.core.errors import ResourceNotFoundError
 from app.models.scan_run import ScanRun
 from app.services.scan_failure_classification import is_coverage_warning
+from app.services.scan_report_quality import project_finding_groups, report_version_values
 
 
 class ScanReportService:
@@ -63,7 +64,7 @@ class ScanReportService:
         assets = sorted(run.assets, key=lambda item: item.id)
         evidence = sorted(run.evidence, key=lambda item: item.id)
         findings = sorted(run.findings, key=lambda item: item.id)
-        finding_groups = self._group_findings(findings)
+        finding_groups = project_finding_groups(findings)
         stages = sorted(run.stages, key=lambda item: item.position)
         summary_status = run.status
         if summary_status == "running":
@@ -140,7 +141,9 @@ class ScanReportService:
             lines.extend(["### 静态资源证据索引", ""])
         for item in resource_evidence:
             resource_summary = item.data["resource_summary"]
-            versions = ", ".join(resource_summary.get("version_hints") or []) or "未识别"
+            versions = (
+                ", ".join(report_version_values(item.source_url, resource_summary)) or "未识别"
+            )
             signals = ", ".join(resource_summary.get("security_signals") or []) or "未观察到"
             truncated = bool(resource_summary.get("truncated"))
             hash_label = "采集片段 SHA-256" if truncated else "SHA-256"
@@ -174,24 +177,20 @@ class ScanReportService:
         if not findings:
             lines.append("未识别到风险或关注项。这不代表目标不存在未覆盖风险。")
         for group in finding_groups:
-            findings_in_group = group["findings"]
-            first = findings_in_group[0]
-            evidence_ids = sorted(
-                {item for finding in findings_in_group for item in finding.evidence_ids}
-            )
-            asset_ids = sorted(
-                {item for finding in findings_in_group for item in finding.asset_ids}
-            )
-            evidence_refs = self._sample_refs("E", evidence_ids)
-            asset_refs = self._sample_refs("A", asset_ids)
-            heading_id = f"F{first.id} 等" if len(findings_in_group) > 1 else f"F{first.id}"
+            first = group.representative
+            evidence_refs = self._sample_refs("E", list(group.evidence_ids))
+            asset_refs = self._sample_refs("A", list(group.asset_ids))
+            heading_id = f"F{first.id} 等" if group.observation_count > 1 else f"F{first.id}"
             lines.extend(
                 [
                     f"### {heading_id}：{first.title}",
                     "",
                     f"- 严重性 / 置信度：{first.severity} / {first.confidence}",
                     f"- 类别：{first.category}",
-                    f"- 影响范围：{len(asset_ids)} 个资产，{len(evidence_ids)} 条证据",
+                    (
+                        f"- 影响范围：{len(group.asset_ids)} 个资产，"
+                        f"{len(group.evidence_ids)} 条证据"
+                    ),
                     f"- 关联资产样本：{asset_refs}",
                     f"- 关联证据样本：{evidence_refs}",
                     f"- 说明：{first.summary}",
@@ -272,20 +271,6 @@ class ScanReportService:
             ]
         )
         return lines
-
-    def _group_findings(self, findings) -> list[dict[str, object]]:
-        groups: dict[tuple[str, ...], list] = {}
-        for finding in findings:
-            key = (
-                finding.title,
-                finding.category,
-                finding.severity,
-                finding.confidence,
-                finding.summary,
-                finding.remediation,
-            )
-            groups.setdefault(key, []).append(finding)
-        return [{"findings": items} for items in groups.values()]
 
     def _sample_refs(self, prefix: str, identifiers: list[int], limit: int = 10) -> str:
         if not identifiers:

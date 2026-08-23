@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import re
 import time
 from collections import Counter
 from datetime import datetime, timezone
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -45,6 +44,7 @@ from app.services.scan_network import (
     TargetNetworkPolicy,
     classify_asset_type,
 )
+from app.services.scan_report_quality import extract_version_hints
 from app.services.scan_reporting import ScanReportService
 
 STAGES = [stage.value for stage in ScanStageName]
@@ -632,7 +632,20 @@ class ScanPipeline:
         asset_type = classify_asset_type(
             result.final_url, result.content_type, hint=asset_type_hint
         )
-        version_hints = self._version_hints(result.final_url, result.body_text, asset_type)
+        version_hint_candidates = extract_version_hints(
+            result.final_url,
+            result.body_text,
+            asset_type,
+        )
+        version_hints = [candidate.value for candidate in version_hint_candidates]
+        version_hint_details = [
+            {
+                "value": candidate.value,
+                "source": candidate.source,
+                "detail": candidate.detail,
+            }
+            for candidate in version_hint_candidates
+        ]
         security_signals = self._resource_security_signals(asset_type, result.body_text)
         collection_bucket = "page" if asset_type_hint in {None, "page"} else "resource"
         attributes = {
@@ -673,6 +686,7 @@ class ScanPipeline:
                 "sha256": result.body_sha256,
                 "truncated": result.body_truncated,
                 "version_hints": version_hints,
+                "version_hint_details": version_hint_details,
                 "security_signals": security_signals,
             }
             if result.body_is_text:
@@ -721,26 +735,6 @@ class ScanPipeline:
             DiscoveredAsset(url=url, asset_type=classify_asset_type(url))
             for url in result.discovered_urls
         ]
-
-    def _version_hints(self, url: str, body: str, asset_type: str) -> list[str]:
-        parsed = urlparse(url)
-        values: list[str] = []
-        version_pattern = r"(?<!\d)(\d+\.\d+(?:\.\d+)?)(?!\d)"
-        values.extend(re.findall(version_pattern, parsed.path))
-        query = parse_qs(parsed.query)
-        for key in ("v", "ver", "version"):
-            for candidate in query.get(key, []):
-                match = re.fullmatch(version_pattern, candidate.strip())
-                if match:
-                    values.append(match.group(1))
-        if asset_type in {"stylesheet", "script"}:
-            context_pattern = (
-                r"(?i)(?:\bversion\b|\bver\b|\bv\b|\bjquery\b|\bswiper\b|"
-                r"\bslick\b|\bjwplayer\b|\bpdf\.js\b|\blibrary\b|\bwidget\b)"
-                r"\s*[:=_-]?\s*" + version_pattern
-            )
-            values.extend(re.findall(context_pattern, body[:4096]))
-        return list(dict.fromkeys(values))[:5]
 
     def _resource_security_signals(self, asset_type: str, body: str) -> list[str]:
         signals: list[str] = []

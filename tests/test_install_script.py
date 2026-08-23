@@ -63,7 +63,7 @@ if [ "${1:-}" = "-m" ] && [ "${2:-}" = "pip" ]; then
 fi
 if [ "${1:-}" = "-m" ] && [ "${2:-}" = "app.cli.main" ]; then
   if [ "${3:-}" = "version" ] || [ "${3:-}" = "--version" ]; then
-    echo "Garden 0.1.0"
+    echo "Garden 0.2.0"
   fi
   exit 0
 fi
@@ -73,7 +73,7 @@ if [ "${1:-}" = "-I" ] && [ "$(basename "${2:-}")" = "launcher.py" ]; then
     exit 44
   fi
   if [ "${3:-}" = "version" ] || [ "${3:-}" = "--version" ]; then
-    echo "Garden 0.1.0"
+    echo "Garden 0.2.0"
   fi
   exit 0
 fi
@@ -174,9 +174,9 @@ def test_installed_launchers_survive_runtime_move(tmp_path):
     )
 
     assert garden.returncode == 0, garden.stderr
-    assert garden.stdout.strip() == "Garden 0.1.0"
+    assert garden.stdout.strip() == "Garden 0.2.0"
     assert gardenctl.returncode == 0, gardenctl.stderr
-    assert gardenctl.stdout.strip() == "Garden 0.1.0"
+    assert gardenctl.stdout.strip() == "Garden 0.2.0"
 
 
 def test_installer_discovers_usable_versioned_python_after_old_python3(tmp_path):
@@ -307,7 +307,7 @@ GARDEN_ALLOW_PRIVATE_TARGETS=false
     assert installed.returncode == 0, installed.stderr
     migrated = config_path.read_text(encoding="utf-8")
     assert "GARDEN_ALLOW_NON_LOCAL_TARGETS=true" in migrated
-    assert "GARDEN_INSTALLER_MANAGED_CONFIG_VERSION=2" in migrated
+    assert "GARDEN_INSTALLER_MANAGED_CONFIG_VERSION=3" in migrated
     assert "已迁移旧版自动生成的公网目标策略" in installed.stdout
 
 
@@ -331,6 +331,72 @@ def test_upgrade_preserves_explicit_custom_local_only_policy(tmp_path):
 
     assert installed.returncode == 0, installed.stderr
     assert "GARDEN_ALLOW_NON_LOCAL_TARGETS=false" in config_path.read_text(encoding="utf-8")
+
+
+def test_new_installer_config_does_not_pin_package_version(tmp_path):
+    environment, _ = _fake_installer_environment(tmp_path)
+
+    installed = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "install.sh")],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert installed.returncode == 0, installed.stderr
+    config_path = Path(environment["GARDEN_HOME"]) / "config.env"
+    generated = config_path.read_text(encoding="utf-8")
+    assert "GARDEN_INSTALLER_MANAGED_CONFIG_VERSION=3" in generated
+    assert "GARDEN_PROJECT_VERSION=" not in generated
+
+
+def test_upgrade_removes_stale_version_from_managed_config(tmp_path):
+    environment, _ = _fake_installer_environment(tmp_path)
+    config_path = Path(environment["GARDEN_HOME"]) / "config.env"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """# GARDEN_INSTALLER_MANAGED_CONFIG_VERSION=2
+GARDEN_PROJECT_NAME=Garden
+GARDEN_PROJECT_VERSION=0.1.0
+GARDEN_ALLOW_NON_LOCAL_TARGETS=true
+""",
+        encoding="utf-8",
+    )
+
+    installed = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "install.sh")],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert installed.returncode == 0, installed.stderr
+    migrated = config_path.read_text(encoding="utf-8")
+    assert "GARDEN_INSTALLER_MANAGED_CONFIG_VERSION=3" in migrated
+    assert "GARDEN_PROJECT_VERSION=" not in migrated
+
+
+def test_upgrade_preserves_version_override_in_unmanaged_config(tmp_path):
+    environment, _ = _fake_installer_environment(tmp_path)
+    config_path = Path(environment["GARDEN_HOME"]) / "config.env"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("GARDEN_PROJECT_VERSION=custom-build\n", encoding="utf-8")
+
+    installed = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "install.sh")],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert installed.returncode == 0, installed.stderr
+    assert config_path.read_text(encoding="utf-8") == "GARDEN_PROJECT_VERSION=custom-build\n"
 
 
 def test_installed_launcher_does_not_use_module_mode_from_repository_cwd(tmp_path):
@@ -360,7 +426,7 @@ def test_installed_launcher_does_not_use_module_mode_from_repository_cwd(tmp_pat
     )
 
     assert launched.returncode == 0, launched.stderr
-    assert launched.stdout.strip() == "Garden 0.1.0"
+    assert launched.stdout.strip() == "Garden 0.2.0"
     launcher = (bin_dir / "garden").read_text(encoding="utf-8")
     assert "-m app.cli.main" not in launcher
     assert "launcher.py" in launcher

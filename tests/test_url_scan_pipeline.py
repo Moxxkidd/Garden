@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -11,7 +12,7 @@ import app.main as main_app
 from app.core.errors import InputValidationError, TargetPolicyError
 from app.core.settings import get_settings
 from app.db.bootstrap import session_scope
-from app.models.scan_run import ScanAsset, ScanRun
+from app.models.scan_run import ScanAsset, ScanEvidence, ScanRun
 from app.schemas.scan import ScanOptions
 from app.services.scan_application import InlineScanDispatcher, ScanApplicationService
 from app.services.scan_failure_classification import is_coverage_warning
@@ -591,6 +592,143 @@ def test_version_hints_require_context_and_include_version_query(tmp_path) -> No
     assert "版本线索=1.0.0" in report
     assert "17.405" not in report
     assert "20.651" not in report
+    assert "0.18" not in report
+
+    with session_scope() as session:
+        evidence = session.scalar(
+            select(ScanEvidence).where(
+                ScanEvidence.scan_run_id == scan.id,
+                ScanEvidence.source_url.like("%/style.css?v=1.0.0"),
+            )
+        )
+        resource_summary = evidence.data["resource_summary"]
+
+    assert resource_summary["version_hints"] == ["1.0.0"]
+    assert resource_summary["version_hint_details"] == [
+        {"value": "1.0.0", "source": "query", "detail": "v"}
+    ]
+
+
+def test_njau_style_report_keeps_104_raw_findings_and_trusted_versions(tmp_path) -> None:
+    # 根页面加前 51 个子页面会形成 52 个已采集 HTML 资产；最后一个候选留在预算外。
+    page_links = "".join(f'<a href="/page-{index}">Page</a>' for index in range(52))
+
+    def handler(request):
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text=(
+                    page_links
+                    + '<link rel="stylesheet" href="/style.css?v=1.0.0">'
+                    + '<script src="/swiper-11.0.3.js"></script>'
+                    + '<img src="/map.svg">'
+                ),
+            )
+        if request.url.path.startswith("/page-"):
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text="<html><title>NJAU fixture page</title></html>",
+            )
+        if request.url.path == "/style.css":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/css"},
+                text=("/* @version 2.4.1 */ path { d: 17.405 20.651 194.423; opacity: 0.18; }"),
+            )
+        if request.url.path == "/swiper-11.0.3.js":
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/javascript"},
+                text="/*! Swiper Version: 11.0.3 */",
+            )
+        return httpx.Response(
+            200,
+            headers={"content-type": "image/svg+xml"},
+            text='<svg viewBox="0 0 952.311261 921.328619"></svg>',
+        )
+
+    service = _service(tmp_path, handler)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(
+            max_pages=52,
+            max_resources=3,
+            max_depth=1,
+            retry_attempts=0,
+        ),
+    )
+    report = service.read_report(scan.id)
+
+    assert scan.finding_count == 104
+    assert scan.status == "completed_with_warnings"
+    assert "2 类（104 条原始观察）" in report
+    assert "- 覆盖告警：1" in report
+    assert "- 请求或阶段失败：0" in report
+    assert "版本线索=1.0.0, 2.4.1" in report
+    assert "版本线索=11.0.3" in report
+    for false_version in ("17.405", "20.651", "194.423", "0.18", "952.311261"):
+        assert false_version not in report
+
+    with session_scope() as session:
+        resource_evidence = session.scalars(
+            select(ScanEvidence).where(ScanEvidence.scan_run_id == scan.id)
+        ).all()
+    details = {
+        item.source_url: item.data["resource_summary"]["version_hint_details"]
+        for item in resource_evidence
+        if item.data.get("resource_summary")
+    }
+    assert details["http://127.0.0.1/style.css?v=1.0.0"] == [
+        {"value": "1.0.0", "source": "query", "detail": "v"},
+        {"value": "2.4.1", "source": "body_marker", "detail": "version"},
+    ]
+    assert details["http://127.0.0.1/swiper-11.0.3.js"] == [
+        {"value": "11.0.3", "source": "path", "detail": "swiper"}
+    ]
+    coverage = report.split("## 覆盖告警", 1)[1].split("## 请求失败", 1)[0]
+    request_failures = report.split("## 请求失败", 1)[1]
+    assert "coverage_limit_reached" in coverage
+    assert "coverage_limit_reached" not in request_failures
+
+
+def test_regenerated_legacy_report_omits_unverifiable_body_versions(tmp_path) -> None:
+    def handler(request):
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<link rel="stylesheet" href="/jquery-ui-1.12.1/jquery-ui.css">',
+            )
+        return httpx.Response(200, headers={"content-type": "text/css"}, text="body {}")
+
+    service = _service(tmp_path, handler)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=1, max_resources=1, retry_attempts=0),
+    )
+
+    with session_scope() as session:
+        evidence = session.scalar(
+            select(ScanEvidence).where(
+                ScanEvidence.scan_run_id == scan.id,
+                ScanEvidence.source_url.contains("jquery-ui"),
+            )
+        )
+        original_data = dict(evidence.data)
+        legacy_summary = dict(original_data["resource_summary"])
+        legacy_summary.pop("version_hint_details")
+        legacy_summary["version_hints"] = ["1.12.1", "17.405", "0.18"]
+        evidence.data = {**original_data, "resource_summary": legacy_summary}
+        session.flush()
+        before_render = dict(evidence.data)
+        path = ScanReportService(tmp_path / "legacy-reports").generate(session, scan.id)
+        report = Path(path).read_text(encoding="utf-8")
+        assert evidence.data == before_render
+
+    assert "版本线索=1.12.1" in report
+    assert "17.405" not in report
     assert "0.18" not in report
 
 
