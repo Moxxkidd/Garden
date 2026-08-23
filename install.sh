@@ -143,12 +143,26 @@ mkdir -p "$GARDEN_HOME" "$GARDEN_HOME/reports" "$GARDEN_HOME/storage" \
   "$GARDEN_HOME/logs" "$GARDEN_RUNTIME_STATE_DIR" "$GARDEN_INSTALL_ROOT" "$GARDEN_BIN_DIR"
 
 GARDEN_CONFIG_FILE="$GARDEN_HOME/config.env"
-GARDEN_CONFIG_MARKER="# GARDEN_INSTALLER_MANAGED_CONFIG_VERSION=2"
+GARDEN_CONFIG_MARKER="# GARDEN_INSTALLER_MANAGED_CONFIG_VERSION=3"
+GARDEN_PREVIOUS_CONFIG_MARKER="# GARDEN_INSTALLER_MANAGED_CONFIG_VERSION=2"
 if [ ! -f "$GARDEN_CONFIG_FILE" ]; then
   {
     echo "$GARDEN_CONFIG_MARKER"
-    grep -v '^GARDEN_DATABASE_URL=' "$GARDEN_SOURCE_ROOT/.env.example"
+    grep -v \
+      -e '^GARDEN_DATABASE_URL=' \
+      -e '^GARDEN_PROJECT_VERSION=' \
+      "$GARDEN_SOURCE_ROOT/.env.example"
   } > "$GARDEN_CONFIG_FILE"
+elif grep -Fq "$GARDEN_PREVIOUS_CONFIG_MARKER" "$GARDEN_CONFIG_FILE"; then
+  GARDEN_CONFIG_STAGE="$(mktemp "$GARDEN_HOME/.config.env.XXXXXX")"
+  sed \
+    -e "s|^$GARDEN_PREVIOUS_CONFIG_MARKER$|$GARDEN_CONFIG_MARKER|" \
+    -e '/^GARDEN_PROJECT_VERSION=/d' \
+    "$GARDEN_CONFIG_FILE" > "$GARDEN_CONFIG_STAGE"
+  chmod --reference="$GARDEN_CONFIG_FILE" "$GARDEN_CONFIG_STAGE" 2>/dev/null \
+    || chmod 0600 "$GARDEN_CONFIG_STAGE"
+  mv "$GARDEN_CONFIG_STAGE" "$GARDEN_CONFIG_FILE"
+  echo "已迁移安装器托管配置：版本由已安装 Garden 软件包提供"
 elif ! grep -Fq "$GARDEN_CONFIG_MARKER" "$GARDEN_CONFIG_FILE" \
   && grep -Fq '# Garden local demo defaults' "$GARDEN_CONFIG_FILE" \
   && grep -Fq '# Safe-by-default guardrail: keep false for local/demo use only' "$GARDEN_CONFIG_FILE" \
@@ -160,6 +174,7 @@ then
     sed \
       -e 's|# Safe-by-default guardrail: keep false for local/demo use only|# 已授权公网目标默认允许；如需仅扫描本机目标，可显式改为 false。|' \
       -e 's|^GARDEN_ALLOW_NON_LOCAL_TARGETS=false$|GARDEN_ALLOW_NON_LOCAL_TARGETS=true|' \
+      -e '/^GARDEN_PROJECT_VERSION=/d' \
       "$GARDEN_CONFIG_FILE"
   } > "$GARDEN_CONFIG_STAGE"
   chmod --reference="$GARDEN_CONFIG_FILE" "$GARDEN_CONFIG_STAGE" 2>/dev/null \
