@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import parse_qs, urlparse
+
+from app.models.scan_run import ScanFinding
 
 _VERSION_PART = r"\d{1,5}"
 _VERSION_CORE = rf"{_VERSION_PART}\.{_VERSION_PART}(?:\.{_VERSION_PART})?"
@@ -33,6 +36,14 @@ class VersionHint:
     value: str
     source: Literal["query", "path", "body_marker"]
     detail: str
+
+
+@dataclass(frozen=True)
+class FindingGroup:
+    representative: ScanFinding
+    observation_count: int
+    asset_ids: tuple[int, ...]
+    evidence_ids: tuple[int, ...]
 
 
 def extract_version_hints(url: str, body: str, asset_type: str) -> tuple[VersionHint, ...]:
@@ -72,3 +83,27 @@ def extract_version_hints(url: str, body: str, asset_type: str) -> tuple[Version
         if len(unique) == _MAX_HINTS:
             break
     return tuple(unique)
+
+
+def project_finding_groups(findings: Sequence[ScanFinding]) -> tuple[FindingGroup, ...]:
+    grouped: dict[tuple[str, ...], list[ScanFinding]] = {}
+    for finding in sorted(findings, key=lambda item: item.id):
+        key = (
+            finding.title,
+            finding.category,
+            finding.severity,
+            finding.confidence,
+            finding.summary,
+            finding.remediation,
+        )
+        grouped.setdefault(key, []).append(finding)
+
+    return tuple(
+        FindingGroup(
+            representative=items[0],
+            observation_count=len(items),
+            asset_ids=tuple(sorted({value for item in items for value in item.asset_ids})),
+            evidence_ids=tuple(sorted({value for item in items for value in item.evidence_ids})),
+        )
+        for items in grouped.values()
+    )

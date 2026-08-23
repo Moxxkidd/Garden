@@ -1,4 +1,7 @@
-from app.services.scan_report_quality import extract_version_hints
+from datetime import datetime, timezone
+
+from app.models.scan_run import ScanFinding
+from app.services.scan_report_quality import extract_version_hints, project_finding_groups
 
 
 def test_extract_version_hints_accepts_strong_contexts_with_provenance() -> None:
@@ -62,3 +65,55 @@ def test_extract_version_hints_is_bounded_deduplicated_and_capped() -> None:
         )
         == ()
     )
+
+
+def _finding(
+    identifier: int,
+    *,
+    title: str = "缺少 Content-Security-Policy 响应头",
+    asset_ids: list[int] | None = None,
+    evidence_ids: list[int] | None = None,
+) -> ScanFinding:
+    return ScanFinding(
+        id=identifier,
+        scan_run_id=1,
+        dedup_key=f"finding-{identifier}",
+        title=title,
+        category="security-headers",
+        severity="low",
+        confidence="high",
+        summary="HTML 响应未包含该安全头。",
+        remediation="配置合适的响应头策略。",
+        asset_ids=asset_ids or [],
+        evidence_ids=evidence_ids or [],
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+def test_project_finding_groups_preserves_raw_rows_and_stable_order() -> None:
+    findings = [
+        _finding(3, asset_ids=[30], evidence_ids=[300]),
+        _finding(1, asset_ids=[10, 11], evidence_ids=[100]),
+        _finding(
+            2,
+            title="缺少 X-Content-Type-Options 响应头",
+            asset_ids=[20],
+            evidence_ids=[200],
+        ),
+    ]
+
+    groups = project_finding_groups(findings)
+
+    assert [group.representative.id for group in groups] == [1, 2]
+    assert groups[0].observation_count == 2
+    assert groups[0].asset_ids == (10, 11, 30)
+    assert groups[0].evidence_ids == (100, 300)
+    assert [finding.id for finding in findings] == [3, 1, 2]
+
+
+def test_project_finding_groups_keeps_different_remediation_separate() -> None:
+    first = _finding(1)
+    second = _finding(2)
+    second.remediation = "由边缘代理统一配置响应头。"
+
+    assert len(project_finding_groups([first, second])) == 2
