@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+from click import unstyle
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
@@ -16,6 +17,7 @@ def test_cli_scan_flags_and_defaults_are_unchanged() -> None:
     result = runner.invoke(cli_app, ["scan", "--help"])
 
     assert result.exit_code == 0
+    help_output = unstyle(result.output)
     for flag in (
         "--url",
         "--max-pages",
@@ -27,7 +29,7 @@ def test_cli_scan_flags_and_defaults_are_unchanged() -> None:
         "--detach",
         "--ui-port",
     ):
-        assert flag in result.output
+        assert flag in help_output
     assert ScanOptions().model_dump() == {
         "max_pages": 50,
         "max_resources": 200,
