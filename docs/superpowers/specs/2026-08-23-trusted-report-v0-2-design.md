@@ -1,291 +1,291 @@
-# Garden v0.2.0 Trusted Report Design
+# Garden v0.2.0 可信报告版设计规格
 
-**Date:** 2026-08-23<br>
-**Status:** Approved design, pending written-spec review<br>
-**Scope:** Quick URL scan resource version hints, repeated-finding projection, compatibility contracts, and v0.2.0 release metadata
+**日期：** 2026-08-23<br>
+**状态：** 设计已批准，等待书面规格复核<br>
+**范围：** 单 URL 快速扫描的资源版本线索、重复发现投影、兼容性契约和 v0.2.0 发布元数据
 
-## Context
+## 背景
 
-The NJAU report exposed two report-trust problems:
+南京农业大学报告暴露了两个影响报告可信度的问题：
 
-- ordinary decimal values in CSS or SVG content could be presented as software versions;
-- page-level security-header observations could dominate the report even though they represented only two repeated control gaps.
+- CSS 或 SVG 内容中的普通小数可能被当作软件版本展示；
+- 页面级安全响应头观察可能占据报告的大部分篇幅，虽然它们实际上只代表两类重复的安全控制缺口。
 
-The current `origin/main` baseline at `af0d2d4` already contains tactical corrections from the URL report-quality and installer-hardening work:
+当前 `origin/main` 基线提交 `af0d2d4` 已经包含 URL 报告质量和安装器加固工作的初步修复：
 
-- version extraction requires more context than a bare decimal in CSS or JavaScript content;
-- the Markdown report groups equivalent findings while retaining the raw observation count;
-- installer discovery, legacy public-policy migration, and repository-shadowing fixes are already present.
+- 版本提取不再把 CSS 或 JavaScript 内容中的裸小数直接作为版本；
+- Markdown 报告会聚合等价发现，同时保留原始观察数量；
+- Python 解释器发现、旧版公网策略迁移和仓库源码遮蔽安装包等安装问题已经修复。
 
-Version 0.2.0 will turn those tactical corrections into an explicit, testable report-quality boundary. It will improve report accuracy without changing how users submit scans, navigate the Web UI, call the API, invoke the CLI, or read the report structure.
+v0.2.0 将把这些初步修复整理为明确、可测试的报告质量边界。它会提升报告准确性，但不改变用户提交扫描、浏览 Web 页面、调用 API、使用 CLI 或阅读报告的方式。
 
-## Product Decision
+## 产品决策
 
-Garden v0.2.0 is the **trusted report release**.
+Garden v0.2.0 定位为 **可信报告版**。
 
-The release prioritizes explainable evidence and conservative claims over finding more possible version strings. An omitted or unverified version is preferable to a plausible-looking false version. Raw assets, evidence, and findings remain available for audit even when the report projects them into a smaller set of user-facing groups.
+该版本优先保证证据可解释、结论保守，而不是尽可能多地识别疑似版本字符串。遗漏一个无法验证的版本，优于展示一个看似合理但实际错误的版本。即使报告把原始发现投影为更少的用户可读问题组，原始资产、证据和发现仍然完整保留，供后续审计。
 
-## Compatibility Baseline
+## 兼容性基线
 
-The compatibility baseline is `origin/main` at `af0d2d4`, not the older NJAU report text generated before the report-quality fixes were merged.
+兼容性基线是 `origin/main` 的 `af0d2d4`，不是报告质量修复合并前生成的旧版南京农业大学报告文本。
 
-The following user-visible contracts remain unchanged:
+以下用户可见契约保持不变：
 
-| Surface | Frozen contract |
+| 范围 | 冻结的契约 |
 |---|---|
-| CLI | Commands, aliases, flags, defaults, foreground/detached behavior, and exit semantics |
-| Web | Routes, scan form fields, navigation flow, and primary result layout |
-| HTTP API | Existing routes, request fields, response field names and types, and status meanings |
-| Report | Section names, section order, asset/evidence references, coverage-warning separation, and Markdown delivery path |
-| Collection | Passive GET behavior, same-origin boundary, address-policy revalidation, budgets, retries, and timeout semantics |
-| Persistence | Existing tables and columns; raw assets, evidence, findings, and failures remain readable |
+| CLI | 命令、兼容别名、参数、默认值、前台/后台行为和退出语义 |
+| Web | 路由、扫描表单字段、导航流程和主要结果布局 |
+| HTTP API | 现有路由、请求字段、响应字段名称与类型，以及状态含义 |
+| 报告 | 章节名称与顺序、资产/证据引用方式、覆盖告警分区和 Markdown 交付路径 |
+| 采集 | 仅被动 GET、同源边界、地址策略复核、预算、重试和超时语义 |
+| 持久化 | 现有数据表和字段；原始资产、证据、发现和失败记录继续可读 |
 
-The expected version string changes from `0.1.0` to `0.2.0`. Report content may become more conservative or less repetitive, but the report structure and interaction model do not change.
+版本字符串会按预期从 `0.1.0` 变为 `0.2.0`。报告内容可以更保守、更少重复，但报告结构和操作方式不得变化。
 
-## Goals
+## 目标
 
-- Make every displayed resource-version hint traceable to a strong context.
-- Prevent CSS values, SVG coordinates, dimensions, dates, and unrelated decimals from becoming version claims.
-- Preserve current grouped-finding output while moving grouping policy out of Markdown rendering details.
-- Retain raw finding rows and raw counts for audit and API compatibility.
-- Regenerate reports from older scan records conservatively when version provenance is unavailable.
-- Freeze the current CLI, Web, API, report, and scan-status experience with compatibility tests.
-- Release the result as Garden `0.2.0` without a database migration.
+- 每一条展示出来的资源版本线索都必须能追溯到可信上下文。
+- 防止 CSS 数值、SVG 坐标、尺寸、日期和无关小数被当作版本。
+- 保持当前发现聚合后的报告效果，同时把聚合规则从 Markdown 渲染细节中分离出来。
+- 保留原始发现记录和原始数量，满足审计和 API 兼容要求。
+- 在缺少版本来源信息时，以保守方式重新生成旧扫描记录的报告。
+- 使用兼容性测试冻结现有 CLI、Web、API、报告和扫描状态体验。
+- 在不增加数据库迁移的前提下发布 Garden `0.2.0`。
 
-## Non-goals
+## 非目标
 
-- Increasing page, resource, depth, response-size, retry, or timeout budgets.
-- Adding JavaScript browser rendering or active vulnerability probing.
-- Adding authenticated-context comparison or changing advanced workflows.
-- Adding new Web controls, report filters, CLI options, or API routes.
-- Mapping detected component versions to CVEs or asserting vulnerability from a version string.
-- Deleting or rewriting stored raw findings and evidence.
-- Reimplementing the three installer fixes already merged before this branch.
+- 提高页面数、资源数、深度、响应体大小、重试次数或超时时间预算。
+- 增加 JavaScript 浏览器渲染或主动漏洞探测。
+- 增加认证上下文对比或改变现有高级工作流。
+- 增加新的 Web 控件、报告筛选器、CLI 参数或 API 路由。
+- 把检测到的组件版本映射到 CVE，或仅根据版本字符串断言存在漏洞。
+- 删除或改写已保存的原始发现和证据。
+- 重新实现本分支建立前已经合并的三个安装器修复。
 
-## Considered Approaches
+## 方案比较
 
-### A. Internal report-quality boundary — selected
+### 方案 A：内部报告质量边界——采用
 
-Keep collection and analysis records intact, but route version extraction and finding grouping through a small, pure quality module. Persist optional provenance in the existing evidence JSON and project raw findings into typed report groups.
+保留完整的采集和分析记录，但让版本提取和发现分组统一经过一个小型、纯函数式的质量模块。在现有证据 JSON 中保存可选的来源信息，并把原始发现投影为有明确类型的报告分组。
 
-This approach preserves auditability and public contracts, supports focused tests, and avoids a migration. It also prevents the Markdown renderer from becoming the owner of domain classification rules.
+该方案保留审计能力和公开契约，便于进行聚焦测试，同时不需要数据库迁移。它还能避免 Markdown 渲染器继续承担领域分类规则。
 
-### B. Delete noise during collection and analysis
+### 方案 B：在采集和分析阶段删除噪声
 
-Reject questionable metadata and merge findings before persistence. This reduces stored rows, but changes API counts, damages traceability, makes old and new runs semantically different, and prevents reviewers from reaching the raw observations. It is incompatible with the experience freeze.
+在持久化前拒绝可疑元数据并合并发现。这样可以减少保存的记录，但会改变 API 数量、破坏可追溯性、造成新旧运行语义不同，也会让审阅人员无法查看原始观察。该方案不符合用户体验冻结要求。
 
-### C. Post-process generated Markdown
+### 方案 C：生成 Markdown 后再做文本处理
 
-Apply regex replacements and heading deduplication after report generation. This is inexpensive, but leaves persisted data, CLI summaries, Web views, and Markdown inconsistent. It is fragile and cannot explain why a value was accepted. It is rejected.
+报告生成后通过正则替换和标题去重进行修补。该方案成本较低，但会导致持久化数据、CLI 摘要、Web 页面与 Markdown 报告不一致，也无法解释某个值为什么被接受。因此不采用。
 
-## Architecture
+## 架构
 
-Add an internal module named `app/services/scan_report_quality.py`. It owns two pure, independently testable operations:
+新增内部模块 `app/services/scan_report_quality.py`，负责两个相互独立、可单独测试的纯操作：
 
-1. extracting trusted version hints from a resource;
-2. projecting raw `ScanFinding` rows into stable report groups.
+1. 从资源中提取可信版本线索；
+2. 把原始 `ScanFinding` 记录投影为稳定的报告分组。
 
-The module does not perform network access, database writes, Markdown rendering, or UI formatting.
+该模块不执行网络请求、数据库写入、Markdown 渲染或界面格式化。
 
 ```text
 FetchResult
-    |
-    v
-trusted version extraction
-    |
-    v
-existing ScanEvidence.data.resource_summary
+    │
+    ▼
+可信版本提取
+    │
+    ▼
+现有 ScanEvidence.data.resource_summary
 
-persisted ScanFinding rows
-    |
-    v
-stable finding projection
-    |
-    v
-existing ScanReportService renderer
+已持久化的 ScanFinding 记录
+    │
+    ▼
+稳定的发现分组投影
+    │
+    ▼
+现有 ScanReportService 渲染器
 ```
 
-`ScanPipeline` remains responsible for collection and persistence. It calls the quality module when building the existing `resource_summary`. `ScanReportService` remains responsible for Markdown, but consumes typed finding groups rather than building ad hoc dictionaries.
+`ScanPipeline` 继续负责采集和持久化，并在构建现有 `resource_summary` 时调用质量模块。`ScanReportService` 继续负责生成 Markdown，但改为消费有明确类型的发现分组，而不是在渲染过程中构造临时字典。
 
-## Trusted Version Hints
+## 可信版本线索
 
-### Candidate model
+### 候选数据模型
 
-Internally, extraction uses an immutable candidate with:
+提取器内部使用不可变候选对象，包含：
 
-- normalized version value;
-- provenance kind: `query`, `path`, or `body_marker`;
-- a short source label suitable for tests and future diagnostics.
+- 规范化后的版本值；
+- 来源类型：`query`、`path` 或 `body_marker`；
+- 用于测试和未来诊断的简短来源标签。
 
-The existing `resource_summary.version_hints` remains a list of strings. No existing field changes type.
+现有 `resource_summary.version_hints` 保持字符串列表类型，不改变任何现有字段类型。
 
-New evidence may add an optional `version_hint_details` member inside the existing extensible JSON object. It records the accepted value and provenance but is not rendered as a new report section. Top-level API schemas and all existing JSON members retain their names and types; the provenance member is additive, optional metadata. Consumers that ignore unknown members continue to work.
+新证据可以在现有可扩展 JSON 对象中增加可选的 `version_hint_details` 成员，用于记录已接受的版本值及其来源。它不会形成新的报告章节。顶层 API 结构以及全部现有 JSON 成员的名称和类型保持不变；该来源成员只是可选的附加元数据。忽略未知成员的现有调用方可以继续正常工作。
 
-### Accepted contexts
+### 可接受的上下文
 
-A candidate is accepted only when it is associated with one of these contexts:
+只有与以下上下文之一关联的候选值才会被接受：
 
-- a query value whose key is `v`, `ver`, or `version`;
-- a version joined to a named file, library, or path segment, such as `jquery-ui-1.12.1` or `swiper@11.0.3`;
-- an explicit body marker such as `@version 3.4.2` or `Version: 6.8`;
-- a known library or component name immediately associated with the candidate in the bounded resource prefix already inspected by Garden.
+- 查询参数名称为 `v`、`ver` 或 `version`；
+- 版本值与有名称的文件、库或路径片段直接相连，例如 `jquery-ui-1.12.1` 或 `swiper@11.0.3`；
+- 正文中存在明确标记，例如 `@version 3.4.2` 或 `Version: 6.8`；
+- 已知库或组件名称与候选值在 Garden 当前限制的资源前缀范围内直接关联。
 
-Candidates are normalized, deduplicated in encounter order, and capped at the existing maximum of five displayed values.
+候选值需要规范化，按照出现顺序去重，并沿用最多展示五个值的现有限制。
 
-### Rejected contexts
+### 必须拒绝的上下文
 
-The extractor rejects numbers that are only:
+提取器必须拒绝仅属于以下情况的数字：
 
-- CSS property values, opacity values, transforms, dimensions, or selectors;
-- SVG coordinates, path data, view boxes, or drawing metadata;
-- timestamps, HTTP dates, article dates, UUID fragments, hashes, or byte counts;
-- bare numeric path segments without a named component relationship;
-- numbers found beyond the existing bounded text prefix;
-- malformed, excessively long, or ambiguous values.
+- CSS 属性值、透明度、变换、尺寸或选择器中的数字；
+- SVG 坐标、路径数据、视图框或绘图元数据；
+- 时间戳、HTTP 日期、文章日期、UUID 片段、哈希或字节数；
+- 与命名组件没有关联的裸数字路径片段；
+- 出现在现有受限文本前缀之外的数字；
+- 格式错误、长度异常或含义模糊的值。
 
-The extractor identifies possible component metadata only. It does not assert that the version is vulnerable, current, or the version actually executing on the server.
+提取器只识别可能的组件元数据，不会断言该版本存在漏洞、属于最新版，或确实是服务器当前运行的版本。
 
-### Legacy evidence
+### 旧版证据
 
-Older evidence records may contain `version_hints` without provenance. During report regeneration:
+旧证据可能包含没有来源信息的 `version_hints`。重新生成报告时：
 
-- hints that can be revalidated from a strong query or path context remain visible;
-- unverifiable legacy body-only hints are omitted from the regenerated report;
-- the underlying stored JSON is not mutated.
+- 能够通过可信查询参数或路径上下文重新验证的线索继续展示；
+- 无法验证的旧版正文线索不再出现在重新生成的报告中；
+- 不修改底层已保存的 JSON。
 
-This conservative fallback intentionally prefers omission to repeating an untraceable claim.
+这种保守回退策略有意选择“省略”，避免再次展示无法追溯的结论。
 
-## Finding Projection
+## 发现分组投影
 
-Analysis continues to create one raw observation per affected asset. Existing `finding_count` values in the API, Web detail page, and foreground CLI remain raw counts.
+分析阶段继续为每个受影响资产创建一条原始观察。API、Web 详情页和前台 CLI 中现有的 `finding_count` 继续表示原始数量。
 
-The report-quality module returns typed groups with:
+报告质量模块返回有明确类型的分组，包含：
 
-- the representative finding;
-- observation count;
-- sorted unique asset IDs;
-- sorted unique evidence IDs.
+- 代表性发现；
+- 原始观察数量；
+- 排序并去重后的资产 ID；
+- 排序并去重后的证据 ID。
 
-The stable grouping key preserves the current main-branch behavior:
+稳定分组键保持当前主线行为，由以下字段组成：
 
-- title;
-- category;
-- severity;
-- confidence;
-- summary;
-- remediation.
+- 标题；
+- 类别；
+- 严重性；
+- 置信度；
+- 说明；
+- 修复建议。
 
-Groups are ordered by the smallest finding ID in each group. Reference samples retain the current limits and formatting. The Markdown report continues to show the number of grouped classes and the number of raw observations.
+各组按组内最小发现 ID 排序。引用样本继续使用现有限制和格式。Markdown 报告继续同时展示聚合后的问题类型数量和原始观察数量。
 
-No grouping is applied to failures. Coverage warnings and genuine request or stage failures continue to use the shared failure classifier introduced before v0.2.0.
+失败记录不参与这种分组。覆盖告警和真正的请求或阶段失败继续使用 v0.2.0 之前已经引入的共享失败分类器。
 
-## Data Flow and Compatibility
+## 数据流和兼容处理
 
-For new scans:
+对于新扫描：
 
-1. The network gateway returns the same bounded `FetchResult`.
-2. The pipeline derives the same asset type and security signals.
-3. The quality extractor returns trusted version candidates.
-4. The pipeline stores the existing string list and optional provenance in the existing evidence JSON.
-5. Passive analysis stores the same raw finding rows.
-6. The report service loads persisted rows, obtains quality projections, and renders the current section structure.
+1. 网络网关返回与当前一致、受边界约束的 `FetchResult`。
+2. 流水线按现有逻辑确定资产类型和安全信号。
+3. 质量提取器返回可信版本候选。
+4. 流水线在现有证据 JSON 中保存原有字符串列表和可选来源信息。
+5. 被动分析继续保存原始发现记录。
+6. 报告服务加载持久化记录，取得质量投影，并按现有章节结构渲染报告。
 
-For old scans, missing optional provenance is handled by the legacy fallback. No migration or data backfill is required.
+对于旧扫描，缺失的可选来源信息由旧版回退规则处理，不需要数据迁移或批量回填。
 
-## Error Handling
+## 错误处理
 
-Report-quality operations are deterministic and fail-soft:
+报告质量操作必须是确定性的，并遵循安全降级：
 
-- unrecognized content produces no version hint;
-- malformed optional legacy metadata is ignored;
-- an empty finding list produces an empty projection;
-- quality classification never triggers another target request;
-- quality classification never converts a completed scan into a failed scan.
+- 无法识别的内容不产生版本线索；
+- 格式错误的旧版可选元数据会被忽略；
+- 空发现列表生成空分组；
+- 质量分类不会触发新的目标请求；
+- 质量分类不会把已完成扫描变成失败扫描。
 
-Programming errors still fail tests and normal report-stage error handling. The implementation must not catch broad exceptions merely to hide defects.
+编程错误仍应通过测试和现有报告阶段错误处理暴露。实现不得通过捕获宽泛异常来掩盖缺陷。
 
-## Experience-Compatibility Tests
+## 用户体验兼容性测试
 
-Add targeted contract tests that record the current main-branch behavior without relying on fragile full-output snapshots:
+增加有针对性的契约测试，记录当前主线行为，避免使用脆弱的完整输出快照：
 
-- the registered CLI commands, compatibility alias, scan flags, defaults, and version command shape;
-- the existing scan API request and response field names and types;
-- the existing Web scan route and form field names;
-- the report section headings and order;
-- raw API/Web/CLI finding counts versus grouped report counts;
-- completed, completed-with-warnings, failed, and cancelled status meanings;
-- the current report output path and coverage-warning/request-failure separation.
+- 已注册的 CLI 命令、兼容别名、扫描参数、默认值和版本命令形态；
+- 现有扫描 API 请求和响应字段的名称与类型；
+- 现有 Web 扫描路由和表单字段名称；
+- 报告章节标题和顺序；
+- API、Web、CLI 的原始发现数量与报告聚合数量之间的关系；
+- `completed`、`completed_with_warnings`、`failed` 和 `cancelled` 的状态含义；
+- 当前报告输出路径，以及覆盖告警与请求失败的分区方式。
 
-The tests permit the expected `0.2.0` version value and more accurate report content. They reject new required input, removed fields, renamed sections, or changed workflow semantics.
+测试允许版本值按预期变成 `0.2.0`，也允许报告内容更加准确；但不允许增加必填输入、删除字段、重命名报告章节或改变工作流语义。
 
-## NJAU Regression Fixture
+## 南京农业大学回归夹具
 
-Use a local, deterministic fixture derived from the observed NJAU patterns. Tests must not access the live university site.
+使用从已观察到的南京农业大学模式中提炼出的本地确定性夹具。测试不得访问南京农业大学线上站点。
 
-The fixture contains:
+夹具包含：
 
-- CSS and SVG-like decimal values that previously looked like versions;
-- explicit version query strings and named component paths that should remain visible;
-- explicit library version markers in bounded script or stylesheet content;
-- 52 HTML assets missing the same two response headers, producing 104 raw observations;
-- representative coverage warnings separated from genuine failures.
+- 过去容易被误判为版本的 CSS 和类 SVG 小数；
+- 应继续展示的显式版本查询参数和具名组件路径；
+- 受限脚本或样式表内容中的显式库版本标记；
+- 52 个缺少相同两个响应头的 HTML 资产，从而产生 104 条原始观察；
+- 与真实失败分开展示的代表性覆盖告警。
 
-Acceptance for this fixture:
+该夹具的验收要求：
 
-- unrelated CSS/SVG decimals never appear as version hints;
-- accepted hints have an asserted provenance;
-- 104 raw findings remain persisted and visible through raw counts;
-- the report renders two finding classes with 104 raw observations;
-- report heading names and order match the compatibility baseline;
-- the fixture performs no external DNS resolution or network request.
+- 无关 CSS/SVG 小数绝不能出现在版本线索中；
+- 每条被接受的版本线索都有可断言的来源；
+- 104 条原始发现继续持久化，并能通过原始数量查看；
+- 报告展示两类发现和 104 条原始观察；
+- 报告章节名称和顺序与兼容性基线一致；
+- 夹具不执行外部 DNS 解析或网络请求。
 
-## Release Work
+## 发布工作
 
-After report-quality and compatibility tests pass:
+报告质量和兼容性测试通过后：
 
-- change package and default application metadata from `0.1.0` to `0.2.0`;
-- update version assertions and installer smoke fixtures without changing their invocation flow;
-- add a concise v0.2.0 development log describing trusted-version provenance and compatibility guarantees;
-- build and install a wheel in an isolated temporary home;
-- verify `garden --version`, foreground scan help, the compatibility alias, database initialization, and report generation from outside and inside a repository directory;
-- run the complete test, Ruff, formatting, and diff checks before delivery.
+- 把包版本和默认应用元数据从 `0.1.0` 改为 `0.2.0`；
+- 更新版本断言和安装器冒烟夹具，但不改变调用流程；
+- 增加简洁的 v0.2.0 开发日志，说明可信版本来源和兼容性保证；
+- 在隔离的临时用户目录中构建并安装 wheel；
+- 分别从普通目录和 Garden 仓库目录验证 `garden --version`、前台扫描帮助、兼容别名、数据库初始化和报告生成；
+- 交付前运行完整测试、Ruff、格式及差异检查。
 
-Local installed Garden is updated only after the branch is reviewed and the release artifact passes these gates.
+只有在分支完成审查且发布产物通过上述门禁后，才更新本机已安装的 Garden。
 
-## Implementation Boundaries
+## 实现边界
 
-Expected production changes are limited to:
+预期生产代码改动仅限：
 
-- `app/services/scan_report_quality.py` for pure quality policy;
-- `app/services/scan_pipeline.py` for extraction integration;
-- `app/services/scan_reporting.py` for typed projection consumption and legacy hint filtering;
-- version metadata in `pyproject.toml` and `app/core/settings.py`;
-- focused tests, fixture helpers, and release documentation.
+- `app/services/scan_report_quality.py`：纯质量策略；
+- `app/services/scan_pipeline.py`：接入版本提取；
+- `app/services/scan_reporting.py`：消费有类型的投影并过滤旧版版本线索；
+- `pyproject.toml` 和 `app/core/settings.py`：版本元数据；
+- 聚焦测试、夹具辅助代码和发布文档。
 
-No models, migrations, API routes, templates, CLI option declarations, network policy, or scan-budget defaults should change. If implementation reveals a need to modify one of those areas, work stops for a design amendment instead of expanding scope implicitly.
+不得修改数据模型、迁移、API 路由、模板、CLI 参数声明、网络策略或扫描预算默认值。如果实现过程中发现必须修改这些范围，应停止实现并提出设计修订，不得隐式扩大范围。
 
-## Verification Gates
+## 验证门禁
 
-Implementation is releasable only when all of the following pass:
+只有以下项目全部通过，才能发布：
 
-1. focused version-extraction tests;
-2. focused finding-projection tests;
-3. NJAU regression fixture;
-4. CLI, Web, API, report, and lifecycle compatibility tests;
-5. old-record report-regeneration tests;
-6. complete `pytest` suite;
-7. Ruff check and formatting check;
-8. wheel build and clean temporary installation;
-9. formal CLI smoke from both a neutral directory and a Garden repository directory;
-10. `git diff --check` and final code review.
+1. 聚焦版本提取测试；
+2. 聚焦发现分组投影测试；
+3. 南京农业大学回归夹具；
+4. CLI、Web、API、报告和生命周期兼容性测试；
+5. 旧记录报告重新生成测试；
+6. 完整 `pytest` 测试；
+7. Ruff 检查和格式检查；
+8. wheel 构建及全新临时环境安装；
+9. 从普通目录和 Garden 仓库目录执行正式 CLI 冒烟测试；
+10. `git diff --check` 和最终代码审查。
 
-## Acceptance Criteria
+## 验收标准
 
-- Garden displays a version only when the extractor can identify an accepted context.
-- NJAU-style CSS and SVG decimals are absent from version hints.
-- Equivalent findings remain raw in persistence and grouped in the report.
-- Existing CLI, Web, API, report structure, network behavior, and status semantics remain unchanged.
-- Old scan records remain readable and regenerate conservatively.
-- No database migration is introduced.
-- `garden --version` reports `Garden 0.2.0` after the release artifact is installed.
-- All verification gates pass before local installation or release delivery.
+- Garden 只在提取器能够识别可信上下文时展示版本。
+- 南京农业大学模式中的 CSS 和 SVG 小数不会出现在版本线索中。
+- 等价发现继续以原始记录持久化，并在报告中聚合展示。
+- 现有 CLI、Web、API、报告结构、网络行为和状态语义保持不变。
+- 旧扫描记录继续可读，并能以保守方式重新生成报告。
+- 不增加数据库迁移。
+- 安装发布产物后，`garden --version` 输出 `Garden 0.2.0`。
+- 更新本机安装或交付发布版本前，全部验证门禁必须通过。
