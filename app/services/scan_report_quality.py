@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import parse_qs, urlparse
@@ -29,6 +29,15 @@ _BODY_COMPONENT_VERSION = re.compile(
 _VERSION_QUERY_KEYS = ("v", "ver", "version")
 _BODY_PREFIX_LIMIT = 4096
 _MAX_HINTS = 5
+_TRUSTED_SOURCES = {"query", "path", "body_marker"}
+_TRUSTED_BODY_DETAILS = {
+    "version",
+    "jquery",
+    "swiper",
+    "slick",
+    "jwplayer",
+    "pdf.js",
+}
 
 
 @dataclass(frozen=True)
@@ -107,3 +116,53 @@ def project_finding_groups(findings: Sequence[ScanFinding]) -> tuple[FindingGrou
         )
         for items in grouped.values()
     )
+
+
+def report_version_values(
+    source_url: str,
+    resource_summary: Mapping[str, object],
+) -> list[str]:
+    details = resource_summary.get("version_hint_details")
+    if details is not None:
+        if not isinstance(details, list):
+            return []
+        values: list[str] = []
+        url_provenance = {
+            (hint.value, hint.source, hint.detail)
+            for hint in extract_version_hints(source_url, "", "document")
+        }
+        for item in details:
+            if not isinstance(item, dict):
+                continue
+            value = item.get("value")
+            source = item.get("source")
+            detail = item.get("detail")
+            if (
+                isinstance(value, str)
+                and _VERSION_FULL.fullmatch(value)
+                and isinstance(source, str)
+                and source in _TRUSTED_SOURCES
+                and isinstance(detail, str)
+                and bool(detail)
+                and (
+                    (source == "body_marker" and detail in _TRUSTED_BODY_DETAILS)
+                    or (value, source, detail) in url_provenance
+                )
+                and value not in values
+            ):
+                values.append(value)
+            if len(values) == _MAX_HINTS:
+                break
+        return values
+
+    raw_values = resource_summary.get("version_hints")
+    if not isinstance(raw_values, list):
+        return []
+    url_values = {hint.value for hint in extract_version_hints(source_url, "", "document")}
+    values: list[str] = []
+    for value in raw_values:
+        if isinstance(value, str) and value in url_values and value not in values:
+            values.append(value)
+        if len(values) == _MAX_HINTS:
+            break
+    return values

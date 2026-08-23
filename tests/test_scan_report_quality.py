@@ -1,7 +1,11 @@
 from datetime import datetime, timezone
 
 from app.models.scan_run import ScanFinding
-from app.services.scan_report_quality import extract_version_hints, project_finding_groups
+from app.services.scan_report_quality import (
+    extract_version_hints,
+    project_finding_groups,
+    report_version_values,
+)
 
 
 def test_extract_version_hints_accepts_strong_contexts_with_provenance() -> None:
@@ -117,3 +121,46 @@ def test_project_finding_groups_keeps_different_remediation_separate() -> None:
     second.remediation = "由边缘代理统一配置响应头。"
 
     assert len(project_finding_groups([first, second])) == 2
+
+
+def test_report_version_values_uses_valid_new_provenance() -> None:
+    summary = {
+        "version_hints": ["6.8", "17.405"],
+        "version_hint_details": [
+            {"value": "6.8", "source": "body_marker", "detail": "jwplayer"},
+            {"value": "bad", "source": "body_marker", "detail": "version"},
+        ],
+    }
+
+    assert report_version_values("https://example.test/player.js", summary) == ["6.8"]
+
+
+def test_report_version_values_revalidates_legacy_hints_from_url_only() -> None:
+    summary = {"version_hints": ["1.12.1", "17.405", "0.18"]}
+
+    assert report_version_values(
+        "https://example.test/jquery-ui-1.12.1/jquery-ui.css",
+        summary,
+    ) == ["1.12.1"]
+
+
+def test_report_version_values_ignores_malformed_optional_metadata() -> None:
+    assert (
+        report_version_values(
+            "https://example.test/app.js",
+            {"version_hints": ["9.9.9"], "version_hint_details": "malformed"},
+        )
+        == []
+    )
+    assert (
+        report_version_values(
+            "https://example.test/app.js",
+            {
+                "version_hint_details": [
+                    {"value": "1.2.3", "source": [], "detail": "version"},
+                    {"value": "17.405", "source": "path", "detail": "not-in-url"},
+                ]
+            },
+        )
+        == []
+    )

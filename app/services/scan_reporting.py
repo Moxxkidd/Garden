@@ -13,7 +13,7 @@ from app.cli.paths import formal_runtime_paths
 from app.core.errors import ResourceNotFoundError
 from app.models.scan_run import ScanRun
 from app.services.scan_failure_classification import is_coverage_warning
-from app.services.scan_report_quality import project_finding_groups
+from app.services.scan_report_quality import project_finding_groups, report_version_values
 
 
 class ScanReportService:
@@ -141,7 +141,9 @@ class ScanReportService:
             lines.extend(["### 静态资源证据索引", ""])
         for item in resource_evidence:
             resource_summary = item.data["resource_summary"]
-            versions = ", ".join(resource_summary.get("version_hints") or []) or "未识别"
+            versions = (
+                ", ".join(report_version_values(item.source_url, resource_summary)) or "未识别"
+            )
             signals = ", ".join(resource_summary.get("security_signals") or []) or "未观察到"
             truncated = bool(resource_summary.get("truncated"))
             hash_label = "采集片段 SHA-256" if truncated else "SHA-256"

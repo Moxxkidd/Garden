@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -690,6 +691,45 @@ def test_njau_style_report_keeps_104_raw_findings_and_trusted_versions(tmp_path)
     request_failures = report.split("## 请求失败", 1)[1]
     assert "coverage_limit_reached" in coverage
     assert "coverage_limit_reached" not in request_failures
+
+
+def test_regenerated_legacy_report_omits_unverifiable_body_versions(tmp_path) -> None:
+    def handler(request):
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text='<link rel="stylesheet" href="/jquery-ui-1.12.1/jquery-ui.css">',
+            )
+        return httpx.Response(200, headers={"content-type": "text/css"}, text="body {}")
+
+    service = _service(tmp_path, handler)
+    scan = service.start_scan(
+        "http://127.0.0.1/",
+        ScanOptions(max_pages=1, max_resources=1, retry_attempts=0),
+    )
+
+    with session_scope() as session:
+        evidence = session.scalar(
+            select(ScanEvidence).where(
+                ScanEvidence.scan_run_id == scan.id,
+                ScanEvidence.source_url.contains("jquery-ui"),
+            )
+        )
+        original_data = dict(evidence.data)
+        legacy_summary = dict(original_data["resource_summary"])
+        legacy_summary.pop("version_hint_details")
+        legacy_summary["version_hints"] = ["1.12.1", "17.405", "0.18"]
+        evidence.data = {**original_data, "resource_summary": legacy_summary}
+        session.flush()
+        before_render = dict(evidence.data)
+        path = ScanReportService(tmp_path / "legacy-reports").generate(session, scan.id)
+        report = Path(path).read_text(encoding="utf-8")
+        assert evidence.data == before_render
+
+    assert "版本线索=1.12.1" in report
+    assert "17.405" not in report
+    assert "0.18" not in report
 
 
 def test_report_uses_request_buckets_and_aggregates_repeated_findings(tmp_path) -> None:
