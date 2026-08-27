@@ -10,10 +10,13 @@ from datetime import datetime, timezone
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
 
-from app.core.errors import InputValidationError
+from app.core.errors import InputValidationError, TargetPolicyError
+from app.core.settings import get_settings
 from app.models.enums import SessionType
 from app.models.target import Target
 from app.schemas.inventory import InventoryBuildControls
+from app.services.authenticated_network import AuthenticatedNetworkGuard
+from app.services.scan_network import TargetNetworkPolicy
 
 
 @dataclass
@@ -89,6 +92,11 @@ class SyncPlaywrightInventoryGateway:
         ".csv",
     )
 
+    def __init__(self, *, policy: TargetNetworkPolicy | None = None) -> None:
+        self.network_guard = AuthenticatedNetworkGuard(
+            policy or TargetNetworkPolicy(get_settings())
+        )
+
     def collect(
         self,
         target: Target,
@@ -123,6 +131,7 @@ class SyncPlaywrightInventoryGateway:
                     session_payload,
                 )
                 page = context.new_page()
+                violations = self._install_request_guard(context, page, target.base_url)
 
                 def handle_response(response) -> None:
                     nonlocal request_counter
@@ -177,10 +186,12 @@ class SyncPlaywrightInventoryGateway:
                     if self._looks_like_download_url(current_url):
                         continue
                     try:
-                        response = page.goto(
+                        response = self._guarded_goto(
+                            page,
+                            target.base_url,
                             current_url,
-                            wait_until="domcontentloaded",
-                            timeout=15000,
+                            15000,
+                            violations,
                         )
                     except PlaywrightError as error:
                         if self._is_download_navigation_error(error):
@@ -229,6 +240,47 @@ class SyncPlaywrightInventoryGateway:
             pages=pages,
             endpoints=endpoints,
         )
+
+    def _install_request_guard(self, context, page, base_url: str) -> list[TargetPolicyError]:
+        violations: list[TargetPolicyError] = []
+        cdp = context.new_cdp_session(page)
+
+        def guard_request(event: dict[str, Any]) -> None:
+            request_id = str(event["requestId"])
+            try:
+                self.network_guard.ensure_allowed(base_url, str(event["request"]["url"]))
+            except TargetPolicyError as error:
+                violations.append(error)
+                cdp.send(
+                    "Fetch.failRequest",
+                    {"requestId": request_id, "errorReason": "BlockedByClient"},
+                )
+                return
+            cdp.send("Fetch.continueRequest", {"requestId": request_id})
+
+        cdp.on("Fetch.requestPaused", guard_request)
+        cdp.send("Fetch.enable", {"patterns": [{"urlPattern": "*", "requestStage": "Request"}]})
+        return violations
+
+    def _guarded_goto(
+        self,
+        page,
+        base_url: str,
+        url: str,
+        timeout_ms: int,
+        violations: list[TargetPolicyError],
+    ):
+        self.network_guard.ensure_allowed(base_url, url)
+        try:
+            response = page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+        except Exception as error:
+            if violations:
+                raise violations[0] from error
+            raise
+        if violations:
+            raise violations[0]
+        self.network_guard.ensure_allowed(base_url, page.url)
+        return response
 
     def _build_context(self, browser, base_url: str, session_type: SessionType, session_payload):
         if session_type == SessionType.PLAYWRIGHT_STORAGE_STATE:

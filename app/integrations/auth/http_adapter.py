@@ -9,6 +9,8 @@ from urllib.parse import urljoin
 
 import httpx
 
+from app.core.errors import TargetPolicyError
+from app.core.settings import get_settings
 from app.models.credential_profile import CredentialProfile
 from app.models.enums import LoginFailureReason, SessionStatus
 from app.models.target import Target
@@ -19,6 +21,8 @@ from app.schemas.auth import (
     LoginExecutionResult,
     SessionValidationResult,
 )
+from app.services.authenticated_network import AuthenticatedNetworkGuard
+from app.services.scan_network import TargetNetworkPolicy
 
 _TEMPLATE_PATTERN = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}")
 
@@ -26,8 +30,16 @@ _TEMPLATE_PATTERN = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}")
 class HttpLoginAdapter:
     adapter_name = "http"
 
-    def __init__(self, *, transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        transport: httpx.BaseTransport | None = None,
+        policy: TargetNetworkPolicy | None = None,
+    ) -> None:
         self.transport = transport
+        self.network_guard = AuthenticatedNetworkGuard(
+            policy or TargetNetworkPolicy(get_settings())
+        )
 
     def login(
         self,
@@ -40,7 +52,9 @@ class HttpLoginAdapter:
         last_exception: Exception | None = None
         for _ in range(config.retry_attempts):
             try:
-                with self._build_client(timeout=config.request_timeout_seconds) as client:
+                with self._build_client(
+                    timeout=config.request_timeout_seconds, target=target
+                ) as client:
                     response = self._send_request(client, target, config.login_request, context)
                     if response.status_code in {401, 403}:
                         return self._failure(
@@ -91,6 +105,14 @@ class HttpLoginAdapter:
                         session_metadata_redacted=redact_session_metadata(metadata),
                         storage_payload={"cookies": cookie_payload},
                     )
+            except TargetPolicyError as error:
+                return self._failure(
+                    target,
+                    credential_profile,
+                    LoginFailureReason.CONFIG_ERROR,
+                    "HTTP login was blocked by the authenticated target boundary.",
+                    last_error=str(error),
+                )
             except httpx.HTTPError as error:
                 last_exception = error
         return self._failure(
@@ -112,6 +134,7 @@ class HttpLoginAdapter:
             with self._build_client(
                 timeout=config.request_timeout_seconds,
                 cookies=stored_payload.get("cookies", {}),
+                target=target,
             ) as client:
                 response = self._send_request(
                     client,
@@ -159,6 +182,14 @@ class HttpLoginAdapter:
                         }
                     ),
                 )
+        except TargetPolicyError as error:
+            return SessionValidationResult(
+                valid=False,
+                status=SessionStatus.ERROR,
+                failure_reason=LoginFailureReason.CONFIG_ERROR,
+                message="Validation was blocked by the authenticated target boundary.",
+                last_error=str(error),
+            )
         except httpx.HTTPError as error:
             return SessionValidationResult(
                 valid=False,
@@ -187,6 +218,7 @@ class HttpLoginAdapter:
             with self._build_client(
                 timeout=config.request_timeout_seconds,
                 cookies=stored_payload.get("cookies", {}),
+                target=target,
             ) as client:
                 response = self._send_request(
                     client,
@@ -230,6 +262,14 @@ class HttpLoginAdapter:
                     session_metadata_redacted=redact_session_metadata(metadata),
                     storage_payload={"cookies": cookie_payload},
                 )
+        except TargetPolicyError as error:
+            return self._failure(
+                target,
+                credential_profile,
+                LoginFailureReason.CONFIG_ERROR,
+                "Session refresh was blocked by the authenticated target boundary.",
+                last_error=str(error),
+            )
         except httpx.HTTPError as error:
             return self._failure(
                 target,
@@ -244,12 +284,18 @@ class HttpLoginAdapter:
         *,
         timeout: int,
         cookies: dict[str, object] | None = None,
+        target: Target,
     ) -> httpx.Client:
+        def guard_request(request: httpx.Request) -> None:
+            self.network_guard.ensure_allowed(target.base_url, str(request.url))
+
         return httpx.Client(
             follow_redirects=True,
             timeout=timeout,
             cookies=cookies,
             transport=self.transport,
+            trust_env=False,
+            event_hooks={"request": [guard_request]},
         )
 
     def _send_request(
