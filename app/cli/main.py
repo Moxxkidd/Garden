@@ -7,6 +7,7 @@ import typer
 
 from app.cli.baseline import app as baseline_app
 from app.cli.checks import app as checks_app
+from app.cli.coverage import coverage as coverage_command
 from app.cli.credentials import app as credential_app
 from app.cli.database import app as database_app
 from app.cli.evidence import app as evidence_app
@@ -70,6 +71,7 @@ def healthcheck() -> None:
 
 
 app.command("scan")(scan_command)
+app.command("coverage")(coverage_command)
 app.command("stop")(stop_command)
 app.add_typer(target_app, name="target")
 app.add_typer(credential_app, name="cred")

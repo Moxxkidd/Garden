@@ -42,7 +42,7 @@ class PassiveCoverageStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     url: str = Field(min_length=1, max_length=1000)
-    target_id: int = Field(gt=0)
+    target_id: int | None = Field(default=None, gt=0)
     user_profile_id: int = Field(gt=0)
     admin_profile_id: int = Field(gt=0)
     options: ScanOptions = Field(default_factory=ScanOptions)

@@ -17,12 +17,17 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.errors import InputValidationError, ResourceNotFoundError
 from app.core.settings import Settings, get_settings
 from app.db.bootstrap import session_scope
+from app.models.coverage_difference import CoverageDifference
 from app.models.credential_profile import CredentialProfile
 from app.models.enums import AssessmentMode, CompletenessStatus, ContextKind
 from app.models.scan_context import ScanContext
 from app.models.scan_run import TERMINAL_SCAN_RUN_STATUSES, ScanRun, ScanRunStage
 from app.models.target import Target
-from app.schemas.assessment import AssessmentRunView, AssessmentStartRequest
+from app.schemas.assessment import (
+    AssessmentRunView,
+    AssessmentStartRequest,
+    CoverageDifferenceView,
+)
 from app.schemas.scan import (
     ScanContextView,
     ScanFailureView,
@@ -191,6 +196,15 @@ class ScanApplicationService:
                 self._mark_interrupted(run)
             return self._view(run)
 
+    def cancel_assessment(self, scan_run_id: int) -> AssessmentRunView:
+        with session_scope() as session:
+            run = self._get(session, scan_run_id)
+            if run.mode != AssessmentMode.AUTHENTICATED_COVERAGE.value:
+                raise InputValidationError("Only authenticated coverage runs are assessments.")
+            if run.status not in TERMINAL_SCAN_RUN_STATUSES:
+                self._mark_interrupted(run)
+            return self._assessment_view(run)
+
     def interrupt_active_scans(self) -> int:
         """在服务启动时收敛上次异常退出遗留的活动扫描。"""
 
@@ -217,6 +231,23 @@ class ScanApplicationService:
         with session_scope() as session:
             run = self._get(session, scan_run_id)
             return self._assessment_view(run)
+
+    def list_coverage_differences(
+        self,
+        scan_run_id: int,
+    ) -> list[CoverageDifferenceView]:
+        with session_scope() as session:
+            run = self._get(session, scan_run_id)
+            if run.mode != AssessmentMode.AUTHENTICATED_COVERAGE.value:
+                raise InputValidationError("Only authenticated coverage runs have differences.")
+            differences = list(
+                session.scalars(
+                    select(CoverageDifference)
+                    .where(CoverageDifference.scan_run_id == scan_run_id)
+                    .order_by(CoverageDifference.identity_key)
+                )
+            )
+            return [CoverageDifferenceView.model_validate(item) for item in differences]
 
     def list_scans(self, limit: int = 25) -> list[ScanRunView]:
         with session_scope() as session:
