@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.cli.paths import formal_runtime_paths
 from app.core.errors import ResourceNotFoundError
+from app.models.enums import AssessmentMode
 from app.models.scan_run import ScanRun
 from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_report_quality import project_finding_groups, report_version_values
@@ -39,12 +41,19 @@ class ScanReportService:
                 selectinload(ScanRun.evidence),
                 selectinload(ScanRun.findings),
                 selectinload(ScanRun.failures),
+                selectinload(ScanRun.contexts),
+                selectinload(ScanRun.coverage_differences),
+                selectinload(ScanRun.replay_executions),
             )
         )
         if run is None:
             raise ResourceNotFoundError(f"Scan run {scan_run_id} was not found.")
         generated_at = datetime.now(timezone.utc)
-        lines = self._render(run, generated_at)
+        lines = (
+            self._render_authenticated(run, generated_at)
+            if run.mode == AssessmentMode.AUTHENTICATED_COVERAGE.value
+            else self._render(run, generated_at)
+        )
         self.output_root.mkdir(parents=True, exist_ok=True)
         path = self.output_root / f"scan-{run.id}.md"
         path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
@@ -52,6 +61,187 @@ class ScanReportService:
         run.report_generated_at = generated_at
         session.flush()
         return str(path)
+
+    def _render_authenticated(self, run: ScanRun, generated_at: datetime) -> list[str]:
+        contexts = sorted(run.contexts, key=lambda item: item.id)
+        differences = sorted(run.coverage_differences, key=lambda item: item.identity_key)
+        classification_counts = Counter(item.classification for item in differences)
+        stages = sorted(run.stages, key=lambda item: item.position)
+        lines = [
+            f"# Garden 认证覆盖报告 #{run.id}",
+            "",
+            "## 执行摘要",
+            "",
+            f"- 任务状态：{run.status}",
+            f"- 完整性：{run.completeness}",
+            f"- 入口 URL：{self._inline(run.normalized_url)}",
+            f"- 上下文：{len(contexts)}",
+            f"- 覆盖差异：{len(differences)}",
+            "- 模式：anonymous / user / admin 三上下文，仅执行被动采集。",
+            "- 主动权限重放未执行；本报告不包含利用、写入或破坏性操作。",
+            "",
+            "## 三上下文健康与完整性",
+            "",
+            "| 上下文 | 状态 | 登录 | 会话验证 | 采集 | 完整性 | 资产 | 失败 |",
+            "|---|---|---|---|---|---|---:|---:|",
+        ]
+        for context in contexts:
+            lines.append(
+                f"| {self._cell(context.kind)} | {self._cell(context.status)} | "
+                f"{self._cell(context.login_status)} | "
+                f"{self._cell(context.session_validation_status)} | "
+                f"{self._cell(context.collection_status)} | "
+                f"{self._cell(context.completeness)} | {context.asset_count} | "
+                f"{context.failure_count} |"
+            )
+        if not contexts:
+            lines.append("| - | unknown | unknown | unknown | unknown | unknown | 0 | 0 |")
+
+        lines.extend(
+            [
+                "",
+                "## 覆盖差异分类计数",
+                "",
+                "| 分类 | 数量 |",
+                "|---|---:|",
+            ]
+        )
+        for classification, count in sorted(classification_counts.items()):
+            lines.append(f"| {self._cell(classification)} | {count} |")
+        if not classification_counts:
+            lines.append("| 无 | 0 |")
+
+        lines.extend(
+            [
+                "",
+                "## 被动覆盖差异",
+                "",
+                "覆盖差异不是已确认漏洞；它们是需要结合业务授权模型复核的被动观察。",
+                "",
+                "| 资产身份 | anonymous | user | admin | 分类 | 置信度 |",
+                "|---|---|---|---|---|---|",
+            ]
+        )
+        for difference in differences:
+            lines.append(
+                f"| `{self._cell(difference.identity_key)}` | "
+                f"{self._cell(difference.anonymous_state)} | "
+                f"{self._cell(difference.user_state)} | "
+                f"{self._cell(difference.admin_state)} | "
+                f"{self._cell(difference.classification)} | "
+                f"{self._cell(difference.confidence)} |"
+            )
+        if not differences:
+            lines.append("| - | unknown | unknown | unknown | 无可比较差异 | low |")
+
+        lines.extend(["", "## 属性不一致详情", ""])
+        inconsistent = [item for item in differences if item.classification == "inconsistent"]
+        for difference in inconsistent:
+            lines.extend(
+                [
+                    f"### `{self._inline(difference.identity_key)}`",
+                    "",
+                    "| 上下文 | 状态 | URL | 标题 | Content-Type | 内容签名 |",
+                    "|---|---:|---|---|---|---|",
+                ]
+            )
+            summaries = difference.context_summaries or {}
+            for kind in ("anonymous", "user", "admin"):
+                summary = summaries.get(kind)
+                if not isinstance(summary, dict):
+                    continue
+                lines.append(
+                    f"| {kind} | {self._cell(str(summary.get('status_code') or '-'))} | "
+                    f"{self._cell(str(summary.get('url') or '-'))} | "
+                    f"{self._cell(str(summary.get('title') or '-'))} | "
+                    f"{self._cell(str(summary.get('content_type') or '-'))} | "
+                    f"{self._cell(str(summary.get('content_signature') or '-'))} |"
+                )
+        if not inconsistent:
+            lines.append("未观察到三上下文均存在但稳定属性不一致的资产。")
+
+        lines.extend(
+            [
+                "",
+                "## 被动观察与证据索引",
+                "",
+                "| 资产身份 | anonymous | user | admin |",
+                "|---|---|---|---|",
+            ]
+        )
+        for difference in differences:
+            summaries = difference.context_summaries or {}
+            asset_refs: list[str] = []
+            for kind in ("anonymous", "user", "admin"):
+                summary = summaries.get(kind)
+                asset_id = summary.get("asset_id") if isinstance(summary, dict) else None
+                asset_refs.append(f"A{asset_id}" if isinstance(asset_id, int) else "-")
+            lines.append(
+                f"| `{self._cell(difference.identity_key)}` | "
+                f"{asset_refs[0]} | {asset_refs[1]} | {asset_refs[2]} |"
+            )
+        if not differences:
+            lines.append("| - | - | - | - |")
+
+        lines.extend(["", "## 分类说明", ""])
+        for difference in differences:
+            lines.append(
+                f"- `{self._inline(difference.identity_key)}`："
+                f"{self._inline(difference.diagnostic or '无额外诊断。')}"
+            )
+        if not differences:
+            lines.append("未生成覆盖分类。")
+
+        lines.extend(["", "## 失败与未覆盖部分", ""])
+        incomplete_contexts = [
+            context
+            for context in contexts
+            if context.collection_status != "completed" or context.completeness != "complete"
+        ]
+        for context in incomplete_contexts:
+            lines.append(
+                f"- {self._inline(context.kind)}："
+                f"采集={self._inline(context.collection_status)}，"
+                f"完整性={self._inline(context.completeness)}，"
+                f"代码={self._inline(context.error_code or '-')}"
+            )
+        for failure in sorted(run.failures, key=lambda item: item.id):
+            lines.append(
+                f"- 阶段={self._inline(failure.stage)}，"
+                f"代码={self._inline(failure.code)}，尝试={failure.attempt}"
+            )
+        if not incomplete_contexts and not run.failures:
+            lines.append("未记录上下文缺失或阶段失败。")
+
+        lines.extend(["", "## 阶段记录", ""])
+        for stage in stages:
+            status = (
+                "completed"
+                if stage.name == "report" and stage.status == "running"
+                else stage.status
+            )
+            summary = (
+                "本认证覆盖报告已生成。"
+                if stage.name == "report" and stage.status == "running"
+                else stage.summary
+            )
+            lines.append(
+                f"- {self._inline(stage.name)}：{self._inline(status)}；"
+                f"{self._inline(summary or '-')}"
+            )
+
+        lines.extend(
+            [
+                "",
+                "## 生成时间",
+                "",
+                f"- {generated_at.isoformat()}",
+                "",
+                "---",
+                "本报告仅反映已授权边界内的被动认证覆盖结果。",
+            ]
+        )
+        return lines
 
     def _render(self, run: ScanRun, generated_at: datetime) -> list[str]:
         failures = sorted(run.failures, key=lambda item: item.id)

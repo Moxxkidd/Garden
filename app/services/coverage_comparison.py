@@ -129,11 +129,14 @@ class CoverageComparisonService:
 
     def _stable_fields(self, asset: ScanAsset) -> dict[str, object]:
         attributes = asset.attributes if isinstance(asset.attributes, dict) else {}
+        content_type = attributes.get("content_type")
+        if isinstance(content_type, str):
+            content_type = content_type.split(";", maxsplit=1)[0].strip().lower() or None
         return {
             "status_code": asset.status_code,
             "url": redacted_observed_url(asset.url),
             "title": asset.title,
-            "content_type": attributes.get("content_type"),
+            "content_type": content_type,
             "content_signature": attributes.get("content_signature"),
         }
 

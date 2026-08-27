@@ -44,6 +44,8 @@ class ObservedPage:
     discovered_urls: list[str]
     status_code: int | None = None
     cache_control: str | None = None
+    content_type: str | None = None
+    response_text: str | None = None
     text_preview: str | None = None
 
 
@@ -113,7 +115,7 @@ class SyncPlaywrightInventoryGateway:
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=True)
+                browser = playwright.chromium.launch(headless=True, channel="chromium")
                 context = self._build_context(
                     browser,
                     target.base_url,
@@ -201,6 +203,10 @@ class SyncPlaywrightInventoryGateway:
                             cache_control=(
                                 response.header_value("cache-control") if response else None
                             ),
+                            content_type=(
+                                response.header_value("content-type") if response else None
+                            ),
+                            response_text=self._extract_navigation_response_text(response),
                             text_preview=self._extract_page_preview(page),
                         )
                     )
@@ -325,6 +331,17 @@ class SyncPlaywrightInventoryGateway:
         except Exception:
             return None
         return self._normalize_preview(preview)
+
+    def _extract_navigation_response_text(self, response) -> str | None:
+        if response is None:
+            return None
+        content_type = (response.header_value("content-type") or "").lower()
+        if not any(token in content_type for token in ("json", "text", "html", "xml")):
+            return None
+        try:
+            return response.text()[: 256 * 1024]
+        except BaseException:
+            return None
 
     def _extract_response_preview(self, response, content_type: str | None) -> str | None:
         normalized_type = (content_type or "").lower()

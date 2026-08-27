@@ -161,10 +161,14 @@ class DefaultContextCollectionGateway:
                 status_code=page.status_code,
                 title=page.title,
                 attributes={
-                    "content_type": "text/html",
+                    "content_type": page.content_type or "text/html",
                     "cache_control": page.cache_control,
                     "depth": page.depth,
-                    "response_text": page.text_preview or "",
+                    "response_text": (
+                        page.response_text
+                        if page.response_text is not None
+                        else page.text_preview or ""
+                    ),
                 },
             )
             for page in result.pages

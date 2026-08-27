@@ -45,7 +45,7 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=True)
+                browser = playwright.chromium.launch(headless=True, channel="chromium")
                 context = browser.new_context()
                 page = context.new_page()
                 page.goto(
@@ -123,7 +123,7 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=True)
+                browser = playwright.chromium.launch(headless=True, channel="chromium")
                 context = browser.new_context(storage_state=storage_state)
                 page = context.new_page()
                 page.goto(
