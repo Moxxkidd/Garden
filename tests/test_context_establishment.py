@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pytest
 from sqlalchemy import select
 
+from app.cli.paths import GardenPaths
 from app.core.errors import InputValidationError
 from app.db.bootstrap import get_session
 from app.models.audit_event import AuditEvent
@@ -17,6 +18,7 @@ from app.models.scan_run import ScanRunStage
 from app.models.target import Target
 from app.schemas.auth import LoginExecutionResult, SessionValidationResult
 from app.services.context_establishment import ContextEstablishmentService
+from app.services.ephemeral_secret_store import EphemeralSecretStore
 from app.services.login_configs import encode_inline_login_config
 from app.services.scan_pipeline import ScanPipeline
 from app.services.session_storage import SessionStorageService
@@ -308,6 +310,110 @@ def test_establish_updates_existing_contexts_and_writes_redacted_audit(db_sessio
     assert "cookie" not in serialized
     assert "authorization" not in serialized
     assert "payload" not in serialized
+
+
+def test_establish_consumes_temporary_profile_secrets(db_session, profiles, tmp_path):
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    refs = []
+    for profile_id in (profiles.user_id, profiles.admin_id):
+        profile = db_session.get(CredentialProfile, profile_id)
+        profile.secret_ref = store.write(f"secret-{profile.role}")
+        refs.append(profile.secret_ref)
+    run = make_profile_run(db_session, profiles)
+
+    ContextEstablishmentService(
+        auth_service=SuccessfulAuthService(),
+        ephemeral_store=store,
+    ).establish(db_session, run)
+
+    assert all(not store.path_for(ref).exists() for ref in refs)
+
+
+def test_failed_establishment_still_consumes_temporary_profile_secrets(
+    db_session, profiles, tmp_path
+):
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    refs = []
+    for profile_id in (profiles.user_id, profiles.admin_id):
+        profile = db_session.get(CredentialProfile, profile_id)
+        profile.secret_ref = store.write(f"secret-{profile.role}")
+        refs.append(profile.secret_ref)
+    run = make_profile_run(db_session, profiles)
+
+    ContextEstablishmentService(
+        auth_service=FailingAuthService(profiles.user_id),
+        ephemeral_store=store,
+    ).establish(db_session, run)
+
+    assert all(not store.path_for(ref).exists() for ref in refs)
+
+
+def test_invalid_authenticated_context_still_consumes_temporary_secrets(
+    db_session, profiles, tmp_path
+):
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    refs = []
+    for profile_id in (profiles.user_id, profiles.wrong_role_id):
+        profile = db_session.get(CredentialProfile, profile_id)
+        profile.secret_ref = store.write(f"secret-{profile.role}")
+        refs.append(profile.secret_ref)
+    run = make_profile_run(db_session, profiles, profiles.wrong_role_id)
+
+    with pytest.raises(InputValidationError, match="admin"):
+        ContextEstablishmentService(
+            auth_service=SuccessfulAuthService(),
+            ephemeral_store=store,
+        ).establish(db_session, run)
+
+    assert all(not store.path_for(ref).exists() for ref in refs)
+
+
+def test_default_establishment_resolves_temporary_profile_secrets(db_session, profiles, tmp_path):
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    refs = []
+    for profile_id in (profiles.user_id, profiles.admin_id):
+        profile = db_session.get(CredentialProfile, profile_id)
+        profile.secret_ref = store.write("never-audited-secret")
+        refs.append(profile.secret_ref)
+    run = make_profile_run(db_session, profiles)
+    adapter = RecordingHttpAdapter()
+    service = ContextEstablishmentService(ephemeral_store=store)
+    service.auth_service.http_adapter = adapter
+    service.auth_service.storage_service = SessionStorageService(tmp_path / "session-payloads")
+
+    contexts = service.establish(db_session, run)
+
+    assert context_by_kind(contexts, "user").status == "ready"
+    assert context_by_kind(contexts, "admin").status == "ready"
+    assert adapter.login_count == 2
+    assert all(not store.path_for(ref).exists() for ref in refs)
+
+
+def test_formal_runtime_default_establishment_uses_private_secret_root(
+    db_session, profiles, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("GARDEN_HOME", str(tmp_path / "garden-home"))
+    monkeypatch.setenv("GARDEN_CLI_RUNTIME", "1")
+    paths = GardenPaths.from_environment()
+    paths.ensure_directories()
+    store = EphemeralSecretStore(paths.secrets_dir)
+    refs = []
+    for profile_id in (profiles.user_id, profiles.admin_id):
+        profile = db_session.get(CredentialProfile, profile_id)
+        profile.secret_ref = store.write("never-audited-secret")
+        refs.append(profile.secret_ref)
+    run = make_profile_run(db_session, profiles)
+    adapter = RecordingHttpAdapter()
+    service = ContextEstablishmentService()
+    service.auth_service.http_adapter = adapter
+    service.auth_service.storage_service = SessionStorageService(tmp_path / "session-payloads")
+
+    contexts = service.establish(db_session, run)
+
+    assert context_by_kind(contexts, "user").status == "ready"
+    assert context_by_kind(contexts, "admin").status == "ready"
+    assert adapter.login_count == 2
+    assert all(not store.path_for(ref).exists() for ref in refs)
 
 
 @pytest.mark.parametrize(

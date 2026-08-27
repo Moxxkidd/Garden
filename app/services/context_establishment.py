@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.cli.paths import formal_runtime_paths
 from app.core.errors import InputValidationError, ResourceNotFoundError
 from app.models.credential_profile import CredentialProfile
 from app.models.enums import (
@@ -21,6 +23,8 @@ from app.models.scan_context import ScanContext
 from app.models.scan_run import ScanRun
 from app.models.target import Target
 from app.services.audit import AuditService
+from app.services.ephemeral_secret_store import EphemeralSecretStore
+from app.services.secret_resolver import SecretResolver
 from app.services.sessions import AuthSessionService
 
 
@@ -32,9 +36,23 @@ class ContextEstablishmentService:
         *,
         auth_service: AuthSessionService | None = None,
         audit_service: AuditService | None = None,
+        ephemeral_store: EphemeralSecretStore | None = None,
     ) -> None:
-        self.auth_service = auth_service or AuthSessionService()
+        if ephemeral_store is None:
+            formal_paths = formal_runtime_paths()
+            ephemeral_store = EphemeralSecretStore(
+                formal_paths.secrets_dir
+                if formal_paths is not None
+                else Path.cwd() / "data" / "ephemeral-secrets"
+            )
+        if auth_service is not None:
+            self.auth_service = auth_service
+        else:
+            self.auth_service = AuthSessionService(
+                secret_resolver=SecretResolver(ephemeral_store=ephemeral_store)
+            )
         self.audit_service = audit_service or AuditService()
+        self.ephemeral_store = ephemeral_store
 
     def establish(self, session: Session, run: ScanRun) -> list[ScanContext]:
         contexts = self._existing_contexts(session, run)
@@ -42,22 +60,38 @@ class ContextEstablishmentService:
         if run.mode == AssessmentMode.QUICK.value:
             return [anonymous]
 
-        user_profile, admin_profile = self._validate_authenticated_run(session, run, contexts)
-        user = self._establish_authenticated(
-            session,
-            run,
-            contexts[ContextKind.USER.value],
-            user_profile,
-        )
-        admin = self._establish_authenticated(
-            session,
-            run,
-            contexts[ContextKind.ADMIN.value],
-            admin_profile,
-        )
-        self._set_run_completeness(run, user, admin)
-        session.flush()
-        return [anonymous, user, admin]
+        try:
+            user_profile, admin_profile = self._validate_authenticated_run(session, run, contexts)
+            user = self._establish_authenticated(
+                session,
+                run,
+                contexts[ContextKind.USER.value],
+                user_profile,
+            )
+            admin = self._establish_authenticated(
+                session,
+                run,
+                contexts[ContextKind.ADMIN.value],
+                admin_profile,
+            )
+            self._set_run_completeness(run, user, admin)
+            session.flush()
+            return [anonymous, user, admin]
+        finally:
+            self._delete_context_temporary_secrets(session, contexts)
+
+    def _delete_context_temporary_secrets(
+        self,
+        session: Session,
+        contexts: dict[str, ScanContext],
+    ) -> None:
+        if self.ephemeral_store is None:
+            return
+        for kind in (ContextKind.USER.value, ContextKind.ADMIN.value):
+            profile_id = contexts[kind].credential_profile_id
+            profile = session.get(CredentialProfile, profile_id) if profile_id is not None else None
+            if profile is not None and profile.secret_ref.startswith("ephemeral-file://"):
+                self.ephemeral_store.delete(profile.secret_ref)
 
     def _existing_contexts(self, session: Session, run: ScanRun) -> dict[str, ScanContext]:
         contexts = {

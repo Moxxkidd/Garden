@@ -48,6 +48,10 @@ class GardenPaths:
         return self.home / "runtime"
 
     @property
+    def secrets_dir(self) -> Path:
+        return self.runtime_dir / "secrets"
+
+    @property
     def server_state_file(self) -> Path:
         return self.runtime_dir / "server.json"
 
@@ -68,6 +72,8 @@ class GardenPaths:
             self.runtime_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
+        self.secrets_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.secrets_dir.chmod(0o700)
 
 
 def formal_runtime_paths() -> GardenPaths | None:
