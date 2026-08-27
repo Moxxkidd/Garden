@@ -54,6 +54,23 @@ class CredentialProfileService:
             )
         )
 
+    def list_for_target_role(
+        self,
+        session: Session,
+        target_id: int,
+        role: str,
+    ) -> list[CredentialProfile]:
+        return list(
+            session.scalars(
+                select(CredentialProfile)
+                .where(
+                    CredentialProfile.target_id == target_id,
+                    CredentialProfile.role == role,
+                )
+                .order_by(CredentialProfile.name, CredentialProfile.id)
+            )
+        )
+
     def get(self, session: Session, credential_id: int) -> CredentialProfile:
         credential = session.get(CredentialProfile, credential_id)
         if credential is None:

@@ -36,6 +36,34 @@ class AssessmentStartRequest(BaseModel):
         return self
 
 
+class PassiveCoverageStartRequest(BaseModel):
+    """Public passive-only coverage request used by guided and HTTP adapters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(min_length=1, max_length=1000)
+    target_id: int = Field(gt=0)
+    user_profile_id: int = Field(gt=0)
+    admin_profile_id: int = Field(gt=0)
+    options: ScanOptions = Field(default_factory=ScanOptions)
+
+    @property
+    def active_checks_enabled(self) -> bool:
+        return False
+
+    def to_assessment_request(self) -> AssessmentStartRequest:
+        return AssessmentStartRequest(
+            url=self.url,
+            mode=AssessmentMode.AUTHENTICATED_COVERAGE,
+            target_id=self.target_id,
+            user_profile_id=self.user_profile_id,
+            admin_profile_id=self.admin_profile_id,
+            active_checks_enabled=False,
+            authorization_confirmed=False,
+            options=self.options,
+        )
+
+
 class CoverageDifferenceView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
