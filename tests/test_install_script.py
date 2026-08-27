@@ -63,7 +63,7 @@ if [ "${1:-}" = "-m" ] && [ "${2:-}" = "pip" ]; then
 fi
 if [ "${1:-}" = "-m" ] && [ "${2:-}" = "app.cli.main" ]; then
   if [ "${3:-}" = "version" ] || [ "${3:-}" = "--version" ]; then
-    echo "Garden 0.2.0"
+    echo "Garden 0.3.0"
   fi
   exit 0
 fi
@@ -73,7 +73,7 @@ if [ "${1:-}" = "-I" ] && [ "$(basename "${2:-}")" = "launcher.py" ]; then
     exit 44
   fi
   if [ "${3:-}" = "version" ] || [ "${3:-}" = "--version" ]; then
-    echo "Garden 0.2.0"
+    echo "Garden 0.3.0"
   fi
   exit 0
 fi
@@ -174,9 +174,9 @@ def test_installed_launchers_survive_runtime_move(tmp_path):
     )
 
     assert garden.returncode == 0, garden.stderr
-    assert garden.stdout.strip() == "Garden 0.2.0"
+    assert garden.stdout.strip() == "Garden 0.3.0"
     assert gardenctl.returncode == 0, gardenctl.stderr
-    assert gardenctl.stdout.strip() == "Garden 0.2.0"
+    assert gardenctl.stdout.strip() == "Garden 0.3.0"
 
 
 def test_installer_discovers_usable_versioned_python_after_old_python3(tmp_path):
@@ -426,7 +426,7 @@ def test_installed_launcher_does_not_use_module_mode_from_repository_cwd(tmp_pat
     )
 
     assert launched.returncode == 0, launched.stderr
-    assert launched.stdout.strip() == "Garden 0.2.0"
+    assert launched.stdout.strip() == "Garden 0.3.0"
     launcher = (bin_dir / "garden").read_text(encoding="utf-8")
     assert "-m app.cli.main" not in launcher
     assert "launcher.py" in launcher

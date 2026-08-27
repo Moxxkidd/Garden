@@ -63,6 +63,33 @@ garden stop
 
 配置文件由新安装器创建时会带有托管版本标记。升级遇到旧安装器原样生成、仍带旧版 guardrail 注释的 `GARDEN_ALLOW_NON_LOCAL_TARGETS=false` 时，会迁移为当前默认的公网目标策略；没有旧版生成特征的自定义 local-only 配置保持不变。
 
+### 被动认证覆盖（可选高级入口）
+
+默认 quick 体验保持不变；只有需要比较匿名、普通用户和管理员可见面时才运行：
+
+```bash
+garden coverage URL
+```
+
+交互式向导会选择或创建同源 Target，并依次选择或创建角色精确为 `user`、`admin` 的凭据档案。敏感值通过隐藏输入读取，短期保存在 Garden 私有目录中权限为 `0600` 的文件；档案只记录 `ephemeral-file://` 引用，会话建立和验证结束后立即消费删除。原始密码、令牌、Cookie 和 Authorization 不进入命令参数、普通数据库字段、日志或报告。
+
+非交互环境必须同时提供两个档案 ID：
+
+```bash
+garden coverage https://app.example/ \
+  --user-profile 12 \
+  --admin-profile 13 \
+  --non-interactive
+```
+
+该版本只执行 anonymous/user/admin 三上下文的有界被动采集，主动权限重放未执行。覆盖差异不是已确认漏洞；上下文不完整时，未观察到的资产标记为 `unknown`，需要先修复认证或采集完整性再判断。
+
+认证 coverage 使用 Playwright 建立和复用浏览器会话。开发环境首次运行前安装 Chromium：
+
+```bash
+.venv/bin/python -m playwright install chromium --no-shell
+```
+
 ## 三、本地开发部署
 
 ### 1. 克隆仓库
