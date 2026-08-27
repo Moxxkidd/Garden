@@ -64,6 +64,9 @@ def add_asset(
     url: str = "http://127.0.0.1:8000/",
     context_id: int | None = None,
     identity_key: str = "GET:/",
+    status_code: int | None = None,
+    title: str | None = None,
+    attributes: dict[str, object] | None = None,
 ) -> ScanAsset:
     asset = ScanAsset(
         scan_run_id=run.id,
@@ -72,7 +75,9 @@ def add_asset(
         asset_type="page",
         url=url,
         method="GET",
-        attributes={},
+        status_code=status_code,
+        title=title,
+        attributes=attributes or {},
         discovered_at=datetime.now(timezone.utc),
     )
     session.add(asset)
