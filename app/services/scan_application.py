@@ -170,11 +170,17 @@ class ScanApplicationService:
             run_id = run.id
         if request.mode == AssessmentMode.QUICK:
             self.dispatcher.submit(run_id, self.execute_scan)
+        else:
+            self.dispatcher.submit(run_id, self.execute_authenticated_assessment)
         return self.get_assessment(run_id)
 
     def execute_scan(self, scan_run_id: int) -> None:
         with session_scope() as session:
             self.pipeline.execute(session, scan_run_id)
+
+    def execute_authenticated_assessment(self, scan_run_id: int) -> None:
+        with session_scope() as session:
+            self.pipeline.execute_authenticated(session, scan_run_id)
 
     def cancel_scan(self, scan_run_id: int) -> ScanRunView:
         """立即标记一个尚未结束的扫描为已中断，保留已写入的证据。"""

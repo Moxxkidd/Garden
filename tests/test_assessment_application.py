@@ -170,7 +170,8 @@ def test_completed_quick_context_reflects_real_collection(completed_quick_run):
     assert all(asset.identity_key for asset in assets)
 
 
-def test_start_assessment_creates_three_contexts(assessment_profiles, inline_service):
+def test_start_assessment_creates_three_contexts(assessment_profiles, tmp_path):
+    service, dispatcher = build_holding_service(tmp_path)
     request = AssessmentStartRequest(
         url=assessment_profiles.url,
         mode="authenticated_coverage",
@@ -178,7 +179,7 @@ def test_start_assessment_creates_three_contexts(assessment_profiles, inline_ser
         admin_profile_id=assessment_profiles.admin_id,
     )
 
-    view = inline_service.start_assessment(request)
+    view = service.start_assessment(request)
 
     assert [item.kind for item in view.contexts] == ["anonymous", "user", "admin"]
     assert [stage.name for stage in view.stages] == [
@@ -192,12 +193,36 @@ def test_start_assessment_creates_three_contexts(assessment_profiles, inline_ser
         "report",
     ]
     assert view.status == "queued"
+    assert dispatcher.ids == [view.id]
+
+
+def test_new_authenticated_and_quick_runs_are_dispatched_once(
+    tmp_path,
+    assessment_profiles,
+) -> None:
+    service, dispatcher = build_holding_service(tmp_path)
+    request = AssessmentStartRequest(
+        url=assessment_profiles.url,
+        mode="authenticated_coverage",
+        user_profile_id=assessment_profiles.user_id,
+        admin_profile_id=assessment_profiles.admin_id,
+    )
+
+    authenticated = service.start_assessment(request)
+    duplicate = service.start_assessment(request)
+    quick = service.start_assessment(
+        AssessmentStartRequest(url=assessment_profiles.url, mode="quick")
+    )
+
+    assert duplicate.id == authenticated.id
+    assert dispatcher.ids == [authenticated.id, quick.id]
 
 
 def test_authenticated_assessment_can_reference_quick_source_run(
-    inline_service, completed_quick_run, assessment_profiles
+    completed_quick_run, assessment_profiles, tmp_path
 ):
-    view = inline_service.start_assessment(
+    service, _dispatcher = build_holding_service(tmp_path)
+    view = service.start_assessment(
         AssessmentStartRequest(
             url=completed_quick_run.normalized_url,
             mode="authenticated_coverage",
@@ -382,7 +407,13 @@ def test_active_key_distinguishes_mode_profiles_active_flag_and_full_options(
         len({base.id, changed_profile.id, changed_active_flag.id, changed_options.id, quick.id})
         == 5
     )
-    assert dispatcher.ids == [quick.id]
+    assert dispatcher.ids == [
+        base.id,
+        changed_profile.id,
+        changed_active_flag.id,
+        changed_options.id,
+        quick.id,
+    ]
 
 
 @pytest.mark.parametrize(

@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import InputValidationError, TargetPolicyError
+from app.models.credential_profile import CredentialProfile
 from app.models.enums import AssessmentMode, CompletenessStatus, ContextKind
 from app.models.scan_context import ScanContext
 from app.models.scan_run import (
@@ -35,7 +36,9 @@ from app.services.context_collection import (
     DefaultContextCollectionGateway,
 )
 from app.services.context_establishment import ContextEstablishmentService
+from app.services.coverage_comparison import CoverageComparisonService
 from app.services.coverage_identity import canonical_asset_identity, redacted_observed_url
+from app.services.ephemeral_secret_store import EphemeralSecretStore
 from app.services.scan_analysis import PassiveScanAnalyzer
 from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_network import (
@@ -53,6 +56,7 @@ PROGRESS_AFTER_STAGE = {
     ScanStageName.ESTABLISH_CONTEXTS.value: 18,
     ScanStageName.COLLECT.value: 58,
     ScanStageName.NORMALIZE.value: 68,
+    ScanStageName.COMPARE_COVERAGE.value: 76,
     ScanStageName.ANALYZE.value: 86,
     ScanStageName.REPORT.value: 100,
 }
@@ -77,6 +81,8 @@ class ScanPipeline:
         redaction_service: RedactionService | None = None,
         context_service: ContextEstablishmentService | None = None,
         context_collection_service: ContextCollectionService | None = None,
+        coverage_comparison_service: CoverageComparisonService | None = None,
+        ephemeral_secret_store: EphemeralSecretStore | None = None,
         clock=time.monotonic,
     ) -> None:
         self.policy = policy
@@ -87,6 +93,12 @@ class ScanPipeline:
         self.context_service = context_service or ContextEstablishmentService()
         self.context_collection_service = context_collection_service or ContextCollectionService(
             gateway=DefaultContextCollectionGateway(http_gateway=gateway)
+        )
+        self.coverage_comparison_service = (
+            coverage_comparison_service or CoverageComparisonService()
+        )
+        self.ephemeral_secret_store = ephemeral_secret_store or getattr(
+            self.context_service, "ephemeral_store", None
         )
         self.clock = clock
 
@@ -312,6 +324,174 @@ class ScanPipeline:
             self._finalize_quick_context(session, run)
             session.commit()
             self._try_failure_report(session, run)
+
+    def execute_authenticated(self, session: Session, scan_run_id: int) -> None:
+        """Execute the passive three-context workflow without authorization replay."""
+
+        run = session.get(ScanRun, scan_run_id)
+        if (
+            run is None
+            or run.mode != AssessmentMode.AUTHENTICATED_COVERAGE.value
+            or run.status not in {ScanRunStatus.QUEUED.value, ScanRunStatus.RUNNING.value}
+        ):
+            return
+        options = ScanOptions.model_validate(run.options)
+        deadline = self.clock() + float(options.overall_timeout_seconds or 90)
+        run.status = ScanRunStatus.RUNNING.value
+        run.started_at = run.started_at or datetime.now(timezone.utc)
+        session.commit()
+        try:
+            self._run_stage(
+                session,
+                run,
+                ScanStageName.VALIDATE.value,
+                deadline,
+                lambda: self._validate(run),
+            )
+            self.establish_contexts(session, run.id)
+            self.collect_contexts(session, run.id)
+            run = session.get(ScanRun, run.id)
+            self._run_stage(
+                session,
+                run,
+                ScanStageName.NORMALIZE.value,
+                deadline,
+                lambda: self._normalize(session, run),
+                enforce_deadline=False,
+            )
+            self._run_stage(
+                session,
+                run,
+                ScanStageName.COMPARE_COVERAGE.value,
+                deadline,
+                lambda: self._compare_coverage(session, run),
+                enforce_deadline=False,
+            )
+            self._skip_passive_replay(session, run)
+            self._run_stage(
+                session,
+                run,
+                ScanStageName.ANALYZE.value,
+                deadline,
+                lambda: self._analyze(session, run),
+                enforce_deadline=False,
+            )
+            self._run_stage(
+                session,
+                run,
+                ScanStageName.REPORT.value,
+                deadline,
+                lambda: self._report(session, run),
+                enforce_deadline=False,
+            )
+            self._check_interrupted(session, run.id)
+            run = session.get(ScanRun, run.id)
+            incomplete = any(
+                context.collection_status != "completed" or context.completeness != "complete"
+                for context in run.contexts
+            )
+            run.status = (
+                ScanRunStatus.INCOMPLETE.value if incomplete else ScanRunStatus.COMPLETED.value
+            )
+            if incomplete:
+                if run.completeness not in {
+                    CompletenessStatus.MISSING_USER_CONTEXT.value,
+                    CompletenessStatus.MISSING_ADMIN_CONTEXT.value,
+                }:
+                    run.completeness = CompletenessStatus.INCOMPLETE.value
+            else:
+                run.completeness = CompletenessStatus.COMPLETE.value
+            run.current_stage = "finished"
+            run.progress = 100
+            run.finished_at = datetime.now(timezone.utc)
+            run.active_key = None
+            session.commit()
+        except ScanInterrupted:
+            session.rollback()
+            return
+        except Exception:  # noqa: BLE001 - persisted at the orchestration boundary
+            session.rollback()
+            run = session.get(ScanRun, scan_run_id)
+            if run is None:
+                raise
+            stage_name = run.current_stage if run.current_stage in STAGES else "pipeline"
+            safe_message = "Authenticated coverage orchestration failed."
+            stage = self._stage(session, run.id, stage_name)
+            if stage is not None:
+                stage.status = "failed"
+                stage.error_code = "authenticated_pipeline_failed"
+                stage.error_message = safe_message
+                stage.finished_at = datetime.now(timezone.utc)
+            run.status = ScanRunStatus.FAILED.value
+            run.completeness = CompletenessStatus.INCOMPLETE.value
+            run.error_code = "authenticated_pipeline_failed"
+            run.error_message = safe_message
+            run.finished_at = datetime.now(timezone.utc)
+            run.active_key = None
+            self._record_failure(
+                session,
+                run,
+                stage=stage_name,
+                code="authenticated_pipeline_failed",
+                message=safe_message,
+                url=None,
+                retryable=False,
+                attempt=1,
+            )
+            self._skip_pending_authenticated_stages(session, run, stage_name)
+            session.commit()
+            self._try_failure_report(session, run)
+        finally:
+            self._cleanup_temporary_context_secrets(session, scan_run_id)
+
+    def _compare_coverage(self, session: Session, run: ScanRun):
+        summary = self.coverage_comparison_service.compare(session, run)
+        return summary, f"Compared {len(summary.differences)} passive asset identity difference(s)."
+
+    def _skip_passive_replay(self, session: Session, run: ScanRun) -> None:
+        stage = self._stage(session, run.id, ScanStageName.REPLAY_AUTHORIZATION.value)
+        if stage is None:
+            raise RuntimeError("Missing persisted stage 'replay_authorization'.")
+        stage.status = "skipped"
+        stage.summary = "v0.3 仅执行被动认证覆盖；主动权限重放未执行。"
+        stage.finished_at = datetime.now(timezone.utc)
+        session.commit()
+
+    def _skip_pending_authenticated_stages(
+        self,
+        session: Session,
+        run: ScanRun,
+        failed_stage_name: str,
+    ) -> None:
+        failed = self._stage(session, run.id, failed_stage_name)
+        failed_position = failed.position if failed is not None else 0
+        now = datetime.now(timezone.utc)
+        for stage in run.stages:
+            if (
+                stage.position > failed_position
+                and stage.status == "pending"
+                and stage.name != ScanStageName.REPORT.value
+            ):
+                stage.status = "skipped"
+                stage.summary = "Skipped after an earlier authenticated coverage stage failed."
+                stage.finished_at = now
+
+    def _cleanup_temporary_context_secrets(
+        self,
+        session: Session,
+        scan_run_id: int,
+    ) -> None:
+        if self.ephemeral_secret_store is None:
+            return
+        contexts = list(
+            session.scalars(select(ScanContext).where(ScanContext.scan_run_id == scan_run_id))
+        )
+        for context in contexts:
+            if context.credential_profile_id is None:
+                continue
+            profile = session.get(CredentialProfile, context.credential_profile_id)
+            if profile is not None and profile.secret_ref.startswith("ephemeral-file://"):
+                self.ephemeral_secret_store.delete(profile.secret_ref)
 
     def _run_stage(self, session, run, name, deadline, operation, *, enforce_deadline: bool = True):
         self._check_interrupted(session, run.id)
@@ -580,14 +760,12 @@ class ScanPipeline:
         )
         candidates = self.analyzer.analyze(assets, evidence)
         now = datetime.now(timezone.utc)
+        persisted_keys = set(
+            session.scalars(select(ScanFinding.dedup_key).where(ScanFinding.scan_run_id == run.id))
+        )
+        created_count = 0
         for candidate in candidates:
-            existing = session.scalar(
-                select(ScanFinding).where(
-                    ScanFinding.scan_run_id == run.id,
-                    ScanFinding.dedup_key == candidate.dedup_key,
-                )
-            )
-            if existing is not None:
+            if candidate.dedup_key in persisted_keys:
                 continue
             session.add(
                 ScanFinding(
@@ -596,8 +774,10 @@ class ScanPipeline:
                     **candidate.model_dump(),
                 )
             )
+            persisted_keys.add(candidate.dedup_key)
+            created_count += 1
         session.flush()
-        return None, f"Created {len(candidates)} passive, explainable finding(s)."
+        return None, f"Created {created_count} passive, explainable finding(s)."
 
     def _report(self, session: Session, run: ScanRun):
         path = self.report_service.generate(session, run.id)
