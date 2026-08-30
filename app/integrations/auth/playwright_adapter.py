@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urljoin
 
@@ -22,7 +23,13 @@ from app.services.scan_network import TargetNetworkPolicy
 
 class PlaywrightGatewayProtocol:
     def login(
-        self, config: PlaywrightLoginConfig, target: Target, username: str, password: str
+        self,
+        config: PlaywrightLoginConfig,
+        target: Target,
+        username: str,
+        password: str,
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         raise NotImplementedError
 
@@ -31,6 +38,8 @@ class PlaywrightGatewayProtocol:
         config: PlaywrightLoginConfig,
         target: Target,
         storage_state: dict[str, Any],
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         raise NotImplementedError
 
@@ -42,7 +51,13 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
         )
 
     def login(
-        self, config: PlaywrightLoginConfig, target: Target, username: str, password: str
+        self,
+        config: PlaywrightLoginConfig,
+        target: Target,
+        username: str,
+        password: str,
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         try:
             from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -57,7 +72,12 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
                 browser = playwright.chromium.launch(headless=True, channel="chromium")
                 context = browser.new_context()
                 page = context.new_page()
-                violations = self._install_request_guard(context, page, target.base_url)
+                violations = self._install_request_guard(
+                    context,
+                    page,
+                    target.base_url,
+                    before_request=before_request,
+                )
                 self._guarded_goto(
                     page,
                     target.base_url,
@@ -127,6 +147,8 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
         config: PlaywrightLoginConfig,
         target: Target,
         storage_state: dict[str, Any],
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         try:
             from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -141,7 +163,12 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
                 browser = playwright.chromium.launch(headless=True, channel="chromium")
                 context = browser.new_context(storage_state=storage_state)
                 page = context.new_page()
-                violations = self._install_request_guard(context, page, target.base_url)
+                violations = self._install_request_guard(
+                    context,
+                    page,
+                    target.base_url,
+                    before_request=before_request,
+                )
                 self._guarded_goto(
                     page,
                     target.base_url,
@@ -173,13 +200,22 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
         except PlaywrightTimeoutError as error:
             raise TimeoutError(str(error)) from error
 
-    def _install_request_guard(self, context, page, base_url: str) -> list[TargetPolicyError]:
+    def _install_request_guard(
+        self,
+        context,
+        page,
+        base_url: str,
+        *,
+        before_request: Callable[[], None] | None,
+    ) -> list[TargetPolicyError]:
         violations: list[TargetPolicyError] = []
         cdp = context.new_cdp_session(page)
 
         def guard_request(event: dict[str, Any]) -> None:
             request_id = str(event["requestId"])
             try:
+                if before_request is not None:
+                    before_request()
                 self.network_guard.ensure_allowed(base_url, str(event["request"]["url"]))
             except TargetPolicyError as error:
                 violations.append(error)
@@ -365,9 +401,25 @@ class PlaywrightLoginAdapter:
         credential_profile: CredentialProfile,
         secret_value: str,
         config: PlaywrightLoginConfig,
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> LoginExecutionResult:
         try:
-            result = self.gateway.login(config, target, credential_profile.username, secret_value)
+            if before_request is None:
+                result = self.gateway.login(
+                    config,
+                    target,
+                    credential_profile.username,
+                    secret_value,
+                )
+            else:
+                result = self.gateway.login(
+                    config,
+                    target,
+                    credential_profile.username,
+                    secret_value,
+                    before_request=before_request,
+                )
         except TimeoutError as error:
             return self._failure(
                 target,
@@ -432,13 +484,23 @@ class PlaywrightLoginAdapter:
         credential_profile: CredentialProfile,
         config: PlaywrightLoginConfig,
         stored_payload: dict[str, object],
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> SessionValidationResult:
         try:
-            result = self.gateway.validate(
-                config,
-                target,
-                stored_payload.get("storage_state", {}),
-            )
+            if before_request is None:
+                result = self.gateway.validate(
+                    config,
+                    target,
+                    stored_payload.get("storage_state", {}),
+                )
+            else:
+                result = self.gateway.validate(
+                    config,
+                    target,
+                    stored_payload.get("storage_state", {}),
+                    before_request=before_request,
+                )
         except TimeoutError as error:
             return SessionValidationResult(
                 valid=False,
@@ -491,6 +553,8 @@ class PlaywrightLoginAdapter:
         secret_value: str,
         config: PlaywrightLoginConfig,
         stored_payload: dict[str, object],
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> LoginExecutionResult:
         if not config.refresh_via_relogin:
             return self._failure(
@@ -499,7 +563,13 @@ class PlaywrightLoginAdapter:
                 LoginFailureReason.CONFIG_ERROR,
                 "Playwright refresh is not configured.",
             )
-        return self.login(target, credential_profile, secret_value, config)
+        return self.login(
+            target,
+            credential_profile,
+            secret_value,
+            config,
+            before_request=before_request,
+        )
 
     def _is_success(self, config: PlaywrightLoginConfig, result: dict[str, Any]) -> bool:
         current_url = str(result.get("current_url", ""))

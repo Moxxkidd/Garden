@@ -42,15 +42,19 @@ def _page(title: str, heading: str, links: list[tuple[str, str]]) -> HTMLRespons
 
 
 @app.get("/", response_class=HTMLResponse)
-def anonymous_home() -> HTMLResponse:
+def coverage_home(request: Request) -> HTMLResponse:
+    role = _role(request)
+    links = [("/shared", "Shared"), ("/api/profile", "Profile API")]
+    if role == "anonymous":
+        links.append(("/anonymous-banner", "Anonymous banner"))
+    if role in {"user", "admin"}:
+        links.append(("/account", "Account"))
+    if role == "admin":
+        links.append(("/admin/users", "Admin users"))
     return _page(
         "Coverage Home",
-        "Anonymous coverage",
-        [
-            ("/shared", "Shared"),
-            ("/anonymous-banner", "Anonymous banner"),
-            ("/api/profile", "Profile API"),
-        ],
+        f"{role.title()} coverage",
+        links,
     )
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 from urllib.parse import urljoin
@@ -47,13 +48,17 @@ class HttpLoginAdapter:
         credential_profile: CredentialProfile,
         secret_value: str,
         config: HttpLoginConfig,
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> LoginExecutionResult:
         context = self._build_template_context(target, credential_profile, secret_value)
         last_exception: Exception | None = None
         for _ in range(config.retry_attempts):
             try:
                 with self._build_client(
-                    timeout=config.request_timeout_seconds, target=target
+                    timeout=config.request_timeout_seconds,
+                    target=target,
+                    before_request=before_request,
                 ) as client:
                     response = self._send_request(client, target, config.login_request, context)
                     if response.status_code in {401, 403}:
@@ -129,12 +134,15 @@ class HttpLoginAdapter:
         credential_profile: CredentialProfile,
         config: HttpLoginConfig,
         stored_payload: dict[str, object],
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> SessionValidationResult:
         try:
             with self._build_client(
                 timeout=config.request_timeout_seconds,
                 cookies=stored_payload.get("cookies", {}),
                 target=target,
+                before_request=before_request,
             ) as client:
                 response = self._send_request(
                     client,
@@ -206,6 +214,8 @@ class HttpLoginAdapter:
         secret_value: str,
         config: HttpLoginConfig,
         stored_payload: dict[str, object],
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> LoginExecutionResult:
         if config.refresh_request is None:
             return self._failure(
@@ -219,6 +229,7 @@ class HttpLoginAdapter:
                 timeout=config.request_timeout_seconds,
                 cookies=stored_payload.get("cookies", {}),
                 target=target,
+                before_request=before_request,
             ) as client:
                 response = self._send_request(
                     client,
@@ -285,8 +296,11 @@ class HttpLoginAdapter:
         timeout: int,
         cookies: dict[str, object] | None = None,
         target: Target,
+        before_request: Callable[[], None] | None,
     ) -> httpx.Client:
         def guard_request(request: httpx.Request) -> None:
+            if before_request is not None:
+                before_request()
             self.network_guard.ensure_allowed(target.base_url, str(request.url))
 
         return httpx.Client(

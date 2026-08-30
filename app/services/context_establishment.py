@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -54,7 +55,13 @@ class ContextEstablishmentService:
         self.audit_service = audit_service or AuditService()
         self.ephemeral_store = ephemeral_store
 
-    def establish(self, session: Session, run: ScanRun) -> list[ScanContext]:
+    def establish(
+        self,
+        session: Session,
+        run: ScanRun,
+        *,
+        before_request: Callable[[], None] | None = None,
+    ) -> list[ScanContext]:
         contexts = self._existing_contexts(session, run)
         anonymous = self._establish_anonymous(session, run, contexts)
         if run.mode == AssessmentMode.QUICK.value:
@@ -67,12 +74,14 @@ class ContextEstablishmentService:
                 run,
                 contexts[ContextKind.USER.value],
                 user_profile,
+                before_request=before_request,
             )
             admin = self._establish_authenticated(
                 session,
                 run,
                 contexts[ContextKind.ADMIN.value],
                 admin_profile,
+                before_request=before_request,
             )
             self._set_run_completeness(run, user, admin)
             session.flush()
@@ -167,12 +176,24 @@ class ContextEstablishmentService:
         run: ScanRun,
         context: ScanContext,
         profile: CredentialProfile,
+        *,
+        before_request: Callable[[], None] | None,
     ) -> ScanContext:
         now = datetime.now(timezone.utc)
         context.started_at = context.started_at or now
         try:
             with session.begin_nested():
-                auth_session = self.auth_service.ensure_valid_for_profile(session, profile.id)
+                if before_request is None:
+                    auth_session = self.auth_service.ensure_valid_for_profile(
+                        session,
+                        profile.id,
+                    )
+                else:
+                    auth_session = self.auth_service.ensure_valid_for_profile(
+                        session,
+                        profile.id,
+                        before_request=before_request,
+                    )
         except Exception:  # noqa: BLE001 - context boundary persists a redacted failure
             context.auth_session_id = None
             context.status = "failed"

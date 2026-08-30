@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
@@ -62,6 +63,8 @@ class ContextCollectionGateway(Protocol):
         self,
         run: ScanRun,
         context: ScanContext,
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> tuple[list[ObservedResource], list[ObservedRequest]]: ...
 
 
@@ -81,14 +84,18 @@ class DefaultContextCollectionGateway:
         self,
         run: ScanRun,
         context: ScanContext,
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> tuple[list[ObservedResource], list[ObservedRequest]]:
         if context.kind == "anonymous":
-            return self._collect_anonymous(run)
-        return self._collect_authenticated(run, context)
+            return self._collect_anonymous(run, before_request=before_request)
+        return self._collect_authenticated(run, context, before_request=before_request)
 
     def _collect_anonymous(
         self,
         run: ScanRun,
+        *,
+        before_request: Callable[[], None] | None,
     ) -> tuple[list[ObservedResource], list[ObservedRequest]]:
         options = ScanOptions.model_validate(run.options)
         queue: list[tuple[str, int]] = [(run.normalized_url, 0)]
@@ -101,7 +108,14 @@ class DefaultContextCollectionGateway:
             if url in seen or depth > options.max_depth or _origin(url) != origin:
                 continue
             seen.add(url)
-            result = self.http_gateway.fetch(url, options)
+            if before_request is None:
+                result = self.http_gateway.fetch(url, options)
+            else:
+                result = self.http_gateway.fetch(
+                    url,
+                    options,
+                    before_request=before_request,
+                )
             resources.append(
                 ObservedResource(
                     asset_type="page",
@@ -137,6 +151,8 @@ class DefaultContextCollectionGateway:
         self,
         run: ScanRun,
         context: ScanContext,
+        *,
+        before_request: Callable[[], None] | None,
     ) -> tuple[list[ObservedResource], list[ObservedRequest]]:
         target = run.target
         auth_session = context.auth_session
@@ -149,9 +165,13 @@ class DefaultContextCollectionGateway:
             InventoryBuildControls(
                 max_pages=options.max_pages,
                 max_depth=options.max_depth,
-                max_requests=min(500, max(1, options.max_pages * 10)),
+                max_requests=options.max_resources,
                 delay_ms=0,
+                request_timeout_seconds=options.request_timeout_seconds or 5.0,
+                retry_attempts=options.retry_attempts or 0,
             ),
+            start_url=run.normalized_url,
+            before_request=before_request,
         )
         resources = [
             ObservedResource(
@@ -229,10 +249,19 @@ class ContextCollectionService:
         session: Session,
         run: ScanRun,
         context: ScanContext,
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> ContextCollectionSummary:
         if context.scan_run_id != run.id:
             raise ValueError("采集上下文不属于指定验证运行。")
-        resources, requests = self.gateway.collect(run, context)
+        if before_request is None:
+            resources, requests = self.gateway.collect(run, context)
+        else:
+            resources, requests = self.gateway.collect(
+                run,
+                context,
+                before_request=before_request,
+            )
         asset_by_identity: dict[str, ScanAsset] = {}
         for resource in resources:
             asset = self._persist_resource(session, run, context, resource)

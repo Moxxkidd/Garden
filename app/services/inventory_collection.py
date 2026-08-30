@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -42,14 +43,21 @@ class InventoryCollectionService:
         target: Target,
         auth_session: AuthSession,
         controls: InventoryBuildControls,
+        *,
+        start_url: str | None = None,
+        before_request: Callable[[], None] | None = None,
     ) -> InventoryCollectionResult:
         context = self.build_collection_context(target, auth_session)
+        kwargs: dict[str, object] = {}
+        if before_request is not None:
+            kwargs["before_request"] = before_request
         return self.gateway.collect(
             target=target,
-            start_url=context.start_url,
+            start_url=start_url or context.start_url,
             controls=controls,
             session_type=context.session_type,
             session_payload=context.session_payload,
+            **kwargs,
         )
 
     def build_collection_context(

@@ -132,8 +132,16 @@ class FakeInventoryService:
     def __init__(self) -> None:
         self.calls = []
 
-    def collect(self, target, auth_session, controls):
-        self.calls.append((target, auth_session, controls))
+    def collect(
+        self,
+        target,
+        auth_session,
+        controls,
+        *,
+        start_url=None,
+        before_request=None,
+    ):
+        self.calls.append((target, auth_session, controls, start_url, before_request))
         return InventoryCollectionResult(
             start_url=target.base_url,
             pages=[
@@ -173,7 +181,7 @@ class FailingOneContextCollectionService:
     def __init__(self) -> None:
         self.kinds: list[str] = []
 
-    def collect(self, session, run, context):
+    def collect(self, session, run, context, *, before_request=None):
         self.kinds.append(context.kind)
         if context.kind == "user":
             raise RuntimeError("raw-user-collection-secret")
@@ -305,7 +313,14 @@ def test_default_gateway_preserves_authenticated_request_only_in_observation() -
     auth_session = SimpleNamespace(id=11)
     run = SimpleNamespace(
         target=target,
-        options=ScanOptions(max_pages=3, max_depth=2).model_dump(),
+        normalized_url="https://app.example/assessment-entry",
+        options=ScanOptions(
+            max_pages=3,
+            max_resources=7,
+            max_depth=2,
+            request_timeout_seconds=4,
+            retry_attempts=2,
+        ).model_dump(),
     )
     context = SimpleNamespace(kind="admin", auth_session=auth_session)
 
@@ -317,7 +332,10 @@ def test_default_gateway_preserves_authenticated_request_only_in_observation() -
     assert requests[0].headers == {"authorization": "Bearer exact-source-token"}
     assert requests[0].response_headers == {"content-type": "application/json"}
     controls = inventory_service.calls[0][2]
-    assert (controls.max_pages, controls.max_depth) == (3, 2)
+    assert inventory_service.calls[0][3] == run.normalized_url
+    assert (controls.max_pages, controls.max_depth, controls.max_requests) == (3, 2, 7)
+    assert controls.request_timeout_seconds == 4
+    assert controls.retry_attempts == 2
 
 
 def test_pipeline_continues_other_contexts_after_one_collection_failure(db_session) -> None:

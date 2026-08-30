@@ -102,7 +102,13 @@ class ScanPipeline:
         )
         self.clock = clock
 
-    def establish_contexts(self, session: Session, scan_run_id: int) -> list[ScanContext]:
+    def establish_contexts(
+        self,
+        session: Session,
+        scan_run_id: int,
+        *,
+        before_request=None,
+    ) -> list[ScanContext]:
         """Execute only the authenticated context-establishment stage."""
 
         run = session.get(ScanRun, scan_run_id)
@@ -120,7 +126,11 @@ class ScanPipeline:
         run.current_stage = ScanStageName.ESTABLISH_CONTEXTS.value
         session.flush()
         try:
-            contexts = self.context_service.establish(session, run)
+            contexts = self.context_service.establish(
+                session,
+                run,
+                before_request=before_request,
+            )
         except Exception as error:
             session.rollback()
             run = session.get(ScanRun, scan_run_id)
@@ -156,6 +166,8 @@ class ScanPipeline:
         self,
         session: Session,
         scan_run_id: int,
+        *,
+        before_request=None,
     ) -> list[ContextCollectionSummary]:
         """Execute context collection independently so one failure retains other results."""
 
@@ -188,7 +200,16 @@ class ScanPipeline:
                 continue
             try:
                 with session.begin_nested():
-                    summaries.append(self.context_collection_service.collect(session, run, context))
+                    summaries.append(
+                        self.context_collection_service.collect(
+                            session,
+                            run,
+                            context,
+                            before_request=before_request,
+                        )
+                    )
+            except (OverallScanTimeout, ScanInterrupted):
+                raise
             except Exception:  # noqa: BLE001 - context boundary persists only a safe diagnostic
                 context = session.get(ScanContext, context.id)
                 context.status = "failed"
@@ -348,8 +369,20 @@ class ScanPipeline:
                 deadline,
                 lambda: self._validate(run),
             )
-            self.establish_contexts(session, run.id)
-            self.collect_contexts(session, run.id)
+
+            def request_guard() -> None:
+                self._guard_network_request(session, run.id, deadline)
+
+            self.establish_contexts(
+                session,
+                run.id,
+                before_request=request_guard,
+            )
+            self.collect_contexts(
+                session,
+                run.id,
+                before_request=request_guard,
+            )
             run = session.get(ScanRun, run.id)
             self._run_stage(
                 session,

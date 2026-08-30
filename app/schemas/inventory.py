@@ -13,8 +13,10 @@ from app.core.errors import InputValidationError
 class InventoryBuildControls(BaseModel):
     max_pages: int = Field(default=25, ge=1, le=100)
     max_depth: int = Field(default=2, ge=0, le=5)
-    max_requests: int = Field(default=100, ge=1, le=500)
+    max_requests: int = Field(default=100, ge=0, le=2000)
     delay_ms: int = Field(default=250, ge=0, le=5000)
+    request_timeout_seconds: float = Field(default=15, gt=0, le=60)
+    retry_attempts: int = Field(default=0, ge=0, le=2)
     include: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
 

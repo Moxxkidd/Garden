@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Protocol
@@ -67,6 +68,7 @@ class PlaywrightInventoryGatewayProtocol(Protocol):
         controls: InventoryBuildControls,
         session_type: SessionType,
         session_payload: dict[str, Any],
+        before_request: Callable[[], None] | None = None,
     ) -> InventoryCollectionResult: ...
 
 
@@ -104,6 +106,7 @@ class SyncPlaywrightInventoryGateway:
         controls: InventoryBuildControls,
         session_type: SessionType,
         session_payload: dict[str, Any],
+        before_request: Callable[[], None] | None = None,
     ) -> InventoryCollectionResult:
         try:
             from playwright.sync_api import Error as PlaywrightError
@@ -131,7 +134,12 @@ class SyncPlaywrightInventoryGateway:
                     session_payload,
                 )
                 page = context.new_page()
-                violations = self._install_request_guard(context, page, target.base_url)
+                violations = self._install_request_guard(
+                    context,
+                    page,
+                    target.base_url,
+                    before_request=before_request,
+                )
 
                 def handle_response(response) -> None:
                     nonlocal request_counter
@@ -178,6 +186,8 @@ class SyncPlaywrightInventoryGateway:
                 page.on("response", handle_response)
 
                 while queued and len(seen_page_urls) < controls.max_pages:
+                    if before_request is not None:
+                        before_request()
                     current_url, depth = queued.popleft()
                     if current_url in seen_page_urls:
                         continue
@@ -186,13 +196,24 @@ class SyncPlaywrightInventoryGateway:
                     if self._looks_like_download_url(current_url):
                         continue
                     try:
-                        response = self._guarded_goto(
-                            page,
-                            target.base_url,
-                            current_url,
-                            15000,
-                            violations,
-                        )
+                        response = None
+                        for attempt in range(controls.retry_attempts + 1):
+                            try:
+                                response = self._guarded_goto(
+                                    page,
+                                    target.base_url,
+                                    current_url,
+                                    int(controls.request_timeout_seconds * 1000),
+                                    violations,
+                                )
+                                break
+                            except TargetPolicyError:
+                                raise
+                            except PlaywrightError:
+                                if attempt >= controls.retry_attempts:
+                                    raise
+                                if before_request is not None:
+                                    before_request()
                     except PlaywrightError as error:
                         if self._is_download_navigation_error(error):
                             continue
@@ -241,13 +262,22 @@ class SyncPlaywrightInventoryGateway:
             endpoints=endpoints,
         )
 
-    def _install_request_guard(self, context, page, base_url: str) -> list[TargetPolicyError]:
+    def _install_request_guard(
+        self,
+        context,
+        page,
+        base_url: str,
+        *,
+        before_request: Callable[[], None] | None,
+    ) -> list[TargetPolicyError]:
         violations: list[TargetPolicyError] = []
         cdp = context.new_cdp_session(page)
 
         def guard_request(event: dict[str, Any]) -> None:
             request_id = str(event["requestId"])
             try:
+                if before_request is not None:
+                    before_request()
                 self.network_guard.ensure_allowed(base_url, str(event["request"]["url"]))
             except TargetPolicyError as error:
                 violations.append(error)

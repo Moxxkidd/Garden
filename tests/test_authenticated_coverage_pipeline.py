@@ -32,7 +32,7 @@ def _loopback_resolver(host, port, **kwargs):
 
 
 class ReadyContextService:
-    def establish(self, session, run):
+    def establish(self, session, run, *, before_request=None):
         for context in run.contexts:
             context.status = "ready"
             context.login_status = "not_applicable" if context.kind == "anonymous" else "succeeded"
@@ -44,7 +44,7 @@ class ReadyContextService:
 
 
 class CompleteContextCollectionService:
-    def collect(self, session, run, context):
+    def collect(self, session, run, context, *, before_request=None):
         add_asset(
             session,
             run,
@@ -71,9 +71,31 @@ class CompleteContextCollectionService:
         )
 
 
+class GuardedReadyContextService(ReadyContextService):
+    def __init__(self) -> None:
+        self.guard_calls = 0
+
+    def establish(self, session, run, *, before_request=None):
+        assert before_request is not None
+        before_request()
+        self.guard_calls += 1
+        return super().establish(session, run)
+
+
+class GuardedCompleteContextCollectionService(CompleteContextCollectionService):
+    def __init__(self) -> None:
+        self.guard_calls = 0
+
+    def collect(self, session, run, context, *, before_request=None):
+        assert before_request is not None
+        before_request()
+        self.guard_calls += 1
+        return super().collect(session, run, context)
+
+
 class MissingUserContextService(ReadyContextService):
-    def establish(self, session, run):
-        contexts = super().establish(session, run)
+    def establish(self, session, run, *, before_request=None):
+        contexts = super().establish(session, run, before_request=before_request)
         user = next(context for context in contexts if context.kind == "user")
         user.status = "failed"
         user.login_status = "failed"
@@ -147,6 +169,24 @@ def test_authenticated_pipeline_completes_all_passive_stages(db_session, tmp_pat
     assert "v0.3" in replay_stage.summary
     assert "被动" in replay_stage.summary
     assert db_session.query(ReplayExecution).filter_by(scan_run_id=run.id).count() == 0
+
+
+def test_authenticated_pipeline_guards_establishment_and_every_context_collection(
+    db_session,
+    tmp_path,
+) -> None:
+    run = _queued_authenticated_run(db_session)
+    context_service = GuardedReadyContextService()
+    collection_service = GuardedCompleteContextCollectionService()
+
+    _pipeline(
+        tmp_path,
+        context_service=context_service,
+        collection_service=collection_service,
+    ).execute_authenticated(db_session, run.id)
+
+    assert context_service.guard_calls == 1
+    assert collection_service.guard_calls == 3
 
 
 def test_failed_user_context_continues_with_unknown_and_report(db_session, tmp_path) -> None:
