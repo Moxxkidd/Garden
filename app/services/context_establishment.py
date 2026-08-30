@@ -11,7 +11,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.cli.paths import formal_runtime_paths
-from app.core.errors import InputValidationError, ResourceNotFoundError
+from app.core.errors import (
+    InputValidationError,
+    OverallScanTimeout,
+    ResourceNotFoundError,
+    ScanInterrupted,
+)
 from app.models.credential_profile import CredentialProfile
 from app.models.enums import (
     AssessmentMode,
@@ -97,10 +102,9 @@ class ContextEstablishmentService:
         if self.ephemeral_store is None:
             return
         for kind in (ContextKind.USER.value, ContextKind.ADMIN.value):
-            profile_id = contexts[kind].credential_profile_id
-            profile = session.get(CredentialProfile, profile_id) if profile_id is not None else None
-            if profile is not None and profile.secret_ref.startswith("ephemeral-file://"):
-                self.ephemeral_store.delete(profile.secret_ref)
+            reference = contexts[kind].temporary_secret_ref
+            if reference is not None:
+                self.ephemeral_store.delete(reference)
 
     def _existing_contexts(self, session: Session, run: ScanRun) -> dict[str, ScanContext]:
         contexts = {
@@ -127,6 +131,8 @@ class ContextEstablishmentService:
     ) -> tuple[CredentialProfile, CredentialProfile]:
         user = self._profile(session, contexts[ContextKind.USER.value])
         admin = self._profile(session, contexts[ContextKind.ADMIN.value])
+        self._claim_unowned_temporary_secret(contexts[ContextKind.USER.value], user)
+        self._claim_unowned_temporary_secret(contexts[ContextKind.ADMIN.value], admin)
         if user.target_id != admin.target_id:
             raise InputValidationError("user/admin 凭证档案必须属于同一目标。")
         if user.role != ContextKind.USER.value:
@@ -141,6 +147,21 @@ class ContextEstablishmentService:
         if self._origin(run.normalized_url) != self._origin(target.base_url):
             raise InputValidationError("验证运行 URL 必须与 target base URL 同源。")
         return user, admin
+
+    def _claim_unowned_temporary_secret(
+        self,
+        context: ScanContext,
+        profile: CredentialProfile,
+    ) -> None:
+        if context.temporary_secret_ref is not None:
+            return
+        if not profile.secret_ref.startswith("ephemeral-file://"):
+            return
+        try:
+            if self.ephemeral_store.path_for(profile.secret_ref).exists():
+                context.temporary_secret_ref = profile.secret_ref
+        except InputValidationError:
+            return
 
     def _profile(self, session: Session, context: ScanContext) -> CredentialProfile:
         if context.credential_profile_id is None:
@@ -183,7 +204,12 @@ class ContextEstablishmentService:
         context.started_at = context.started_at or now
         try:
             with session.begin_nested():
-                if before_request is None:
+                kwargs = {}
+                if before_request is not None:
+                    kwargs["before_request"] = before_request
+                if context.temporary_secret_ref is not None:
+                    kwargs["secret_ref"] = context.temporary_secret_ref
+                if not kwargs:
                     auth_session = self.auth_service.ensure_valid_for_profile(
                         session,
                         profile.id,
@@ -192,8 +218,10 @@ class ContextEstablishmentService:
                     auth_session = self.auth_service.ensure_valid_for_profile(
                         session,
                         profile.id,
-                        before_request=before_request,
+                        **kwargs,
                     )
+        except (OverallScanTimeout, ScanInterrupted):
+            raise
         except Exception:  # noqa: BLE001 - context boundary persists a redacted failure
             context.auth_session_id = None
             context.status = "failed"

@@ -25,10 +25,12 @@ class ScriptedPrompts:
         self.hidden_values: list[str] = []
         self.rendered_text = ""
         self.offered: dict[str, tuple[str, ...]] = {}
+        self.offered_labels: dict[str, tuple[str, ...]] = {}
 
     def choose(self, label: str, choices) -> str:
         values = tuple(choice.value for choice in choices)
         self.offered[label] = values
+        self.offered_labels[label] = tuple(choice.label for choice in choices)
         answer = self.answers.pop(0)
         assert answer in values
         return answer
@@ -128,6 +130,7 @@ def test_wizard_selects_same_origin_target_and_exact_roles() -> None:
     assert request.active_checks_enabled is False
     assert prompts.hidden_values == []
     assert prompts.offered["选择同源 Target"] == (str(setup.target_id),)
+    assert "appsec" in prompts.offered_labels["选择同源 Target"][0]
     assert prompts.offered["选择 user 凭据档案"] == (str(setup.user_id), "__create__")
     assert prompts.offered["选择 admin 凭据档案"] == (str(setup.admin_id), "__create__")
 
@@ -193,6 +196,41 @@ def test_wizard_reprompts_for_an_expired_temporary_profile_secret(
         assert store.read(profile.secret_ref) == "replacement-user-secret"
 
 
+def test_wizard_reuses_a_valid_protected_session_before_reprompting_for_secret(
+    tmp_path: Path,
+) -> None:
+    setup = _setup_records()
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    consumed_reference = store.write("consumed-secret")
+    store.delete(consumed_reference)
+    with session_scope() as session:
+        session.get(CredentialProfile, setup.user_id).secret_ref = consumed_reference
+        session.commit()
+
+    class ReusableSessionService:
+        def __init__(self) -> None:
+            self.profile_ids: list[int] = []
+
+        def ensure_valid_for_profile(self, session, profile_id):
+            self.profile_ids.append(profile_id)
+            return object()
+
+    auth_service = ReusableSessionService()
+    prompts = ScriptedPrompts(
+        [str(setup.target_id), str(setup.user_id), str(setup.admin_id), "yes"]
+    )
+
+    request = CoverageSetupWizard(
+        prompts=prompts,
+        secret_store=store,
+        auth_session_service=auth_service,
+    ).run(setup.url)
+
+    assert request.user_profile_id == setup.user_id
+    assert auth_service.profile_ids == [setup.user_id]
+    assert prompts.hidden_values == []
+
+
 def test_wizard_rejects_a_selected_profile_with_invalid_login_config() -> None:
     setup = _setup_records()
     with session_scope() as session:
@@ -233,10 +271,11 @@ def test_wizard_creates_same_origin_target_and_missing_profiles_without_exposing
     )
     secret_store = EphemeralSecretStore(tmp_path / "secrets")
 
-    request = CoverageSetupWizard(
+    wizard = CoverageSetupWizard(
         prompts=prompts,
         secret_store=secret_store,
-    ).run("http://127.0.0.1:8181/start")
+    )
+    request = wizard.run("http://127.0.0.1:8181/start")
 
     with session_scope() as session:
         created_user = session.get(CredentialProfile, request.user_profile_id)
@@ -265,6 +304,10 @@ def test_wizard_creates_same_origin_target_and_missing_profiles_without_exposing
     assert user_secret not in prompts.rendered_text
     assert admin_secret not in prompts.rendered_text
 
+    wizard.cleanup_unsubmitted_secrets()
+
+    assert list(secret_store.root.glob("*.secret")) == []
+
 
 def test_wizard_cancellation_rolls_back_draft_and_deletes_temporary_secrets(
     tmp_path: Path,
@@ -292,6 +335,46 @@ def test_wizard_cancellation_rolls_back_draft_and_deletes_temporary_secrets(
     secret_store = EphemeralSecretStore(tmp_path / "secrets")
 
     with pytest.raises(InputValidationError, match="已取消"):
+        CoverageSetupWizard(prompts=prompts, secret_store=secret_store).run(
+            "http://127.0.0.1:8181/start"
+        )
+
+    assert list(secret_store.root.glob("*.secret")) == []
+    with session_scope() as session:
+        assert list(session.scalars(select(Target))) == []
+        assert list(session.scalars(select(CredentialProfile))) == []
+
+
+def test_wizard_keyboard_interrupt_rolls_back_and_deletes_draft_secrets(
+    tmp_path: Path,
+) -> None:
+    class InterruptingPrompts(ScriptedPrompts):
+        def secret(self, label: str) -> str:
+            if self.hidden_values:
+                raise KeyboardInterrupt
+            return super().secret(label)
+
+    prompts = InterruptingPrompts(
+        [
+            "yes",
+            "interrupted-target",
+            "appsec",
+            "yes",
+            "interrupted-user",
+            "/login",
+            "/account",
+            "reader@example.test",
+            "temporary-user-secret",
+            "yes",
+            "interrupted-admin",
+            "/login",
+            "/admin",
+            "admin@example.test",
+        ]
+    )
+    secret_store = EphemeralSecretStore(tmp_path / "secrets")
+
+    with pytest.raises(KeyboardInterrupt):
         CoverageSetupWizard(prompts=prompts, secret_store=secret_store).run(
             "http://127.0.0.1:8181/start"
         )

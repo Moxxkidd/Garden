@@ -70,7 +70,10 @@ class EphemeralSecretStore:
         return resolved
 
     def read(self, reference: str) -> str:
-        return self.path_for(reference).read_text(encoding="utf-8")
+        try:
+            return self.path_for(reference).read_text(encoding="utf-8")
+        except FileNotFoundError as error:
+            raise InputValidationError("Temporary secret reference has expired.") from error
 
     def delete(self, reference: str) -> None:
         self.path_for(reference).unlink(missing_ok=True)

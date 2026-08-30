@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 import app.cli.coverage as coverage_cli
 import app.cli.scan as scan_cli
 from app.cli.main import app
+from app.cli.web_runtime import WebRuntimeError
 from app.schemas.assessment import (
     AssessmentRunView,
     CoverageDifferenceView,
@@ -137,6 +138,43 @@ def test_coverage_command_refuses_to_prompt_without_an_interactive_terminal(
     assert "--non-interactive" in result.stdout
 
 
+def test_coverage_command_cleans_wizard_secrets_when_runtime_fails_before_submit(
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+
+    class Wizard:
+        def __init__(self, *, prompts):
+            pass
+
+        def run(self, url):
+            return PassiveCoverageStartRequest(
+                url=url,
+                target_id=4,
+                user_profile_id=12,
+                admin_profile_id=13,
+            )
+
+        def cleanup_unsubmitted_secrets(self):
+            calls.append("cleanup")
+
+    class Manager:
+        def __init__(self, **kwargs):
+            pass
+
+        def ensure(self, *, ui_port):
+            raise WebRuntimeError("runtime failed")
+
+    monkeypatch.setattr(coverage_cli, "CoverageSetupWizard", Wizard)
+    monkeypatch.setattr(coverage_cli, "WebRuntimeManager", Manager)
+    monkeypatch.setattr(coverage_cli, "_is_interactive_terminal", lambda: True, raising=False)
+
+    result = runner.invoke(app, ["coverage", "http://127.0.0.1:8080/"])
+
+    assert result.exit_code == 1
+    assert calls == ["cleanup"]
+
+
 def test_noninteractive_coverage_requires_both_profile_ids() -> None:
     result = runner.invoke(
         app,
@@ -198,7 +236,7 @@ def test_noninteractive_coverage_forwards_bounded_options_and_source_run(
             "4",
             "--overall-timeout",
             "80",
-            "--retry-attempts",
+            "--retries",
             "2",
             "--detach",
         ],
@@ -217,6 +255,41 @@ def test_noninteractive_coverage_forwards_bounded_options_and_source_run(
         "max_redirects": 5,
         "user_agent": "Garden-Authorized-Asset-Scanner/0.2",
     }
+
+
+def test_coverage_help_reuses_quick_retries_option_name() -> None:
+    result = runner.invoke(app, ["coverage", "--help"])
+
+    assert result.exit_code == 0
+    assert "--retries" in result.stdout
+    assert "--retry-attempts" not in result.stdout
+
+
+def test_waiting_coverage_renders_context_health_changes(monkeypatch, capsys) -> None:
+    initial = _assessment_view(status="queued", stage="establish_contexts", progress=18)
+    user_ready = _assessment_view(status="running", stage="collect", progress=30)
+    user_context = next(context for context in user_ready.contexts if context.kind.value == "user")
+    user_context.status = "ready"
+    user_context.login_status = "succeeded"
+    user_context.session_validation_status = "valid"
+    completed = _assessment_view(status="completed", stage="finished", progress=100)
+
+    class Api:
+        def __init__(self) -> None:
+            self.results = [user_ready, completed]
+
+        def get_assessment(self, assessment_id):
+            return self.results.pop(0)
+
+    monkeypatch.setattr(coverage_cli.time, "sleep", lambda _seconds: None)
+
+    result = coverage_cli._wait_for_assessment(Api(), initial)
+
+    output = capsys.readouterr().out
+    assert result.status == "completed"
+    assert "登录=succeeded" in output
+    assert "验证=valid" in output
+    assert "采集=pending" in output
 
 
 def test_quick_scan_never_invokes_coverage_wizard(monkeypatch) -> None:

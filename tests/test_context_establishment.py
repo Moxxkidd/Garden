@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from app.cli.paths import GardenPaths
-from app.core.errors import InputValidationError
+from app.core.errors import InputValidationError, OverallScanTimeout
 from app.db.bootstrap import get_session
 from app.models.audit_event import AuditEvent
 from app.models.auth_session import AuthSession
@@ -129,6 +129,11 @@ class FailingAuthService(SuccessfulAuthService):
         if profile_id in self.failing_profile_ids:
             raise InputValidationError("login rejected")
         return super().ensure_valid_for_profile(session, profile_id)
+
+
+class TimingOutAuthService:
+    def ensure_valid_for_profile(self, session, profile_id, *, before_request=None):
+        raise OverallScanTimeout("assessment deadline reached")
 
 
 class RecordingHttpAdapter:
@@ -272,6 +277,17 @@ def test_run_url_must_share_target_origin(db_session, profiles):
 
     with pytest.raises(InputValidationError, match="同源"):
         ContextEstablishmentService(auth_service=SuccessfulAuthService()).establish(db_session, run)
+
+
+def test_establishment_propagates_overall_timeout_control_flow(db_session, profiles) -> None:
+    run = make_profile_run(db_session, profiles)
+
+    with pytest.raises(OverallScanTimeout, match="deadline"):
+        ContextEstablishmentService(auth_service=TimingOutAuthService()).establish(db_session, run)
+
+    user = context_by_kind(list(run.contexts), "user")
+    assert user.status == "pending"
+    assert user.error_code is None
 
 
 def test_establish_updates_existing_contexts_and_writes_redacted_audit(db_session, profiles):

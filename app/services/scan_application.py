@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.errors import InputValidationError, ResourceNotFoundError
+from app.core.errors import ConflictError, InputValidationError, ResourceNotFoundError
 from app.core.settings import Settings, get_settings
 from app.db.bootstrap import session_scope
 from app.models.coverage_difference import CoverageDifference
@@ -169,7 +169,7 @@ class ScanApplicationService:
                 if existing is not None:
                     return self._assessment_view(existing)
                 raise
-            session.add_all(self._assessment_contexts(run, request))
+            session.add_all(self._assessment_contexts(session, run, request))
             create_assessment_stages(session, run)
             session.commit()
             run_id = run.id
@@ -183,7 +183,7 @@ class ScanApplicationService:
         except Exception:
             self._mark_dispatch_failed(run_id)
             raise
-        return self.get_assessment(run_id)
+        return self._get_assessment_view_unchecked(run_id)
 
     def execute_scan(self, scan_run_id: int) -> None:
         with session_scope() as session:
@@ -235,6 +235,16 @@ class ScanApplicationService:
                     self.pipeline.cleanup_temporary_context_secrets(session, run.id)
             return len(active_ids)
 
+    def purge_expired_temporary_secrets(
+        self,
+        *,
+        max_age_seconds: int = 900,
+    ) -> tuple[str, ...]:
+        store = self.pipeline.ephemeral_secret_store
+        if store is None:
+            return ()
+        return store.purge_expired(max_age_seconds=max_age_seconds)
+
     def get_scan(self, scan_run_id: int) -> ScanRunView:
         with session_scope() as session:
             run = self._get(session, scan_run_id)
@@ -243,7 +253,12 @@ class ScanApplicationService:
     def get_assessment(self, scan_run_id: int) -> AssessmentRunView:
         with session_scope() as session:
             run = self._get(session, scan_run_id)
+            self._ensure_authenticated_assessment(run)
             return self._assessment_view(run)
+
+    def _get_assessment_view_unchecked(self, scan_run_id: int) -> AssessmentRunView:
+        with session_scope() as session:
+            return self._assessment_view(self._get(session, scan_run_id))
 
     def list_coverage_differences(
         self,
@@ -251,8 +266,7 @@ class ScanApplicationService:
     ) -> list[CoverageDifferenceView]:
         with session_scope() as session:
             run = self._get(session, scan_run_id)
-            if run.mode != AssessmentMode.AUTHENTICATED_COVERAGE.value:
-                raise InputValidationError("Only authenticated coverage runs have differences.")
+            self._ensure_authenticated_assessment(run)
             differences = list(
                 session.scalars(
                     select(CoverageDifference)
@@ -346,6 +360,10 @@ class ScanApplicationService:
         if run is None:
             raise ResourceNotFoundError(f"Scan run {scan_run_id} was not found.")
         return run
+
+    def _ensure_authenticated_assessment(self, run: ScanRun) -> None:
+        if run.mode != AssessmentMode.AUTHENTICATED_COVERAGE.value:
+            raise InputValidationError("Only authenticated coverage runs are assessments.")
 
     def _mark_interrupted(self, run: ScanRun) -> None:
         now = datetime.now(timezone.utc)
@@ -521,7 +539,10 @@ class ScanApplicationService:
             raise InputValidationError("source_run_id 必须引用同一 target 的已终态 quick run。")
 
     def _assessment_contexts(
-        self, run: ScanRun, request: AssessmentStartRequest
+        self,
+        session: Session,
+        run: ScanRun,
+        request: AssessmentStartRequest,
     ) -> list[ScanContext]:
         contexts = [
             ScanContext(
@@ -531,20 +552,51 @@ class ScanApplicationService:
             )
         ]
         if request.mode == AssessmentMode.AUTHENTICATED_COVERAGE:
+            user_secret_ref = self._claim_temporary_secret_ref(session, request.user_profile_id)
+            admin_secret_ref = self._claim_temporary_secret_ref(session, request.admin_profile_id)
+            if user_secret_ref is not None and user_secret_ref == admin_secret_ref:
+                raise ConflictError("user/admin 凭据档案不能共享同一个一次性秘密。")
             contexts.extend(
                 [
                     ScanContext(
                         scan_run_id=run.id,
                         kind=ContextKind.USER.value,
                         credential_profile_id=request.user_profile_id,
+                        temporary_secret_ref=user_secret_ref,
                         status="pending",
                     ),
                     ScanContext(
                         scan_run_id=run.id,
                         kind=ContextKind.ADMIN.value,
                         credential_profile_id=request.admin_profile_id,
+                        temporary_secret_ref=admin_secret_ref,
                         status="pending",
                     ),
                 ]
             )
         return contexts
+
+    def _claim_temporary_secret_ref(
+        self,
+        session: Session,
+        profile_id: int | None,
+    ) -> str | None:
+        if profile_id is None or self.pipeline.ephemeral_secret_store is None:
+            return None
+        profile = session.get(CredentialProfile, profile_id)
+        if profile is None or not profile.secret_ref.startswith("ephemeral-file://"):
+            return None
+        try:
+            path = self.pipeline.ephemeral_secret_store.path_for(profile.secret_ref)
+        except InputValidationError:
+            return None
+        if not path.exists():
+            return None
+        existing = session.scalar(
+            select(ScanContext.id).where(ScanContext.temporary_secret_ref == profile.secret_ref)
+        )
+        if existing is not None:
+            raise ConflictError(
+                "该凭据档案的一次性秘密已由另一个 assessment 接管；请等待或重新补充。"
+            )
+        return profile.secret_ref

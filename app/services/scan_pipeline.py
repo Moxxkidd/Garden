@@ -10,8 +10,12 @@ from urllib.parse import urlparse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.errors import InputValidationError, TargetPolicyError
-from app.models.credential_profile import CredentialProfile
+from app.core.errors import (
+    InputValidationError,
+    OverallScanTimeout,
+    ScanInterrupted,
+    TargetPolicyError,
+)
 from app.models.enums import AssessmentMode, CompletenessStatus, ContextKind
 from app.models.scan_context import ScanContext
 from app.models.scan_run import (
@@ -60,14 +64,6 @@ PROGRESS_AFTER_STAGE = {
     ScanStageName.ANALYZE.value: 86,
     ScanStageName.REPORT.value: 100,
 }
-
-
-class OverallScanTimeout(RuntimeError):
-    pass
-
-
-class ScanInterrupted(RuntimeError):
-    """A persisted cancellation signal observed at a safe pipeline boundary."""
 
 
 class ScanPipeline:
@@ -448,6 +444,37 @@ class ScanPipeline:
         except ScanInterrupted:
             session.rollback()
             return
+        except OverallScanTimeout as error:
+            session.rollback()
+            run = session.get(ScanRun, scan_run_id)
+            if run is None:
+                raise
+            stage_name = run.current_stage if run.current_stage in STAGES else "pipeline"
+            stage = self._stage(session, run.id, stage_name)
+            if stage is not None:
+                stage.status = "failed"
+                stage.error_code = "overall_timeout"
+                stage.error_message = str(error)
+                stage.finished_at = datetime.now(timezone.utc)
+            self._record_failure(
+                session,
+                run,
+                stage=stage_name,
+                code="overall_timeout",
+                message=str(error),
+                url=run.normalized_url,
+                retryable=False,
+                attempt=1,
+            )
+            run.status = ScanRunStatus.INCOMPLETE.value
+            run.completeness = CompletenessStatus.INCOMPLETE.value
+            run.error_code = "overall_timeout"
+            run.error_message = str(error)
+            run.finished_at = datetime.now(timezone.utc)
+            run.active_key = None
+            self._skip_pending_authenticated_stages(session, run, stage_name)
+            session.commit()
+            self._try_failure_report(session, run)
         except Exception:  # noqa: BLE001 - persisted at the orchestration boundary
             session.rollback()
             run = session.get(ScanRun, scan_run_id)
@@ -528,11 +555,8 @@ class ScanPipeline:
             session.scalars(select(ScanContext).where(ScanContext.scan_run_id == scan_run_id))
         )
         for context in contexts:
-            if context.credential_profile_id is None:
-                continue
-            profile = session.get(CredentialProfile, context.credential_profile_id)
-            if profile is not None and profile.secret_ref.startswith("ephemeral-file://"):
-                self.ephemeral_secret_store.delete(profile.secret_ref)
+            if context.temporary_secret_ref is not None:
+                self.ephemeral_secret_store.delete(context.temporary_secret_ref)
 
     def _run_stage(self, session, run, name, deadline, operation, *, enforce_deadline: bool = True):
         self._check_interrupted(session, run.id)

@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urljoin
 
-from app.core.errors import TargetPolicyError
+from app.core.errors import OverallScanTimeout, ScanInterrupted, TargetPolicyError
 from app.core.settings import get_settings
 from app.models.credential_profile import CredentialProfile
 from app.models.enums import LoginFailureReason, SessionStatus, SessionType
@@ -107,6 +107,7 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
                         "submit_selector": config.submit_selector,
                     }
                 self._wait_after_submit(page, config.request_timeout_seconds * 1000)
+                self._raise_request_guard_error(violations)
                 if config.success_url_contains:
                     try:
                         page.wait_for_url(
@@ -126,6 +127,7 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
                     page.wait_for_selector(
                         config.success_selector, timeout=config.request_timeout_seconds * 1000
                     )
+                self._raise_request_guard_error(violations)
                 storage_state = context.storage_state()
                 current_url = page.url
                 page_text = page.text_content("body") or ""
@@ -177,6 +179,7 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
                     violations,
                 )
                 self._wait_after_submit(page, config.request_timeout_seconds * 1000)
+                self._raise_request_guard_error(violations)
                 if config.success_text:
                     try:
                         page.locator("body").filter(has_text=config.success_text).wait_for(
@@ -188,6 +191,7 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
                     page.wait_for_selector(
                         config.success_selector, timeout=config.request_timeout_seconds * 1000
                     )
+                self._raise_request_guard_error(violations)
                 current_url = page.url
                 page_text = page.text_content("body") or ""
                 password_inputs_count = self._visible_password_count(page)
@@ -207,8 +211,8 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
         base_url: str,
         *,
         before_request: Callable[[], None] | None,
-    ) -> list[TargetPolicyError]:
-        violations: list[TargetPolicyError] = []
+    ) -> list[BaseException]:
+        violations: list[BaseException] = []
         cdp = context.new_cdp_session(page)
 
         def guard_request(event: dict[str, Any]) -> None:
@@ -217,7 +221,7 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
                 if before_request is not None:
                     before_request()
                 self.network_guard.ensure_allowed(base_url, str(event["request"]["url"]))
-            except TargetPolicyError as error:
+            except (OverallScanTimeout, ScanInterrupted, TargetPolicyError) as error:
                 violations.append(error)
                 cdp.send(
                     "Fetch.failRequest",
@@ -236,7 +240,7 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
         base_url: str,
         url: str,
         timeout_ms: int,
-        violations: list[TargetPolicyError],
+        violations: list[BaseException],
     ):
         self.network_guard.ensure_allowed(base_url, url)
         try:
@@ -249,6 +253,10 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
             raise violations[0]
         self.network_guard.ensure_allowed(base_url, page.url)
         return response
+
+    def _raise_request_guard_error(self, violations: list[BaseException]) -> None:
+        if violations:
+            raise violations[0]
 
     def _resolve_url(self, base_url: str, configured_url: str) -> str:
         return urljoin(f"{base_url.rstrip('/')}/", configured_url.lstrip("/"))
@@ -420,6 +428,8 @@ class PlaywrightLoginAdapter:
                     secret_value,
                     before_request=before_request,
                 )
+        except (OverallScanTimeout, ScanInterrupted):
+            raise
         except TimeoutError as error:
             return self._failure(
                 target,
@@ -501,6 +511,8 @@ class PlaywrightLoginAdapter:
                     stored_payload.get("storage_state", {}),
                     before_request=before_request,
                 )
+        except (OverallScanTimeout, ScanInterrupted):
+            raise
         except TimeoutError as error:
             return SessionValidationResult(
                 valid=False,

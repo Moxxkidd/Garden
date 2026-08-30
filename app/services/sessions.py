@@ -72,6 +72,7 @@ class AuthSessionService:
         profile_id: int,
         *,
         before_request: Callable[[], None] | None = None,
+        secret_ref: str | None = None,
     ) -> AuthSession:
         """Return a storage-backed session after adapter validation, logging in if needed."""
 
@@ -100,6 +101,7 @@ class AuthSessionService:
                         session,
                         candidate.id,
                         before_request=before_request,
+                        secret_ref=secret_ref,
                     )
                     if (
                         refreshed.success
@@ -117,6 +119,7 @@ class AuthSessionService:
             session,
             credential,
             before_request=before_request,
+            secret_ref=secret_ref,
         )
         if not login_result.success or auth_session is None:
             raise ConflictError("Authentication login failed for the credential profile.")
@@ -134,10 +137,11 @@ class AuthSessionService:
         credential: CredentialProfile,
         *,
         before_request: Callable[[], None] | None = None,
+        secret_ref: str | None = None,
     ) -> tuple[LoginExecutionResult, AuthSession | None]:
         target = self.target_service.get(session, credential.target_id)
         config = self.login_config_service.load(credential.login_config_path)
-        secret_value = self.secret_resolver.resolve(credential.secret_ref)
+        secret_value = self.secret_resolver.resolve(secret_ref or credential.secret_ref)
         adapter = self._get_adapter(config)
         if before_request is None:
             result = adapter.login(target, credential, secret_value, config)
@@ -267,6 +271,7 @@ class AuthSessionService:
         session_id: int,
         *,
         before_request: Callable[[], None] | None = None,
+        secret_ref: str | None = None,
     ) -> LoginExecutionResult:
         auth_session = self.get(session, session_id)
         if not auth_session.refresh_supported:
@@ -279,7 +284,7 @@ class AuthSessionService:
             )
         config = self.login_config_service.load(credential.login_config_path)
         payload = self.storage_service.read_payload(auth_session.storage_ref)
-        secret_value = self.secret_resolver.resolve(credential.secret_ref)
+        secret_value = self.secret_resolver.resolve(secret_ref or credential.secret_ref)
         adapter = self._get_adapter(config)
         if before_request is None:
             result = adapter.refresh(target, credential, secret_value, config, payload)

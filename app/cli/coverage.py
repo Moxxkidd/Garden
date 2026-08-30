@@ -80,7 +80,7 @@ def coverage(
     ] = None,
     retry_attempts: Annotated[
         int | None,
-        typer.Option("--retry-attempts", min=0, max=2),
+        typer.Option("--retries", min=0, max=2),
     ] = None,
 ) -> None:
     """引导并执行 anonymous/user/admin 三上下文的仅被动覆盖评估。"""
@@ -88,6 +88,8 @@ def coverage(
     api = None
     result = None
     manager = None
+    wizard = None
+    submission_started = False
     try:
         options = ScanOptions(
             max_pages=max_pages,
@@ -112,7 +114,8 @@ def coverage(
             if not _is_interactive_terminal():
                 console.print("当前输入不是交互终端；请使用 --non-interactive 并提供两个档案 ID。")
                 raise typer.Exit(code=2)
-            request = CoverageSetupWizard(prompts=TyperCoveragePrompts()).run(entry_url)
+            wizard = CoverageSetupWizard(prompts=TyperCoveragePrompts())
+            request = wizard.run(entry_url)
             request = request.model_copy(update={"source_run_id": source_run, "options": options})
 
         manager = WebRuntimeManager(
@@ -121,6 +124,7 @@ def coverage(
         )
         runtime = manager.ensure(ui_port=ui_port)
         api = LocalScanApi(runtime.base_url)
+        submission_started = True
         result = api.start_assessment(request)
         console.print(f"Web UI：{runtime.base_url}")
         console.print(f"认证覆盖状态：{runtime.base_url}/api/assessments/{result.id}")
@@ -136,18 +140,50 @@ def coverage(
     except KeyboardInterrupt:
         if api is not None and result is not None and manager is not None:
             _cancel_from_interrupt(api, result.id, manager)
+        if wizard is not None and not submission_started:
+            wizard.cleanup_unsubmitted_secrets()
         raise typer.Exit(code=130) from None
     except (GardenError, WebRuntimeError) as error:
+        if wizard is not None and not submission_started:
+            wizard.cleanup_unsubmitted_secrets()
         handle_cli_error(error)
 
 
 def _wait_for_assessment(api: LocalScanApi, initial: AssessmentRunView) -> AssessmentRunView:
     result = initial
-    shown: tuple[str, int] | None = None
+    shown: tuple[object, ...] | None = None
     while result.status not in TERMINAL_SCAN_RUN_STATUSES:
-        progress = (result.current_stage, result.progress)
+        context_health = tuple(
+            (
+                context.kind.value,
+                context.status,
+                context.login_status,
+                context.session_validation_status,
+                context.collection_status,
+            )
+            for context in result.contexts
+        )
+        comparison_status = next(
+            (stage.status for stage in result.stages if stage.name == "compare_coverage"),
+            "pending",
+        )
+        progress = (
+            result.current_stage,
+            result.progress,
+            context_health,
+            comparison_status,
+        )
         if progress != shown:
-            console.print(f"认证覆盖 {result.id}：{result.current_stage}，{result.progress}%")
+            console.print(
+                f"认证覆盖 {result.id}：{result.current_stage}，{result.progress}%"
+                f"，比较={comparison_status}"
+            )
+            for kind, status, login, validation, collection in context_health:
+                console.print(
+                    f"  - {kind}: 状态={status}，登录={login}，"
+                    f"验证={validation}，采集={collection}",
+                    markup=False,
+                )
             shown = progress
         time.sleep(0.2)
         result = api.get_assessment(result.id)
@@ -167,7 +203,8 @@ def _print_result(result, differences) -> None:
     console.print("三上下文：")
     for context in result.contexts:
         console.print(
-            f"- {context.kind.value}: {context.status} / {context.collection_status}",
+            f"- {context.kind.value}: 状态={context.status}，登录={context.login_status}，"
+            f"验证={context.session_validation_status}，采集={context.collection_status}",
             markup=False,
         )
     counts = Counter(item.classification for item in differences)

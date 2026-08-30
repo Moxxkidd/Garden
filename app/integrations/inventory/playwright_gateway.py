@@ -11,7 +11,12 @@ from datetime import datetime, timezone
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
 
-from app.core.errors import InputValidationError, TargetPolicyError
+from app.core.errors import (
+    InputValidationError,
+    OverallScanTimeout,
+    ScanInterrupted,
+    TargetPolicyError,
+)
 from app.core.settings import get_settings
 from app.models.enums import SessionType
 from app.models.target import Target
@@ -74,6 +79,8 @@ class PlaywrightInventoryGatewayProtocol(Protocol):
 
 
 class SyncPlaywrightInventoryGateway:
+    _MAX_CAPTURED_RESPONSE_BYTES = 256 * 1024
+
     """Collect inventory using Playwright navigation and network observation."""
 
     DOWNLOAD_SUFFIXES = (
@@ -225,6 +232,7 @@ class SyncPlaywrightInventoryGateway:
                         raise
                     if controls.delay_ms:
                         time.sleep(controls.delay_ms / 1000)
+                    self._raise_request_guard_error(violations)
                     final_url = self._normalize_page_url(page.url)
                     seen_page_urls.add(final_url)
                     title = page.title()
@@ -274,8 +282,8 @@ class SyncPlaywrightInventoryGateway:
         base_url: str,
         *,
         before_request: Callable[[], None] | None,
-    ) -> list[TargetPolicyError]:
-        violations: list[TargetPolicyError] = []
+    ) -> list[BaseException]:
+        violations: list[BaseException] = []
         cdp = context.new_cdp_session(page)
 
         def guard_request(event: dict[str, Any]) -> None:
@@ -284,7 +292,7 @@ class SyncPlaywrightInventoryGateway:
                 if before_request is not None:
                     before_request()
                 self.network_guard.ensure_allowed(base_url, str(event["request"]["url"]))
-            except TargetPolicyError as error:
+            except (OverallScanTimeout, ScanInterrupted, TargetPolicyError) as error:
                 violations.append(error)
                 cdp.send(
                     "Fetch.failRequest",
@@ -303,7 +311,7 @@ class SyncPlaywrightInventoryGateway:
         base_url: str,
         url: str,
         timeout_ms: int,
-        violations: list[TargetPolicyError],
+        violations: list[BaseException],
     ):
         self.network_guard.ensure_allowed(base_url, url)
         try:
@@ -316,6 +324,10 @@ class SyncPlaywrightInventoryGateway:
             raise violations[0]
         self.network_guard.ensure_allowed(base_url, page.url)
         return response
+
+    def _raise_request_guard_error(self, violations: list[BaseException]) -> None:
+        if violations:
+            raise violations[0]
 
     def _build_context(self, browser, base_url: str, session_type: SessionType, session_payload):
         if session_type == SessionType.PLAYWRIGHT_STORAGE_STATE:
@@ -425,8 +437,10 @@ class SyncPlaywrightInventoryGateway:
         content_type = (response.header_value("content-type") or "").lower()
         if not any(token in content_type for token in ("json", "text", "html", "xml")):
             return None
+        if not self._response_body_is_safely_bounded(response):
+            return None
         try:
-            return response.text()[: 256 * 1024]
+            return response.text()
         except BaseException:
             return None
 
@@ -434,10 +448,24 @@ class SyncPlaywrightInventoryGateway:
         normalized_type = (content_type or "").lower()
         if not any(token in normalized_type for token in ("json", "text", "html", "xml")):
             return None
+        if not self._response_body_is_safely_bounded(response):
+            return None
         try:
-            return response.text()[: 256 * 1024]
+            return response.text()
         except BaseException:
             return None
+
+    def _response_body_is_safely_bounded(self, response) -> bool:
+        if response.header_value("content-encoding"):
+            return False
+        raw_length = response.header_value("content-length")
+        if raw_length is None:
+            return False
+        try:
+            length = int(raw_length)
+        except (TypeError, ValueError):
+            return False
+        return 0 <= length <= self._MAX_CAPTURED_RESPONSE_BYTES
 
     def _extract_cookie_metadata(self, response) -> tuple[list[str], list[str]]:
         raw_value = response.header_value("set-cookie") or ""

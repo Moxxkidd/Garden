@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from app.core.errors import OverallScanTimeout
 from app.core.settings import get_settings
 from app.db.bootstrap import get_session
 from app.models.credential_profile import CredentialProfile
@@ -114,6 +115,11 @@ class MissingUserContextService(ReadyContextService):
         return contexts
 
 
+class TimingOutContextService:
+    def establish(self, session, run, *, before_request=None):
+        raise OverallScanTimeout("The overall scan timeout was exceeded.")
+
+
 def _pipeline(
     tmp_path: Path,
     *,
@@ -219,6 +225,25 @@ def test_authenticated_pipeline_guards_establishment_and_every_context_collectio
     assert collection_service.guard_calls == 3
 
 
+def test_authenticated_timeout_preserves_partial_report_and_specific_failure(
+    db_session,
+    tmp_path,
+) -> None:
+    run = _queued_authenticated_run(db_session)
+
+    _pipeline(tmp_path, context_service=TimingOutContextService()).execute_authenticated(
+        db_session, run.id
+    )
+
+    db_session.refresh(run)
+    assert run.status == "incomplete"
+    assert run.completeness == "incomplete"
+    assert run.error_code == "overall_timeout"
+    assert any(failure.code == "overall_timeout" for failure in run.failures)
+    assert all(failure.code != "authenticated_pipeline_failed" for failure in run.failures)
+    assert Path(run.report_path).exists()
+
+
 def test_failed_user_context_continues_with_unknown_and_report(db_session, tmp_path) -> None:
     run = _queued_authenticated_run(db_session)
     run.active_key = "partial-context-active-key"
@@ -288,8 +313,10 @@ def test_fatal_comparison_cleans_secrets_skips_later_stages_and_writes_safe_diag
     for context in run.contexts:
         if context.kind == "user":
             context.credential_profile_id = profiles[0].id
+            context.temporary_secret_ref = user_ref
         elif context.kind == "admin":
             context.credential_profile_id = profiles[1].id
+            context.temporary_secret_ref = admin_ref
     db_session.flush()
 
     _pipeline(

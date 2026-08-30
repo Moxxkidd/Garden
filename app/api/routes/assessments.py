@@ -47,9 +47,9 @@ def assessment_report(
     assessment_id: int,
     download: bool = Query(default=False),
 ):
+    view = request.app.state.scan_service.get_assessment(assessment_id)
     report = request.app.state.scan_service.read_report(assessment_id)
     if download:
-        view = request.app.state.scan_service.get_assessment(assessment_id)
         return FileResponse(
             view.report_path,
             media_type="text/markdown; charset=utf-8",

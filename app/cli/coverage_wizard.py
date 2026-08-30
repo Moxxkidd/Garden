@@ -8,7 +8,7 @@ from typing import Protocol
 from urllib.parse import urljoin, urlparse
 
 from app.cli.paths import formal_runtime_paths
-from app.core.errors import InputValidationError
+from app.core.errors import GardenError, InputValidationError
 from app.db.bootstrap import session_scope
 from app.models.credential_profile import CredentialProfile
 from app.models.enums import AuthType, TargetType
@@ -19,6 +19,8 @@ from app.schemas.target import TargetCreate
 from app.services.credentials import CredentialProfileService
 from app.services.ephemeral_secret_store import EphemeralSecretStore
 from app.services.login_configs import LoginConfigService, encode_inline_login_config
+from app.services.secret_resolver import SecretResolver
+from app.services.sessions import AuthSessionService
 from app.services.targets import TargetService
 
 
@@ -50,6 +52,7 @@ class CoverageSetupWizard:
         target_service: TargetService | None = None,
         credential_service: CredentialProfileService | None = None,
         login_config_service: LoginConfigService | None = None,
+        auth_session_service: AuthSessionService | None = None,
         secret_store: EphemeralSecretStore | None = None,
         session_factory=session_scope,
     ) -> None:
@@ -58,7 +61,11 @@ class CoverageSetupWizard:
         self.credential_service = credential_service or CredentialProfileService()
         self.login_config_service = login_config_service or LoginConfigService()
         self.secret_store = secret_store or EphemeralSecretStore(self._default_secret_root())
+        self.auth_session_service = auth_session_service or AuthSessionService(
+            secret_resolver=SecretResolver(ephemeral_store=self.secret_store)
+        )
         self.session_factory = session_factory
+        self._unsubmitted_secret_refs: tuple[str, ...] = ()
 
     def run(self, entry_url: str) -> PassiveCoverageStartRequest:
         entry_origin = self._origin(entry_url)
@@ -83,16 +90,23 @@ class CoverageSetupWizard:
                 )
                 if not self.prompts.confirm("提交认证覆盖任务？", default=True):
                     raise InputValidationError("已取消认证覆盖任务。")
-                return PassiveCoverageStartRequest(
+                request = PassiveCoverageStartRequest(
                     url=entry_url,
                     target_id=target.id,
                     user_profile_id=user.id,
                     admin_profile_id=admin.id,
                 )
-        except Exception:
+                self._unsubmitted_secret_refs = tuple(draft_secret_refs)
+                return request
+        except BaseException:
             for reference in draft_secret_refs:
                 self.secret_store.delete(reference)
             raise
+
+    def cleanup_unsubmitted_secrets(self) -> None:
+        for reference in self._unsubmitted_secret_refs:
+            self.secret_store.delete(reference)
+        self._unsubmitted_secret_refs = ()
 
     def _select_or_create_target(
         self,
@@ -122,7 +136,10 @@ class CoverageSetupWizard:
         selected = self.prompts.choose(
             "选择同源 Target",
             [
-                PromptChoice(value=str(target.id), label=f"#{target.id} {target.name}")
+                PromptChoice(
+                    value=str(target.id),
+                    label=f"#{target.id} {target.name}（owner: {target.owner}）",
+                )
                 for target in targets
             ],
         )
@@ -156,7 +173,12 @@ class CoverageSetupWizard:
         if profiles:
             selected = self._select_profile_or_create(profiles, role)
             if selected is not None:
-                return self._prepare_existing_profile(selected, role, draft_secret_refs)
+                return self._prepare_existing_profile(
+                    session,
+                    selected,
+                    role,
+                    draft_secret_refs,
+                )
         elif not self.prompts.confirm(
             f"没有 role={role} 的凭据档案，立即创建？",
             default=True,
@@ -202,6 +224,7 @@ class CoverageSetupWizard:
 
     def _prepare_existing_profile(
         self,
+        session,
         profile: CredentialProfile,
         role: str,
         draft_secret_refs: list[str],
@@ -213,6 +236,11 @@ class CoverageSetupWizard:
             if self.secret_store.path_for(profile.secret_ref).exists():
                 return profile
         except InputValidationError:
+            pass
+        try:
+            self.auth_session_service.ensure_valid_for_profile(session, profile.id)
+            return profile
+        except GardenError:
             pass
         secret = self.prompts.secret(f"{role} 密码已过期，请重新输入（输入已隐藏）")
         reference = self.secret_store.write(secret)
