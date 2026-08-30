@@ -30,6 +30,7 @@ class ObservedEndpoint:
     cache_control: str | None = None
     content_type: str | None = None
     response_preview: str | None = None
+    response_text: str | None = None
     set_cookie_names: list[str] = field(default_factory=list)
     cookie_issue_flags: list[str] = field(default_factory=list)
     parameters: dict[str, list[str]] = field(default_factory=dict)
@@ -163,6 +164,7 @@ class SyncPlaywrightInventoryGateway:
                         response_headers = response.all_headers()
                     except Exception:
                         response_headers = {}
+                    response_text = self._extract_response_text(response, content_type)
                     endpoints.append(
                         ObservedEndpoint(
                             method=request.method.upper(),
@@ -173,7 +175,10 @@ class SyncPlaywrightInventoryGateway:
                             observed_at=datetime.now(timezone.utc),
                             cache_control=response.header_value("cache-control"),
                             content_type=content_type,
-                            response_preview=self._extract_response_preview(response, content_type),
+                            response_preview=(
+                                self._normalize_preview(response_text) if response_text else None
+                            ),
+                            response_text=response_text,
                             set_cookie_names=set_cookie_names,
                             cookie_issue_flags=cookie_issue_flags,
                             parameters=self._extract_parameters(request),
@@ -425,15 +430,14 @@ class SyncPlaywrightInventoryGateway:
         except BaseException:
             return None
 
-    def _extract_response_preview(self, response, content_type: str | None) -> str | None:
+    def _extract_response_text(self, response, content_type: str | None) -> str | None:
         normalized_type = (content_type or "").lower()
         if not any(token in normalized_type for token in ("json", "text", "html", "xml")):
             return None
         try:
-            preview = response.text()
+            return response.text()[: 256 * 1024]
         except BaseException:
             return None
-        return self._normalize_preview(preview)
 
     def _extract_cookie_metadata(self, response) -> tuple[list[str], list[str]]:
         raw_value = response.header_value("set-cookie") or ""

@@ -86,6 +86,22 @@ def test_authenticated_report_renders_context_health_and_difference_matrix(
     assert "覆盖差异不是已确认漏洞" in text
 
 
+def test_authenticated_report_redacts_entry_url_query_values(
+    db_session,
+    tmp_path: Path,
+) -> None:
+    run = _reported_run(db_session)
+    run.input_url = "http://127.0.0.1:8080/?token=entry-secret&id=7#fragment"
+    run.normalized_url = run.input_url
+
+    path = ScanReportService(tmp_path / "reports").generate(db_session, run.id)
+    text = Path(path).read_text(encoding="utf-8")
+
+    assert "入口 URL：http://127.0.0.1:8080/?id=[REDACTED]&token=[REDACTED]" in text
+    assert "entry-secret" not in text
+    assert "#fragment" not in text
+
+
 def test_authenticated_report_preserves_unknown_and_omits_forbidden_asset_values(
     db_session,
     tmp_path: Path,

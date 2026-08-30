@@ -338,6 +338,34 @@ def test_default_gateway_preserves_authenticated_request_only_in_observation() -
     assert controls.retry_attempts == 2
 
 
+def test_authenticated_endpoint_signature_uses_body_beyond_the_display_preview() -> None:
+    full_response = '{"prefix":"' + ("x" * 950) + '","tail":"role-specific"}'
+
+    class LongResponseInventoryService(FakeInventoryService):
+        def collect(self, target, auth_session, controls, **kwargs):
+            result = super().collect(target, auth_session, controls, **kwargs)
+            result.endpoints[0].response_preview = full_response[:900]
+            result.endpoints[0].response_text = full_response
+            return result
+
+    gateway = DefaultContextCollectionGateway(
+        http_gateway=FakeHttpGateway(),
+        inventory_service=LongResponseInventoryService(),
+    )
+    run = SimpleNamespace(
+        target=SimpleNamespace(base_url="https://app.example/"),
+        normalized_url="https://app.example/assessment-entry",
+        options=ScanOptions().model_dump(),
+    )
+    context = SimpleNamespace(kind="user", auth_session=SimpleNamespace(id=12))
+
+    resources, requests = gateway.collect(run, context)
+
+    endpoint = next(resource for resource in resources if resource.asset_type == "endpoint")
+    assert endpoint.attributes["response_text"] == full_response
+    assert requests[0].response_text == full_response
+
+
 def test_pipeline_continues_other_contexts_after_one_collection_failure(db_session) -> None:
     run = make_authenticated_run(db_session)
     for context in run.contexts:

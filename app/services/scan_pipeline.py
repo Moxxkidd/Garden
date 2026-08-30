@@ -423,9 +423,15 @@ class ScanPipeline:
                 context.collection_status != "completed" or context.completeness != "complete"
                 for context in run.contexts
             )
-            run.status = (
-                ScanRunStatus.INCOMPLETE.value if incomplete else ScanRunStatus.COMPLETED.value
+            coverage_warnings = any(
+                is_coverage_warning(failure.stage, failure.code) for failure in run.failures
             )
+            if incomplete:
+                run.status = ScanRunStatus.INCOMPLETE.value
+            elif coverage_warnings:
+                run.status = ScanRunStatus.COMPLETED_WITH_WARNINGS.value
+            else:
+                run.status = ScanRunStatus.COMPLETED.value
             if incomplete:
                 if run.completeness not in {
                     CompletenessStatus.MISSING_USER_CONTEXT.value,

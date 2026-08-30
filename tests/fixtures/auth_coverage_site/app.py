@@ -128,4 +128,10 @@ def admin_users(request: Request):
 @app.get("/api/profile")
 def profile(request: Request) -> JSONResponse:
     role = _role(request)
-    return JSONResponse({"surface": "profile", "role": role})
+    return JSONResponse(
+        {
+            "surface": "profile",
+            "padding": "x" * 1000,
+            "role": role,
+        }
+    )

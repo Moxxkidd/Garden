@@ -196,6 +196,11 @@ class DefaultContextCollectionGateway:
         requests: list[ObservedRequest] = []
         for endpoint in result.endpoints:
             exact_url = endpoint.request_url or endpoint.url
+            response_text = (
+                endpoint.response_text
+                if endpoint.response_text is not None
+                else endpoint.response_preview or ""
+            )
             resources.append(
                 ObservedResource(
                     asset_type="endpoint",
@@ -207,7 +212,7 @@ class DefaultContextCollectionGateway:
                         "content_type": endpoint.content_type,
                         "cache_control": endpoint.cache_control,
                         "parameter_names": endpoint.parameters,
-                        "response_text": endpoint.response_preview or "",
+                        "response_text": response_text,
                     },
                 )
             )
@@ -224,7 +229,7 @@ class DefaultContextCollectionGateway:
                     body=endpoint.request_body,
                     status_code=endpoint.status_code,
                     response_headers=response_headers,
-                    response_text=endpoint.response_preview or "",
+                    response_text=response_text,
                 )
             )
         return resources, requests

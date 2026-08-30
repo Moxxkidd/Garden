@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -6,6 +7,7 @@ from app.core.settings import get_settings
 from app.db.bootstrap import get_session
 from app.models.credential_profile import CredentialProfile
 from app.models.replay_execution import ReplayExecution
+from app.models.scan_run import ScanFailure
 from app.models.target import Target
 from app.schemas.scan import ScanOptions
 from app.services.context_collection import ContextCollectionSummary
@@ -169,6 +171,34 @@ def test_authenticated_pipeline_completes_all_passive_stages(db_session, tmp_pat
     assert "v0.3" in replay_stage.summary
     assert "被动" in replay_stage.summary
     assert db_session.query(ReplayExecution).filter_by(scan_run_id=run.id).count() == 0
+
+
+def test_complete_authenticated_pipeline_preserves_coverage_warning_status(
+    db_session,
+    tmp_path,
+) -> None:
+    run = _queued_authenticated_run(db_session)
+    db_session.add(
+        ScanFailure(
+            scan_run_id=run.id,
+            stage="collect",
+            code="coverage_limit_reached",
+            message="Collection reached its configured resource limit.",
+            url=run.normalized_url,
+            retryable=False,
+            attempt=1,
+            occurred_at=datetime.now(timezone.utc),
+        )
+    )
+    db_session.flush()
+
+    _pipeline(tmp_path).execute_authenticated(db_session, run.id)
+
+    db_session.refresh(run)
+    assert run.status == "completed_with_warnings"
+    assert run.completeness == "complete"
+    report = Path(run.report_path).read_text(encoding="utf-8")
+    assert "任务状态：completed_with_warnings" in report
 
 
 def test_authenticated_pipeline_guards_establishment_and_every_context_collection(

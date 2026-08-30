@@ -14,6 +14,7 @@ from app.cli.paths import formal_runtime_paths
 from app.core.errors import ResourceNotFoundError
 from app.models.enums import AssessmentMode
 from app.models.scan_run import ScanRun
+from app.services.coverage_identity import redacted_observed_url
 from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_report_quality import project_finding_groups, report_version_values
 
@@ -67,14 +68,30 @@ class ScanReportService:
         differences = sorted(run.coverage_differences, key=lambda item: item.identity_key)
         classification_counts = Counter(item.classification for item in differences)
         stages = sorted(run.stages, key=lambda item: item.position)
+        entry_url = redacted_observed_url(run.normalized_url)
+        summary_status = run.status
+        if summary_status == "running":
+            incomplete = any(
+                context.collection_status != "completed" or context.completeness != "complete"
+                for context in contexts
+            )
+            coverage_warnings = any(
+                is_coverage_warning(failure.stage, failure.code) for failure in run.failures
+            )
+            if incomplete:
+                summary_status = "incomplete"
+            elif coverage_warnings:
+                summary_status = "completed_with_warnings"
+            else:
+                summary_status = "completed"
         lines = [
             f"# Garden 认证覆盖报告 #{run.id}",
             "",
             "## 执行摘要",
             "",
-            f"- 任务状态：{run.status}",
+            f"- 任务状态：{summary_status}",
             f"- 完整性：{run.completeness}",
-            f"- 入口 URL：{self._inline(run.normalized_url)}",
+            f"- 入口 URL：{self._inline(entry_url)}",
             f"- 上下文：{len(contexts)}",
             f"- 覆盖差异：{len(differences)}",
             "- 模式：anonymous / user / admin 三上下文，仅执行被动采集。",
@@ -256,6 +273,7 @@ class ScanReportService:
         findings = sorted(run.findings, key=lambda item: item.id)
         finding_groups = project_finding_groups(findings)
         stages = sorted(run.stages, key=lambda item: item.position)
+        entry_url = redacted_observed_url(run.normalized_url)
         summary_status = run.status
         if summary_status == "running":
             summary_status = "completed_with_warnings" if failures else "completed"
@@ -265,7 +283,7 @@ class ScanReportService:
             "## 执行摘要",
             "",
             f"- 任务状态：{summary_status}",
-            f"- 入口 URL：{run.normalized_url}",
+            f"- 入口 URL：{entry_url}",
             f"- 发现资产：{len(assets)}",
             f"- 证据记录：{len(evidence)}",
             f"- 风险或关注项：{len(finding_groups)} 类（{len(findings)} 条原始观察）",
@@ -274,7 +292,7 @@ class ScanReportService:
             "",
             "## 扫描范围",
             "",
-            f"- 起始地址：{run.normalized_url}",
+            f"- 起始地址：{entry_url}",
             f"- 最大页面数：{run.options.get('max_pages', '-')}",
             f"- 最大静态资源数：{run.options.get('max_resources', '-')}",
             f"- 最大深度：{run.options.get('max_depth', '-')}",
