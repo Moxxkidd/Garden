@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import time
 from collections import Counter
 from typing import Annotated
@@ -17,6 +18,7 @@ from app.core.errors import GardenError
 from app.core.settings import get_settings
 from app.models.scan_run import TERMINAL_SCAN_RUN_STATUSES
 from app.schemas.assessment import AssessmentRunView, PassiveCoverageStartRequest
+from app.schemas.scan import ScanOptions
 
 
 class TyperCoveragePrompts:
@@ -47,6 +49,10 @@ class TyperCoveragePrompts:
         console.print(text, markup=False)
 
 
+def _is_interactive_terminal() -> bool:
+    return sys.stdin.isatty()
+
+
 def coverage(
     entry_url: Annotated[str, typer.Argument(help="已授权的 HTTP(S) 入口 URL。")],
     user_profile: Annotated[int | None, typer.Option("--user-profile", min=1)] = None,
@@ -57,6 +63,25 @@ def coverage(
     ] = False,
     detach: Annotated[bool, typer.Option("--detach", help="提交后立即返回。")] = False,
     ui_port: Annotated[int | None, typer.Option("--ui-port", min=1, max=65535)] = None,
+    source_run: Annotated[int | None, typer.Option("--source-run", min=1)] = None,
+    max_pages: Annotated[int, typer.Option("--max-pages", min=1, max=500)] = 50,
+    max_resources: Annotated[
+        int,
+        typer.Option("--max-resources", min=0, max=2000),
+    ] = 200,
+    max_depth: Annotated[int, typer.Option("--max-depth", min=0, max=5)] = 2,
+    request_timeout: Annotated[
+        float | None,
+        typer.Option("--request-timeout", min=0.1, max=60),
+    ] = None,
+    overall_timeout: Annotated[
+        float | None,
+        typer.Option("--overall-timeout", min=0.1, max=1800),
+    ] = None,
+    retry_attempts: Annotated[
+        int | None,
+        typer.Option("--retry-attempts", min=0, max=2),
+    ] = None,
 ) -> None:
     """引导并执行 anonymous/user/admin 三上下文的仅被动覆盖评估。"""
 
@@ -64,17 +89,31 @@ def coverage(
     result = None
     manager = None
     try:
+        options = ScanOptions(
+            max_pages=max_pages,
+            max_resources=max_resources,
+            max_depth=max_depth,
+            request_timeout_seconds=request_timeout,
+            overall_timeout_seconds=overall_timeout,
+            retry_attempts=retry_attempts,
+        )
         if non_interactive:
             if user_profile is None or admin_profile is None:
                 console.print("--non-interactive 必须同时提供 --user-profile 和 --admin-profile。")
                 raise typer.Exit(code=2)
             request = PassiveCoverageStartRequest(
                 url=entry_url,
+                source_run_id=source_run,
                 user_profile_id=user_profile,
                 admin_profile_id=admin_profile,
+                options=options,
             )
         else:
+            if not _is_interactive_terminal():
+                console.print("当前输入不是交互终端；请使用 --non-interactive 并提供两个档案 ID。")
+                raise typer.Exit(code=2)
             request = CoverageSetupWizard(prompts=TyperCoveragePrompts()).run(entry_url)
+            request = request.model_copy(update={"source_run_id": source_run, "options": options})
 
         manager = WebRuntimeManager(
             paths=GardenPaths.from_environment(),

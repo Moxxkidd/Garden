@@ -475,7 +475,7 @@ class ScanPipeline:
             session.commit()
             self._try_failure_report(session, run)
         finally:
-            self._cleanup_temporary_context_secrets(session, scan_run_id)
+            self.cleanup_temporary_context_secrets(session, scan_run_id)
 
     def _compare_coverage(self, session: Session, run: ScanRun):
         summary = self.coverage_comparison_service.compare(session, run)
@@ -509,11 +509,13 @@ class ScanPipeline:
                 stage.summary = "Skipped after an earlier authenticated coverage stage failed."
                 stage.finished_at = now
 
-    def _cleanup_temporary_context_secrets(
+    def cleanup_temporary_context_secrets(
         self,
         session: Session,
         scan_run_id: int,
     ) -> None:
+        """Delete short-lived credential material linked to an assessment."""
+
         if self.ephemeral_secret_store is None:
             return
         contexts = list(

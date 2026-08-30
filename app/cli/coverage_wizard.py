@@ -18,7 +18,7 @@ from app.schemas.credential import CredentialProfileCreate
 from app.schemas.target import TargetCreate
 from app.services.credentials import CredentialProfileService
 from app.services.ephemeral_secret_store import EphemeralSecretStore
-from app.services.login_configs import encode_inline_login_config
+from app.services.login_configs import LoginConfigService, encode_inline_login_config
 from app.services.targets import TargetService
 
 
@@ -49,12 +49,14 @@ class CoverageSetupWizard:
         prompts: CoveragePrompts,
         target_service: TargetService | None = None,
         credential_service: CredentialProfileService | None = None,
+        login_config_service: LoginConfigService | None = None,
         secret_store: EphemeralSecretStore | None = None,
         session_factory=session_scope,
     ) -> None:
         self.prompts = prompts
         self.target_service = target_service or TargetService()
         self.credential_service = credential_service or CredentialProfileService()
+        self.login_config_service = login_config_service or LoginConfigService()
         self.secret_store = secret_store or EphemeralSecretStore(self._default_secret_root())
         self.session_factory = session_factory
 
@@ -103,7 +105,7 @@ class CoverageSetupWizard:
         if not self.prompts.confirm("没有同源 Target，立即创建？", default=True):
             raise InputValidationError("没有与入口 URL 同源的 Target。")
         name = self.prompts.text("Target 名称", default=urlparse(entry_url).hostname)
-        owner = self.prompts.text("Target 负责人", default="local-user")
+        owner = self.prompts.text("Target 负责人（用于资产归属）", default="local-user")
         return self.target_service.create(
             session,
             TargetCreate(
@@ -126,17 +128,21 @@ class CoverageSetupWizard:
         )
         return next(target for target in targets if str(target.id) == selected)
 
-    def _select_profile(self, session, target: Target, role: str) -> CredentialProfile:
-        profiles = self.credential_service.list_for_target_role(session, target.id, role)
-        if not profiles:
-            raise InputValidationError(f"Target #{target.id} 没有 role={role} 的凭据档案。")
+    def _select_profile_or_create(
+        self,
+        profiles: list[CredentialProfile],
+        role: str,
+    ) -> CredentialProfile | None:
         selected = self.prompts.choose(
             f"选择 {role} 凭据档案",
             [
                 PromptChoice(value=str(profile.id), label=f"#{profile.id} {profile.name}")
                 for profile in profiles
-            ],
+            ]
+            + [PromptChoice(value="__create__", label=f"创建新的 {role} 凭据档案")],
         )
+        if selected == "__create__":
+            return None
         return next(profile for profile in profiles if str(profile.id) == selected)
 
     def _select_or_create_profile(
@@ -148,8 +154,13 @@ class CoverageSetupWizard:
     ) -> CredentialProfile:
         profiles = self.credential_service.list_for_target_role(session, target.id, role)
         if profiles:
-            return self._select_profile(session, target, role)
-        if not self.prompts.confirm(f"没有 role={role} 的凭据档案，立即创建？", default=True):
+            selected = self._select_profile_or_create(profiles, role)
+            if selected is not None:
+                return self._prepare_existing_profile(selected, role, draft_secret_refs)
+        elif not self.prompts.confirm(
+            f"没有 role={role} 的凭据档案，立即创建？",
+            default=True,
+        ):
             raise InputValidationError(f"Target #{target.id} 没有 role={role} 的凭据档案。")
 
         name = self.prompts.text(f"{role} 档案名称", default=f"{target.name}-{role}")
@@ -188,6 +199,26 @@ class CoverageSetupWizard:
                 login_config_path=login_config,
             ),
         )
+
+    def _prepare_existing_profile(
+        self,
+        profile: CredentialProfile,
+        role: str,
+        draft_secret_refs: list[str],
+    ) -> CredentialProfile:
+        self.login_config_service.load(profile.login_config_path)
+        if not profile.secret_ref.startswith("ephemeral-file://"):
+            return profile
+        try:
+            if self.secret_store.path_for(profile.secret_ref).exists():
+                return profile
+        except InputValidationError:
+            pass
+        secret = self.prompts.secret(f"{role} 密码已过期，请重新输入（输入已隐藏）")
+        reference = self.secret_store.write(secret)
+        draft_secret_refs.append(reference)
+        profile.secret_ref = reference
+        return profile
 
     def _same_origin_url(self, base_url: str, value: str) -> str:
         candidate = urljoin(f"{base_url.rstrip('/')}/", value.strip())

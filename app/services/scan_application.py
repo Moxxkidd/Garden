@@ -173,10 +173,16 @@ class ScanApplicationService:
             create_assessment_stages(session, run)
             session.commit()
             run_id = run.id
-        if request.mode == AssessmentMode.QUICK:
-            self.dispatcher.submit(run_id, self.execute_scan)
-        else:
-            self.dispatcher.submit(run_id, self.execute_authenticated_assessment)
+        callback = (
+            self.execute_scan
+            if request.mode == AssessmentMode.QUICK
+            else self.execute_authenticated_assessment
+        )
+        try:
+            self.dispatcher.submit(run_id, callback)
+        except Exception:
+            self._mark_dispatch_failed(run_id)
+            raise
         return self.get_assessment(run_id)
 
     def execute_scan(self, scan_run_id: int) -> None:
@@ -185,7 +191,10 @@ class ScanApplicationService:
 
     def execute_authenticated_assessment(self, scan_run_id: int) -> None:
         with session_scope() as session:
-            self.pipeline.execute_authenticated(session, scan_run_id)
+            try:
+                self.pipeline.execute_authenticated(session, scan_run_id)
+            finally:
+                self.pipeline.cleanup_temporary_context_secrets(session, scan_run_id)
 
     def cancel_scan(self, scan_run_id: int) -> ScanRunView:
         """立即标记一个尚未结束的扫描为已中断，保留已写入的证据。"""
@@ -203,6 +212,7 @@ class ScanApplicationService:
                 raise InputValidationError("Only authenticated coverage runs are assessments.")
             if run.status not in TERMINAL_SCAN_RUN_STATUSES:
                 self._mark_interrupted(run)
+                self.pipeline.cleanup_temporary_context_secrets(session, run.id)
             return self._assessment_view(run)
 
     def interrupt_active_scans(self) -> int:
@@ -219,7 +229,10 @@ class ScanApplicationService:
                 )
             )
             for scan_run_id in active_ids:
-                self._mark_interrupted(self._get(session, scan_run_id))
+                run = self._get(session, scan_run_id)
+                self._mark_interrupted(run)
+                if run.mode == AssessmentMode.AUTHENTICATED_COVERAGE.value:
+                    self.pipeline.cleanup_temporary_context_secrets(session, run.id)
             return len(active_ids)
 
     def get_scan(self, scan_run_id: int) -> ScanRunView:
@@ -296,6 +309,24 @@ class ScanApplicationService:
         shutdown = getattr(self.dispatcher, "shutdown", None)
         if shutdown is not None:
             shutdown()
+
+    def _mark_dispatch_failed(self, scan_run_id: int) -> None:
+        with session_scope() as session:
+            run = self._get(session, scan_run_id)
+            now = datetime.now(timezone.utc)
+            run.status = ScanRunStatus.FAILED.value
+            run.current_stage = ScanRunStatus.FAILED.value
+            run.error_code = "dispatch_failed"
+            run.error_message = "Scan could not be submitted for execution."
+            run.finished_at = now
+            run.active_key = None
+            for stage in run.stages:
+                if stage.status == "pending":
+                    stage.status = "skipped"
+                    stage.summary = "Skipped because scan dispatch failed."
+                    stage.finished_at = now
+            if run.mode == AssessmentMode.AUTHENTICATED_COVERAGE.value:
+                self.pipeline.cleanup_temporary_context_secrets(session, run.id)
 
     def _get(self, session, scan_run_id: int) -> ScanRun:
         run = session.scalar(

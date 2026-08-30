@@ -128,8 +128,82 @@ def test_wizard_selects_same_origin_target_and_exact_roles() -> None:
     assert request.active_checks_enabled is False
     assert prompts.hidden_values == []
     assert prompts.offered["选择同源 Target"] == (str(setup.target_id),)
-    assert prompts.offered["选择 user 凭据档案"] == (str(setup.user_id),)
-    assert prompts.offered["选择 admin 凭据档案"] == (str(setup.admin_id),)
+    assert prompts.offered["选择 user 凭据档案"] == (str(setup.user_id), "__create__")
+    assert prompts.offered["选择 admin 凭据档案"] == (str(setup.admin_id), "__create__")
+
+
+def test_wizard_can_create_a_new_profile_when_existing_profiles_are_available(
+    tmp_path: Path,
+) -> None:
+    setup = _setup_records()
+    prompts = ScriptedPrompts(
+        [
+            str(setup.target_id),
+            "__create__",
+            "alternate-coverage-user",
+            "/login",
+            "/account",
+            "alternate@example.test",
+            "temporary-user-secret",
+            str(setup.admin_id),
+            "yes",
+        ]
+    )
+
+    request = CoverageSetupWizard(
+        prompts=prompts,
+        secret_store=EphemeralSecretStore(tmp_path / "secrets"),
+    ).run(setup.url)
+
+    assert request.user_profile_id != setup.user_id
+    assert request.admin_profile_id == setup.admin_id
+    assert prompts.offered["选择 user 凭据档案"] == (
+        str(setup.user_id),
+        "__create__",
+    )
+
+
+def test_wizard_reprompts_for_an_expired_temporary_profile_secret(
+    tmp_path: Path,
+) -> None:
+    setup = _setup_records()
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    expired_reference = store.write("expired-secret")
+    store.delete(expired_reference)
+    with session_scope() as session:
+        session.get(CredentialProfile, setup.user_id).secret_ref = expired_reference
+        session.commit()
+    prompts = ScriptedPrompts(
+        [
+            str(setup.target_id),
+            str(setup.user_id),
+            "replacement-user-secret",
+            str(setup.admin_id),
+            "yes",
+        ]
+    )
+
+    request = CoverageSetupWizard(prompts=prompts, secret_store=store).run(setup.url)
+
+    assert request.user_profile_id == setup.user_id
+    assert prompts.hidden_values == ["replacement-user-secret"]
+    with session_scope() as session:
+        profile = session.get(CredentialProfile, setup.user_id)
+        assert profile.secret_ref != expired_reference
+        assert store.read(profile.secret_ref) == "replacement-user-secret"
+
+
+def test_wizard_rejects_a_selected_profile_with_invalid_login_config() -> None:
+    setup = _setup_records()
+    with session_scope() as session:
+        session.get(CredentialProfile, setup.user_id).login_config_path = "inline://broken"
+        session.commit()
+    prompts = ScriptedPrompts([str(setup.target_id), str(setup.user_id)])
+
+    with pytest.raises(InputValidationError, match="Inline login config"):
+        CoverageSetupWizard(prompts=prompts).run(setup.url)
+
+    assert prompts.hidden_values == []
 
 
 def test_wizard_creates_same_origin_target_and_missing_profiles_without_exposing_secrets(

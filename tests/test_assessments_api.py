@@ -68,8 +68,10 @@ def test_passive_assessment_http_start_and_read_interfaces(app) -> None:
                 "/api/assessments",
                 json={
                     "url": "http://127.0.0.1:8080/",
+                    "source_run_id": 9,
                     "user_profile_id": 12,
                     "admin_profile_id": 13,
+                    "options": {"max_pages": 8, "max_resources": 15},
                 },
             )
             status = client.get("/api/assessments/31")
@@ -83,6 +85,9 @@ def test_passive_assessment_http_start_and_read_interfaces(app) -> None:
     assert service.started.mode.value == "authenticated_coverage"
     assert service.started.active_checks_enabled is False
     assert service.started.authorization_confirmed is False
+    assert service.started.source_run_id == 9
+    assert service.started.options.max_pages == 8
+    assert service.started.options.max_resources == 15
     assert status.status_code == 200
     assert differences.status_code == 200
     assert differences.json()[0]["classification"] == "admin_only"

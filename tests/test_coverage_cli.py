@@ -102,6 +102,7 @@ def test_coverage_command_invokes_guided_wizard_and_renders_contexts(monkeypatch
     monkeypatch.setattr(coverage_cli, "WebRuntimeManager", Manager)
     monkeypatch.setattr(coverage_cli, "CoverageSetupWizard", Wizard)
     monkeypatch.setattr(coverage_cli, "LocalScanApi", Api)
+    monkeypatch.setattr(coverage_cli, "_is_interactive_terminal", lambda: True, raising=False)
 
     result = runner.invoke(app, ["coverage", "http://127.0.0.1:8080/"])
 
@@ -120,6 +121,22 @@ def test_coverage_command_invokes_guided_wizard_and_renders_contexts(monkeypatch
     assert "仅被动" in result.stdout
 
 
+def test_coverage_command_refuses_to_prompt_without_an_interactive_terminal(
+    monkeypatch,
+) -> None:
+    class ExplodingWizard:
+        def __init__(self, **kwargs):
+            raise AssertionError("non-TTY coverage must not prompt")
+
+    monkeypatch.setattr(coverage_cli, "CoverageSetupWizard", ExplodingWizard)
+    monkeypatch.setattr(coverage_cli, "_is_interactive_terminal", lambda: False, raising=False)
+
+    result = runner.invoke(app, ["coverage", "http://127.0.0.1:8080/"])
+
+    assert result.exit_code == 2
+    assert "--non-interactive" in result.stdout
+
+
 def test_noninteractive_coverage_requires_both_profile_ids() -> None:
     result = runner.invoke(
         app,
@@ -129,6 +146,77 @@ def test_noninteractive_coverage_requires_both_profile_ids() -> None:
     assert result.exit_code == 2
     assert "--user-profile 和 --admin-profile" in result.stdout
     assert "选择同源 Target" not in result.stdout
+
+
+def test_noninteractive_coverage_forwards_bounded_options_and_source_run(
+    monkeypatch,
+) -> None:
+    captured = {}
+
+    class Runtime:
+        base_url = "http://127.0.0.1:8000"
+
+    class Manager:
+        started_by_this_command = False
+
+        def __init__(self, **kwargs):
+            pass
+
+        def ensure(self, *, ui_port):
+            return Runtime()
+
+    class Api:
+        def __init__(self, base_url):
+            pass
+
+        def start_assessment(self, request):
+            captured["request"] = request
+            return _assessment_view()
+
+    monkeypatch.setattr(coverage_cli, "WebRuntimeManager", Manager)
+    monkeypatch.setattr(coverage_cli, "LocalScanApi", Api)
+
+    result = runner.invoke(
+        app,
+        [
+            "coverage",
+            "http://127.0.0.1:8080/",
+            "--non-interactive",
+            "--user-profile",
+            "12",
+            "--admin-profile",
+            "13",
+            "--source-run",
+            "7",
+            "--max-pages",
+            "9",
+            "--max-resources",
+            "17",
+            "--max-depth",
+            "3",
+            "--request-timeout",
+            "4",
+            "--overall-timeout",
+            "80",
+            "--retry-attempts",
+            "2",
+            "--detach",
+        ],
+    )
+
+    assert result.exit_code == 0
+    request = captured["request"]
+    assert request.source_run_id == 7
+    assert request.options.model_dump() == {
+        "max_pages": 9,
+        "max_resources": 17,
+        "max_depth": 3,
+        "request_timeout_seconds": 4.0,
+        "overall_timeout_seconds": 80.0,
+        "retry_attempts": 2,
+        "max_redirects": 5,
+        "user_agent": "Garden-Authorized-Asset-Scanner/0.2",
+    }
 
 
 def test_quick_scan_never_invokes_coverage_wizard(monkeypatch) -> None:
