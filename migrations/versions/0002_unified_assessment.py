@@ -185,7 +185,7 @@ def upgrade() -> None:
         sa.Column("scan_run_id", sa.Integer(), nullable=False),
         sa.Column("kind", sa.String(length=32), nullable=False),
         sa.Column("credential_profile_id", sa.Integer(), nullable=True),
-        sa.Column("temporary_secret_ref", sa.String(length=1000), nullable=True),
+        sa.Column("temporary_secret_ref", sa.String(length=255), nullable=True),
         sa.Column("auth_session_id", sa.Integer(), nullable=True),
         sa.Column("status", sa.String(length=40), server_default="pending", nullable=False),
         sa.Column("login_status", sa.String(length=40), server_default="pending", nullable=False),

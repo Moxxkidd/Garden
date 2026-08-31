@@ -40,7 +40,7 @@ class ScanContext(TimestampMixin, Base):
     credential_profile_id: Mapped[int | None] = mapped_column(
         ForeignKey("credential_profiles.id"), nullable=True, index=True
     )
-    temporary_secret_ref: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    temporary_secret_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     auth_session_id: Mapped[int | None] = mapped_column(
         ForeignKey("auth_sessions.id"), nullable=True, index=True
     )

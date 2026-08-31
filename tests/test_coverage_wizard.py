@@ -244,6 +244,27 @@ def test_wizard_rejects_a_selected_profile_with_invalid_login_config() -> None:
     assert prompts.hidden_values == []
 
 
+def test_wizard_rejects_cross_origin_urls_in_a_selected_login_config() -> None:
+    setup = _setup_records()
+    cross_origin_config = encode_inline_login_config(
+        {
+            "adapter": "playwright",
+            "login_url": "https://outside.example/login",
+            "validate_url": "/me",
+            "auto_detect_selectors": True,
+        }
+    )
+    with session_scope() as session:
+        session.get(CredentialProfile, setup.user_id).login_config_path = cross_origin_config
+        session.commit()
+    prompts = ScriptedPrompts([str(setup.target_id), str(setup.user_id)])
+
+    with pytest.raises(InputValidationError, match="同源"):
+        CoverageSetupWizard(prompts=prompts).run(setup.url)
+
+    assert prompts.hidden_values == []
+
+
 def test_wizard_creates_same_origin_target_and_missing_profiles_without_exposing_secrets(
     tmp_path: Path,
 ) -> None:

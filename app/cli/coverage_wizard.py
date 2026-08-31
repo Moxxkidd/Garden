@@ -14,6 +14,7 @@ from app.models.credential_profile import CredentialProfile
 from app.models.enums import AuthType, TargetType
 from app.models.target import Target
 from app.schemas.assessment import PassiveCoverageStartRequest
+from app.schemas.auth import HttpLoginConfig, PlaywrightLoginConfig
 from app.schemas.credential import CredentialProfileCreate
 from app.schemas.target import TargetCreate
 from app.services.credentials import CredentialProfileService
@@ -175,6 +176,7 @@ class CoverageSetupWizard:
             if selected is not None:
                 return self._prepare_existing_profile(
                     session,
+                    target,
                     selected,
                     role,
                     draft_secret_refs,
@@ -225,11 +227,13 @@ class CoverageSetupWizard:
     def _prepare_existing_profile(
         self,
         session,
+        target: Target,
         profile: CredentialProfile,
         role: str,
         draft_secret_refs: list[str],
     ) -> CredentialProfile:
-        self.login_config_service.load(profile.login_config_path)
+        config = self.login_config_service.load(profile.login_config_path)
+        self._validate_login_config_origin(target, config)
         if not profile.secret_ref.startswith("ephemeral-file://"):
             return profile
         try:
@@ -247,6 +251,26 @@ class CoverageSetupWizard:
         draft_secret_refs.append(reference)
         profile.secret_ref = reference
         return profile
+
+    def _validate_login_config_origin(
+        self,
+        target: Target,
+        config: HttpLoginConfig | PlaywrightLoginConfig,
+    ) -> None:
+        if isinstance(config, PlaywrightLoginConfig):
+            configured_urls = (config.login_url, config.validate_url)
+        else:
+            configured_urls = tuple(
+                request.url
+                for request in (
+                    config.login_request,
+                    config.validate_request,
+                    config.refresh_request,
+                )
+                if request is not None
+            )
+        for configured_url in configured_urls:
+            self._same_origin_url(target.base_url, configured_url)
 
     def _same_origin_url(self, base_url: str, value: str) -> str:
         candidate = urljoin(f"{base_url.rstrip('/')}/", value.strip())
