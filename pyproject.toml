@@ -14,6 +14,7 @@ authors = [
 ]
 dependencies = [
   "alembic>=1.14.0,<2.0.0",
+  "click==8.3.1",
   "fastapi>=0.116.0,<1.0.0",
   "httpx>=0.28.0,<1.0.0",
   "jinja2>=3.1.0,<4.0.0",
@@ -23,7 +24,7 @@ dependencies = [
   "python-multipart>=0.0.20,<1.0.0",
   "rich>=13.0.0,<14.0.0",
   "sqlalchemy>=2.0.0,<3.0.0",
-  "typer>=0.16.0,<1.0.0",
+  "typer==0.24.1",
   "uvicorn[standard]>=0.35.0,<1.0.0",
 ]
 
