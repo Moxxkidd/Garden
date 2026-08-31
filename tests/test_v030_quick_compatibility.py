@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from click import unstyle
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
@@ -25,6 +26,7 @@ def _quick_view(url: str) -> ScanRunView:
 
 def test_v030_keeps_quick_scan_command_contract() -> None:
     result = CliRunner().invoke(cli_app, ["scan", "--help"])
+    help_text = unstyle(result.stdout)
 
     assert result.exit_code == 0
     for token in (
@@ -39,9 +41,9 @@ def test_v030_keeps_quick_scan_command_contract() -> None:
         "--detach",
         "--ui-port",
     ):
-        assert token in result.stdout
-    assert "--user-profile" not in result.stdout
-    assert "--admin-profile" not in result.stdout
+        assert token in help_text
+    assert "--user-profile" not in help_text
+    assert "--admin-profile" not in help_text
 
 
 def test_v030_keeps_quick_http_and_homepage_contract(app) -> None:

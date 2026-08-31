@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from click import unstyle
 from typer.testing import CliRunner
 
 import app.cli.coverage as coverage_cli
@@ -259,10 +260,11 @@ def test_noninteractive_coverage_forwards_bounded_options_and_source_run(
 
 def test_coverage_help_reuses_quick_retries_option_name() -> None:
     result = runner.invoke(app, ["coverage", "--help"])
+    help_text = unstyle(result.stdout)
 
     assert result.exit_code == 0
-    assert "--retries" in result.stdout
-    assert "--retry-attempts" not in result.stdout
+    assert "--retries" in help_text
+    assert "--retry-attempts" not in help_text
 
 
 def test_waiting_coverage_renders_context_health_changes(monkeypatch, capsys) -> None:
