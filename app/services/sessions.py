@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -65,7 +66,14 @@ class AuthSessionService:
         result, _auth_session = self._login_profile(session, credential)
         return result
 
-    def ensure_valid_for_profile(self, session: Session, profile_id: int) -> AuthSession:
+    def ensure_valid_for_profile(
+        self,
+        session: Session,
+        profile_id: int,
+        *,
+        before_request: Callable[[], None] | None = None,
+        secret_ref: str | None = None,
+    ) -> AuthSession:
         """Return a storage-backed session after adapter validation, logging in if needed."""
 
         credential = self.credential_service.get(session, profile_id)
@@ -81,31 +89,70 @@ class AuthSessionService:
         )
         for candidate in candidates:
             try:
-                validation = self.validate(session, candidate.id)
+                validation = self.validate(
+                    session,
+                    candidate.id,
+                    before_request=before_request,
+                )
                 if validation.valid:
                     return candidate
                 if candidate.refresh_supported:
-                    refreshed = self.refresh(session, candidate.id)
-                    if refreshed.success and self.validate(session, candidate.id).valid:
+                    refreshed = self.refresh(
+                        session,
+                        candidate.id,
+                        before_request=before_request,
+                        secret_ref=secret_ref,
+                    )
+                    if (
+                        refreshed.success
+                        and self.validate(
+                            session,
+                            candidate.id,
+                            before_request=before_request,
+                        ).valid
+                    ):
                         return candidate
             except GardenError:
                 continue
 
-        login_result, auth_session = self._login_profile(session, credential)
+        login_result, auth_session = self._login_profile(
+            session,
+            credential,
+            before_request=before_request,
+            secret_ref=secret_ref,
+        )
         if not login_result.success or auth_session is None:
             raise ConflictError("Authentication login failed for the credential profile.")
-        if not self.validate(session, auth_session.id).valid:
+        if not self.validate(
+            session,
+            auth_session.id,
+            before_request=before_request,
+        ).valid:
             raise ConflictError("The newly created authentication session was not valid.")
         return auth_session
 
     def _login_profile(
-        self, session: Session, credential: CredentialProfile
+        self,
+        session: Session,
+        credential: CredentialProfile,
+        *,
+        before_request: Callable[[], None] | None = None,
+        secret_ref: str | None = None,
     ) -> tuple[LoginExecutionResult, AuthSession | None]:
         target = self.target_service.get(session, credential.target_id)
         config = self.login_config_service.load(credential.login_config_path)
-        secret_value = self.secret_resolver.resolve(credential.secret_ref)
+        secret_value = self.secret_resolver.resolve(secret_ref or credential.secret_ref)
         adapter = self._get_adapter(config)
-        result = adapter.login(target, credential, secret_value, config)
+        if before_request is None:
+            result = adapter.login(target, credential, secret_value, config)
+        else:
+            result = adapter.login(
+                target,
+                credential,
+                secret_value,
+                config,
+                before_request=before_request,
+            )
         auth_session = None
         if result.success:
             auth_session = self._persist_session(
@@ -163,7 +210,13 @@ class AuthSessionService:
             )
         )
 
-    def validate(self, session: Session, session_id: int):
+    def validate(
+        self,
+        session: Session,
+        session_id: int,
+        *,
+        before_request: Callable[[], None] | None = None,
+    ):
         auth_session = self.get(session, session_id)
         credential = session.get(CredentialProfile, auth_session.credential_profile_id)
         target = self.target_service.get(session, auth_session.target_id)
@@ -174,7 +227,16 @@ class AuthSessionService:
         config = self.login_config_service.load(credential.login_config_path)
         payload = self.storage_service.read_payload(auth_session.storage_ref)
         adapter = self._get_adapter(config)
-        result = adapter.validate(target, credential, config, payload)
+        if before_request is None:
+            result = adapter.validate(target, credential, config, payload)
+        else:
+            result = adapter.validate(
+                target,
+                credential,
+                config,
+                payload,
+                before_request=before_request,
+            )
         auth_session.status = result.status.value
         auth_session.last_validated_at = datetime.now(timezone.utc)
         auth_session.expires_at = result.expires_at or auth_session.expires_at
@@ -203,7 +265,14 @@ class AuthSessionService:
         )
         return result
 
-    def refresh(self, session: Session, session_id: int) -> LoginExecutionResult:
+    def refresh(
+        self,
+        session: Session,
+        session_id: int,
+        *,
+        before_request: Callable[[], None] | None = None,
+        secret_ref: str | None = None,
+    ) -> LoginExecutionResult:
         auth_session = self.get(session, session_id)
         if not auth_session.refresh_supported:
             raise ConflictError(f"Session {session_id} does not support refresh.")
@@ -215,9 +284,19 @@ class AuthSessionService:
             )
         config = self.login_config_service.load(credential.login_config_path)
         payload = self.storage_service.read_payload(auth_session.storage_ref)
-        secret_value = self.secret_resolver.resolve(credential.secret_ref)
+        secret_value = self.secret_resolver.resolve(secret_ref or credential.secret_ref)
         adapter = self._get_adapter(config)
-        result = adapter.refresh(target, credential, secret_value, config, payload)
+        if before_request is None:
+            result = adapter.refresh(target, credential, secret_value, config, payload)
+        else:
+            result = adapter.refresh(
+                target,
+                credential,
+                secret_value,
+                config,
+                payload,
+                before_request=before_request,
+            )
         if result.success:
             auth_session.status = result.status.value
             auth_session.expires_at = result.expires_at

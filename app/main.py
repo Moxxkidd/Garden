@@ -27,6 +27,9 @@ async def lifespan(app: FastAPI):
     )
     init_database(settings.database_url)
     app.state.scan_service = ScanApplicationService(settings=settings)
+    purged = app.state.scan_service.purge_expired_temporary_secrets(max_age_seconds=900)
+    if purged:
+        logger.warning("Purged expired temporary coverage secrets", extra={"count": len(purged)})
     interrupted = app.state.scan_service.interrupt_active_scans()
     if interrupted:
         logger.warning("Interrupted stale active scans", extra={"count": interrupted})

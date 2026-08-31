@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.errors import InputValidationError, ResourceNotFoundError
+from app.cli.paths import formal_runtime_paths
+from app.core.errors import (
+    InputValidationError,
+    OverallScanTimeout,
+    ResourceNotFoundError,
+    ScanInterrupted,
+)
 from app.models.credential_profile import CredentialProfile
 from app.models.enums import (
     AssessmentMode,
@@ -21,6 +29,8 @@ from app.models.scan_context import ScanContext
 from app.models.scan_run import ScanRun
 from app.models.target import Target
 from app.services.audit import AuditService
+from app.services.ephemeral_secret_store import EphemeralSecretStore
+from app.services.secret_resolver import SecretResolver
 from app.services.sessions import AuthSessionService
 
 
@@ -32,32 +42,69 @@ class ContextEstablishmentService:
         *,
         auth_service: AuthSessionService | None = None,
         audit_service: AuditService | None = None,
+        ephemeral_store: EphemeralSecretStore | None = None,
     ) -> None:
-        self.auth_service = auth_service or AuthSessionService()
+        if ephemeral_store is None:
+            formal_paths = formal_runtime_paths()
+            ephemeral_store = EphemeralSecretStore(
+                formal_paths.secrets_dir
+                if formal_paths is not None
+                else Path.cwd() / "data" / "ephemeral-secrets"
+            )
+        if auth_service is not None:
+            self.auth_service = auth_service
+        else:
+            self.auth_service = AuthSessionService(
+                secret_resolver=SecretResolver(ephemeral_store=ephemeral_store)
+            )
         self.audit_service = audit_service or AuditService()
+        self.ephemeral_store = ephemeral_store
 
-    def establish(self, session: Session, run: ScanRun) -> list[ScanContext]:
+    def establish(
+        self,
+        session: Session,
+        run: ScanRun,
+        *,
+        before_request: Callable[[], None] | None = None,
+    ) -> list[ScanContext]:
         contexts = self._existing_contexts(session, run)
         anonymous = self._establish_anonymous(session, run, contexts)
         if run.mode == AssessmentMode.QUICK.value:
             return [anonymous]
 
-        user_profile, admin_profile = self._validate_authenticated_run(session, run, contexts)
-        user = self._establish_authenticated(
-            session,
-            run,
-            contexts[ContextKind.USER.value],
-            user_profile,
-        )
-        admin = self._establish_authenticated(
-            session,
-            run,
-            contexts[ContextKind.ADMIN.value],
-            admin_profile,
-        )
-        self._set_run_completeness(run, user, admin)
-        session.flush()
-        return [anonymous, user, admin]
+        try:
+            user_profile, admin_profile = self._validate_authenticated_run(session, run, contexts)
+            user = self._establish_authenticated(
+                session,
+                run,
+                contexts[ContextKind.USER.value],
+                user_profile,
+                before_request=before_request,
+            )
+            admin = self._establish_authenticated(
+                session,
+                run,
+                contexts[ContextKind.ADMIN.value],
+                admin_profile,
+                before_request=before_request,
+            )
+            self._set_run_completeness(run, user, admin)
+            session.flush()
+            return [anonymous, user, admin]
+        finally:
+            self._delete_context_temporary_secrets(session, contexts)
+
+    def _delete_context_temporary_secrets(
+        self,
+        session: Session,
+        contexts: dict[str, ScanContext],
+    ) -> None:
+        if self.ephemeral_store is None:
+            return
+        for kind in (ContextKind.USER.value, ContextKind.ADMIN.value):
+            reference = contexts[kind].temporary_secret_ref
+            if reference is not None:
+                self.ephemeral_store.delete(reference)
 
     def _existing_contexts(self, session: Session, run: ScanRun) -> dict[str, ScanContext]:
         contexts = {
@@ -84,6 +131,8 @@ class ContextEstablishmentService:
     ) -> tuple[CredentialProfile, CredentialProfile]:
         user = self._profile(session, contexts[ContextKind.USER.value])
         admin = self._profile(session, contexts[ContextKind.ADMIN.value])
+        self._claim_unowned_temporary_secret(contexts[ContextKind.USER.value], user)
+        self._claim_unowned_temporary_secret(contexts[ContextKind.ADMIN.value], admin)
         if user.target_id != admin.target_id:
             raise InputValidationError("user/admin 凭证档案必须属于同一目标。")
         if user.role != ContextKind.USER.value:
@@ -98,6 +147,21 @@ class ContextEstablishmentService:
         if self._origin(run.normalized_url) != self._origin(target.base_url):
             raise InputValidationError("验证运行 URL 必须与 target base URL 同源。")
         return user, admin
+
+    def _claim_unowned_temporary_secret(
+        self,
+        context: ScanContext,
+        profile: CredentialProfile,
+    ) -> None:
+        if context.temporary_secret_ref is not None:
+            return
+        if not profile.secret_ref.startswith("ephemeral-file://"):
+            return
+        try:
+            if self.ephemeral_store.path_for(profile.secret_ref).exists():
+                context.temporary_secret_ref = profile.secret_ref
+        except InputValidationError:
+            return
 
     def _profile(self, session: Session, context: ScanContext) -> CredentialProfile:
         if context.credential_profile_id is None:
@@ -133,12 +197,31 @@ class ContextEstablishmentService:
         run: ScanRun,
         context: ScanContext,
         profile: CredentialProfile,
+        *,
+        before_request: Callable[[], None] | None,
     ) -> ScanContext:
         now = datetime.now(timezone.utc)
         context.started_at = context.started_at or now
         try:
             with session.begin_nested():
-                auth_session = self.auth_service.ensure_valid_for_profile(session, profile.id)
+                kwargs = {}
+                if before_request is not None:
+                    kwargs["before_request"] = before_request
+                if context.temporary_secret_ref is not None:
+                    kwargs["secret_ref"] = context.temporary_secret_ref
+                if not kwargs:
+                    auth_session = self.auth_service.ensure_valid_for_profile(
+                        session,
+                        profile.id,
+                    )
+                else:
+                    auth_session = self.auth_service.ensure_valid_for_profile(
+                        session,
+                        profile.id,
+                        **kwargs,
+                    )
+        except (OverallScanTimeout, ScanInterrupted):
+            raise
         except Exception:  # noqa: BLE001 - context boundary persists a redacted failure
             context.auth_session_id = None
             context.status = "failed"

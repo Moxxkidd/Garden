@@ -5,15 +5,24 @@ from __future__ import annotations
 import json
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
 
-from app.core.errors import InputValidationError
+from app.core.errors import (
+    InputValidationError,
+    OverallScanTimeout,
+    ScanInterrupted,
+    TargetPolicyError,
+)
+from app.core.settings import get_settings
 from app.models.enums import SessionType
 from app.models.target import Target
 from app.schemas.inventory import InventoryBuildControls
+from app.services.authenticated_network import AuthenticatedNetworkGuard
+from app.services.scan_network import TargetNetworkPolicy
 
 
 @dataclass
@@ -26,6 +35,7 @@ class ObservedEndpoint:
     cache_control: str | None = None
     content_type: str | None = None
     response_preview: str | None = None
+    response_text: str | None = None
     set_cookie_names: list[str] = field(default_factory=list)
     cookie_issue_flags: list[str] = field(default_factory=list)
     parameters: dict[str, list[str]] = field(default_factory=dict)
@@ -44,6 +54,8 @@ class ObservedPage:
     discovered_urls: list[str]
     status_code: int | None = None
     cache_control: str | None = None
+    content_type: str | None = None
+    response_text: str | None = None
     text_preview: str | None = None
 
 
@@ -62,10 +74,13 @@ class PlaywrightInventoryGatewayProtocol(Protocol):
         controls: InventoryBuildControls,
         session_type: SessionType,
         session_payload: dict[str, Any],
+        before_request: Callable[[], None] | None = None,
     ) -> InventoryCollectionResult: ...
 
 
 class SyncPlaywrightInventoryGateway:
+    _MAX_CAPTURED_RESPONSE_BYTES = 256 * 1024
+
     """Collect inventory using Playwright navigation and network observation."""
 
     DOWNLOAD_SUFFIXES = (
@@ -87,6 +102,11 @@ class SyncPlaywrightInventoryGateway:
         ".csv",
     )
 
+    def __init__(self, *, policy: TargetNetworkPolicy | None = None) -> None:
+        self.network_guard = AuthenticatedNetworkGuard(
+            policy or TargetNetworkPolicy(get_settings())
+        )
+
     def collect(
         self,
         target: Target,
@@ -94,6 +114,7 @@ class SyncPlaywrightInventoryGateway:
         controls: InventoryBuildControls,
         session_type: SessionType,
         session_payload: dict[str, Any],
+        before_request: Callable[[], None] | None = None,
     ) -> InventoryCollectionResult:
         try:
             from playwright.sync_api import Error as PlaywrightError
@@ -113,7 +134,7 @@ class SyncPlaywrightInventoryGateway:
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=True)
+                browser = playwright.chromium.launch(headless=True, channel="chromium")
                 context = self._build_context(
                     browser,
                     target.base_url,
@@ -121,6 +142,12 @@ class SyncPlaywrightInventoryGateway:
                     session_payload,
                 )
                 page = context.new_page()
+                violations = self._install_request_guard(
+                    context,
+                    page,
+                    target.base_url,
+                    before_request=before_request,
+                )
 
                 def handle_response(response) -> None:
                     nonlocal request_counter
@@ -144,6 +171,7 @@ class SyncPlaywrightInventoryGateway:
                         response_headers = response.all_headers()
                     except Exception:
                         response_headers = {}
+                    response_text = self._extract_response_text(response, content_type)
                     endpoints.append(
                         ObservedEndpoint(
                             method=request.method.upper(),
@@ -154,7 +182,10 @@ class SyncPlaywrightInventoryGateway:
                             observed_at=datetime.now(timezone.utc),
                             cache_control=response.header_value("cache-control"),
                             content_type=content_type,
-                            response_preview=self._extract_response_preview(response, content_type),
+                            response_preview=(
+                                self._normalize_preview(response_text) if response_text else None
+                            ),
+                            response_text=response_text,
                             set_cookie_names=set_cookie_names,
                             cookie_issue_flags=cookie_issue_flags,
                             parameters=self._extract_parameters(request),
@@ -167,6 +198,8 @@ class SyncPlaywrightInventoryGateway:
                 page.on("response", handle_response)
 
                 while queued and len(seen_page_urls) < controls.max_pages:
+                    if before_request is not None:
+                        before_request()
                     current_url, depth = queued.popleft()
                     if current_url in seen_page_urls:
                         continue
@@ -175,17 +208,31 @@ class SyncPlaywrightInventoryGateway:
                     if self._looks_like_download_url(current_url):
                         continue
                     try:
-                        response = page.goto(
-                            current_url,
-                            wait_until="domcontentloaded",
-                            timeout=15000,
-                        )
+                        response = None
+                        for attempt in range(controls.retry_attempts + 1):
+                            try:
+                                response = self._guarded_goto(
+                                    page,
+                                    target.base_url,
+                                    current_url,
+                                    int(controls.request_timeout_seconds * 1000),
+                                    violations,
+                                )
+                                break
+                            except TargetPolicyError:
+                                raise
+                            except PlaywrightError:
+                                if attempt >= controls.retry_attempts:
+                                    raise
+                                if before_request is not None:
+                                    before_request()
                     except PlaywrightError as error:
                         if self._is_download_navigation_error(error):
                             continue
                         raise
                     if controls.delay_ms:
                         time.sleep(controls.delay_ms / 1000)
+                    self._raise_request_guard_error(violations)
                     final_url = self._normalize_page_url(page.url)
                     seen_page_urls.add(final_url)
                     title = page.title()
@@ -201,6 +248,10 @@ class SyncPlaywrightInventoryGateway:
                             cache_control=(
                                 response.header_value("cache-control") if response else None
                             ),
+                            content_type=(
+                                response.header_value("content-type") if response else None
+                            ),
+                            response_text=self._extract_navigation_response_text(response),
                             text_preview=self._extract_page_preview(page),
                         )
                     )
@@ -223,6 +274,60 @@ class SyncPlaywrightInventoryGateway:
             pages=pages,
             endpoints=endpoints,
         )
+
+    def _install_request_guard(
+        self,
+        context,
+        page,
+        base_url: str,
+        *,
+        before_request: Callable[[], None] | None,
+    ) -> list[BaseException]:
+        violations: list[BaseException] = []
+        cdp = context.new_cdp_session(page)
+
+        def guard_request(event: dict[str, Any]) -> None:
+            request_id = str(event["requestId"])
+            try:
+                if before_request is not None:
+                    before_request()
+                self.network_guard.ensure_allowed(base_url, str(event["request"]["url"]))
+            except (OverallScanTimeout, ScanInterrupted, TargetPolicyError) as error:
+                violations.append(error)
+                cdp.send(
+                    "Fetch.failRequest",
+                    {"requestId": request_id, "errorReason": "BlockedByClient"},
+                )
+                return
+            cdp.send("Fetch.continueRequest", {"requestId": request_id})
+
+        cdp.on("Fetch.requestPaused", guard_request)
+        cdp.send("Fetch.enable", {"patterns": [{"urlPattern": "*", "requestStage": "Request"}]})
+        return violations
+
+    def _guarded_goto(
+        self,
+        page,
+        base_url: str,
+        url: str,
+        timeout_ms: int,
+        violations: list[BaseException],
+    ):
+        self.network_guard.ensure_allowed(base_url, url)
+        try:
+            response = page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+        except Exception as error:
+            if violations:
+                raise violations[0] from error
+            raise
+        if violations:
+            raise violations[0]
+        self.network_guard.ensure_allowed(base_url, page.url)
+        return response
+
+    def _raise_request_guard_error(self, violations: list[BaseException]) -> None:
+        if violations:
+            raise violations[0]
 
     def _build_context(self, browser, base_url: str, session_type: SessionType, session_payload):
         if session_type == SessionType.PLAYWRIGHT_STORAGE_STATE:
@@ -326,15 +431,41 @@ class SyncPlaywrightInventoryGateway:
             return None
         return self._normalize_preview(preview)
 
-    def _extract_response_preview(self, response, content_type: str | None) -> str | None:
+    def _extract_navigation_response_text(self, response) -> str | None:
+        if response is None:
+            return None
+        content_type = (response.header_value("content-type") or "").lower()
+        if not any(token in content_type for token in ("json", "text", "html", "xml")):
+            return None
+        if not self._response_body_is_safely_bounded(response):
+            return None
+        try:
+            return response.text()
+        except BaseException:
+            return None
+
+    def _extract_response_text(self, response, content_type: str | None) -> str | None:
         normalized_type = (content_type or "").lower()
         if not any(token in normalized_type for token in ("json", "text", "html", "xml")):
             return None
+        if not self._response_body_is_safely_bounded(response):
+            return None
         try:
-            preview = response.text()
+            return response.text()
         except BaseException:
             return None
-        return self._normalize_preview(preview)
+
+    def _response_body_is_safely_bounded(self, response) -> bool:
+        if response.header_value("content-encoding"):
+            return False
+        raw_length = response.header_value("content-length")
+        if raw_length is None:
+            return False
+        try:
+            length = int(raw_length)
+        except (TypeError, ValueError):
+            return False
+        return 0 <= length <= self._MAX_CAPTURED_RESPONSE_BYTES
 
     def _extract_cookie_metadata(self, response) -> tuple[list[str], list[str]]:
         raw_value = response.header_value("set-cookie") or ""
