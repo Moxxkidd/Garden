@@ -2,10 +2,68 @@ import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.db.bootstrap import session_scope
 from app.models.scan_run import ScanAsset, ScanFinding, ScanRun
+from app.schemas.scan import ScanFailureView, ScanRunView
+
+
+@pytest.mark.parametrize(
+    ("code", "snippet"),
+    [
+        ("overall_timeout", "不是断点续扫"),
+        ("coverage_limit_reached", "请根据报告中的命中限制检查"),
+        ("cross_origin_redirect_blocked", "应以该目标作为新入口单独扫描"),
+        ("unknown_code", None),
+        (None, None),
+    ],
+)
+def test_scan_detail_diagnostic_guidance_is_fixed_and_escaped(app, code, snippet):
+    view = ScanRunView(
+        id=7,
+        input_url="http://127.0.0.1/",
+        normalized_url="http://127.0.0.1/",
+        status="completed_with_warnings" if code else "completed",
+        current_stage="finished",
+        progress=100,
+        retry_count=0,
+        created_at=datetime.now(timezone.utc),
+        finding_group_count=0,
+    )
+    if code:
+        view.failures = [
+            ScanFailureView(
+                stage="collect",
+                code=code,
+                message="<script>TEST_SECRET</script>",
+                url="http://127.0.0.1/?token=TEST_SECRET",
+                retryable=False,
+                attempt=1,
+                occurred_at=view.created_at,
+            )
+        ]
+    with TestClient(app) as client:
+        original_service = app.state.scan_service
+        app.state.scan_service = SimpleNamespace(get_scan=lambda run_id: view)
+        try:
+            response = client.get("/scans/7")
+        finally:
+            app.state.scan_service = original_service
+    assert response.status_code == 200
+    assert "<dd>0 类关注项，0 条原始观察</dd>" in response.text
+    assert "<script>TEST_SECRET</script>" not in response.text
+    if code:
+        assert "&lt;script&gt;TEST_SECRET&lt;/script&gt;" in response.text
+        assert code in response.text
+    hints = re.findall(r'<p class="mt-1">下一步：(.*?)</p>', response.text)
+    if snippet:
+        assert len(hints) == 1
+        assert snippet in hints[0]
+        assert "TEST_SECRET" not in hints[0]
+    else:
+        assert not hints
 
 
 def test_healthz_returns_ok(app) -> None:
