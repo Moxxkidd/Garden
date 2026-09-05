@@ -748,6 +748,7 @@ def test_api_group_count_keeps_different_remediation_separate(tmp_path) -> None:
                     remediation=remediation,
                     asset_ids=[],
                     evidence_ids=[],
+                    created_at=scan.created_at,
                 )
             )
     saved = service.get_scan(scan.id)
