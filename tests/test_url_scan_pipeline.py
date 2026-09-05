@@ -540,6 +540,7 @@ def test_collection_blocks_cross_origin_redirect_before_following_it(tmp_path) -
     request_failures = report.split("## 请求失败", 1)[1]
     assert "cross_origin_redirect_blocked" in coverage
     assert "cross_origin_redirect_blocked" not in request_failures
+    assert "应以该目标作为新入口单独扫描" in coverage
 
 
 def test_truncated_resource_is_labeled_as_a_collected_fragment(tmp_path) -> None:
@@ -711,6 +712,7 @@ def test_njau_style_report_keeps_104_raw_findings_and_trusted_versions(tmp_path,
     request_failures = report.split("## 请求失败", 1)[1]
     assert "coverage_limit_reached" in coverage
     assert "coverage_limit_reached" not in request_failures
+    assert "请根据报告中的命中限制检查" in coverage
 
 
 def test_scan_with_no_findings_returns_zero_groups(tmp_path) -> None:
@@ -907,6 +909,7 @@ def test_overall_timeout_preserves_partial_collection_and_finishes_report(tmp_pa
     request_failures = report.split("## 请求失败", 1)[1]
     assert "overall_timeout" in coverage
     assert "overall_timeout" not in request_failures
+    assert "不是断点续扫" in coverage
 
 
 def test_deadline_equality_blocks_the_next_target_request(tmp_path) -> None:

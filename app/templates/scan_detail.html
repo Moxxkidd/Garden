@@ -37,7 +37,12 @@
       <div class="rounded-3xl border border-amber-200 bg-amber-50 p-6">
         <h2 class="text-lg font-semibold">Failures and uncovered work</h2>
         <ul class="mt-3 space-y-2 text-sm">
-          {% for failure in scan.failures %}<li><strong>{{ failure.stage }}/{{ failure.code }}</strong> — {{ failure.message }}{% if failure.url %} ({{ failure.url }}){% endif %}</li>{% endfor %}
+          {% for failure in scan.failures %}
+            <li><strong>{{ failure.stage }}/{{ failure.code }}</strong> — {{ failure.message }}{% if failure.url %} ({{ failure.url }}){% endif %}
+              {% set hint = diagnostic_hints[(failure.stage, failure.code)] %}
+              {% if hint %}<p class="mt-1">下一步：{{ hint }}</p>{% endif %}
+            </li>
+          {% endfor %}
         </ul>
       </div>
     {% endif %}

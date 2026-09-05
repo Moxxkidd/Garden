@@ -16,7 +16,7 @@ from app.core.settings import get_settings
 from app.models.scan_run import TERMINAL_SCAN_RUN_STATUSES
 from app.schemas.scan import ScanFailureView, ScanOptions, ScanRunView
 from app.services.scan_failure_classification import is_coverage_warning
-from app.services.scan_result_presentation import format_finding_count
+from app.services.scan_result_presentation import diagnostic_hint, format_finding_count
 
 
 def scan(
@@ -121,6 +121,15 @@ def _print_result(result: ScanRunView) -> None:
     ]
     _print_diagnostics("覆盖告警", coverage_warnings)
     _print_diagnostics("请求或阶段失败", request_failures)
+    hints = dict.fromkeys(
+        hint
+        for failure in result.failures
+        if (hint := diagnostic_hint(failure.stage, failure.code))
+    )
+    if hints:
+        console.print("下一步：")
+        for hint in hints:
+            console.print(f"- {hint}", markup=False)
 
 
 def _print_diagnostics(title: str, failures: list[ScanFailureView]) -> None:

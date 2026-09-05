@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 import app.cli.scan as scan_cli
 import app.cli.stop as stop_cli
 from app.cli.main import app
-from app.schemas.scan import ScanRunView
+from app.schemas.scan import ScanFailureView, ScanRunView
 
 runner = CliRunner()
 
@@ -49,6 +49,54 @@ def test_terminal_scan_shows_grouped_count(run_terminal_scan, raw, groups, text)
     result = run_terminal_scan(ScanRunView.model_validate(payload))
     assert result.exit_code == 0
     assert text in unstyle(result.stdout)
+    assert "下一步" not in unstyle(result.stdout)
+
+
+@pytest.mark.parametrize(
+    ("code", "snippet"),
+    [
+        ("overall_timeout", "不是断点续扫"),
+        ("coverage_limit_reached", "--max-depth"),
+        ("cross_origin_redirect_blocked", "应以该目标作为新入口单独扫描"),
+    ],
+)
+def test_terminal_diagnostic_hints_are_fixed_and_deduplicated(run_terminal_scan, code, snippet):
+    view = _view(status="completed_with_warnings", stage="finished", progress=100)
+    failure = ScanFailureView(
+        stage="collect",
+        code=code,
+        message="token=TEST_SECRET",
+        url="http://127.0.0.1/?token=TEST_SECRET",
+        retryable=False,
+        attempt=1,
+        occurred_at=view.created_at,
+    )
+    view.failures = [failure, failure.model_copy()]
+    result = run_terminal_scan(view)
+    assert result.exit_code == 0
+    text = unstyle(result.stdout)
+    assert code in text
+    hints = text.split("下一步", 1)[1].replace("\n", "")
+    assert hints.count(snippet) == 1
+    assert "TEST_SECRET" not in hints
+
+
+def test_terminal_unknown_diagnostic_keeps_original_without_advice(run_terminal_scan):
+    view = _view(status="failed", stage="finished", progress=100)
+    view.failures = [
+        ScanFailureView(
+            stage="report",
+            code="unrecognized_failure",
+            message="original diagnostic",
+            retryable=False,
+            attempt=1,
+            occurred_at=view.created_at,
+        )
+    ]
+    result = run_terminal_scan(view)
+    assert result.exit_code == 1
+    assert "original diagnostic" in result.stdout
+    assert "下一步" not in result.stdout
 
 
 def _view(*, status="queued", stage="queued", progress=0):
