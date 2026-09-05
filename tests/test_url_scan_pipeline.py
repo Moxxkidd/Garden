@@ -670,6 +670,9 @@ def test_njau_style_report_keeps_104_raw_findings_and_trusted_versions(tmp_path,
     with TestClient(app) as client:
         app.state.scan_service = service
         response = client.get(f"/api/scans/{scan.id}")
+        detail = client.get(f"/scans/{scan.id}")
+    assert detail.status_code == 200
+    assert "<dd>2 类（104 条原始观察）</dd>" in detail.text
     assert response.status_code == 200
     assert response.json()["finding_count"] == 104
     assert response.json()["finding_group_count"] == 2

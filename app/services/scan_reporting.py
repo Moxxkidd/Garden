@@ -17,6 +17,7 @@ from app.models.scan_run import ScanRun
 from app.services.coverage_identity import redacted_observed_url
 from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_report_quality import project_finding_groups, report_version_values
+from app.services.scan_result_presentation import format_finding_count
 
 
 class ScanReportService:
@@ -286,7 +287,7 @@ class ScanReportService:
             f"- 入口 URL：{entry_url}",
             f"- 发现资产：{len(assets)}",
             f"- 证据记录：{len(evidence)}",
-            f"- 风险或关注项：{len(finding_groups)} 类（{len(findings)} 条原始观察）",
+            f"- 风险或关注项：{format_finding_count(len(findings), len(finding_groups))}",
             f"- 覆盖告警：{len(coverage_warnings)}",
             f"- 请求或阶段失败：{len(request_failures)}",
             "",
