@@ -7,6 +7,18 @@ from app.services.scan_result_presentation import (
 )
 
 
+def test_authentication_mismatch_guidance():
+    assert diagnostic_hint("context", "authentication_session_mismatch") == (
+        "请检查凭据档案所属 Target 和 user/admin 角色，选择与当前目标匹配的档案后重新提交。"
+    )
+
+
+def test_authentication_unavailable_guidance():
+    assert diagnostic_hint("context", "authentication_session_unavailable") == (
+        "请通过 coverage 向导检查凭据档案、登录地址和登录后验证地址，必要时重新输入凭据。"
+    )
+
+
 def test_cross_origin_guidance():
     assert diagnostic_hint("collect", "cross_origin_redirect_blocked") == (
         "跳转目标超出当前同源边界；请先确认其是否在授权范围内，如需采集，应以该目标作为新入口单独扫描。"
