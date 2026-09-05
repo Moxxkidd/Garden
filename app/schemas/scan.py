@@ -123,6 +123,7 @@ class ScanRunView(BaseModel):
     asset_count: int = 0
     evidence_count: int = 0
     finding_count: int = 0
+    finding_group_count: int | None = Field(default=None, ge=0)
 
 
 class FetchResult(BaseModel):

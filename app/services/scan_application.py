@@ -38,6 +38,7 @@ from app.schemas.scan import (
 )
 from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_pipeline import STAGES, ScanPipeline
+from app.services.scan_report_quality import project_finding_groups
 
 
 def create_assessment_stages(session: Session, run: ScanRun) -> None:
@@ -459,6 +460,7 @@ class ScanApplicationService:
             "asset_count": len(run.assets),
             "evidence_count": len(run.evidence),
             "finding_count": len(run.findings),
+            "finding_group_count": len(project_finding_groups(run.findings)),
         }
 
     def _resolve_options(self, options: ScanOptions) -> ScanOptions:
