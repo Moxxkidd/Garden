@@ -16,6 +16,7 @@ from app.core.settings import get_settings
 from app.models.scan_run import TERMINAL_SCAN_RUN_STATUSES
 from app.schemas.scan import ScanFailureView, ScanOptions, ScanRunView
 from app.services.scan_failure_classification import is_coverage_warning
+from app.services.scan_result_presentation import format_finding_count
 
 
 def scan(
@@ -105,7 +106,7 @@ def _print_result(result: ScanRunView) -> None:
             ("阶段", result.current_stage),
             ("资产", str(result.asset_count)),
             ("证据", str(result.evidence_count)),
-            ("关注项", str(result.finding_count)),
+            ("关注项", format_finding_count(result.finding_count, result.finding_group_count)),
             ("报告", result.report_path or "未生成"),
         ],
         title="Garden 扫描结果",

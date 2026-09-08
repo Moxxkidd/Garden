@@ -42,7 +42,7 @@ def test_cli_scan_flags_and_defaults_are_unchanged() -> None:
     }
 
 
-def test_scan_api_schema_fields_are_unchanged() -> None:
+def test_scan_api_schema_preserves_old_fields_and_adds_optional_group_count() -> None:
     assert set(ScanStartRequest.model_fields) == {"url", "options"}
     assert set(ScanRunView.model_fields) == {
         "id",
@@ -68,7 +68,10 @@ def test_scan_api_schema_fields_are_unchanged() -> None:
         "asset_count",
         "evidence_count",
         "finding_count",
+        "finding_group_count",
     }
+    assert not ScanRunView.model_fields["finding_group_count"].is_required()
+    assert ScanRunView.model_fields["finding_group_count"].default is None
 
 
 def test_scan_status_semantics_are_unchanged() -> None:
