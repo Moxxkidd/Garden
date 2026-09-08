@@ -1,3 +1,5 @@
+import stat
+
 from app.core.settings import clear_settings_cache, get_settings
 
 
@@ -29,6 +31,17 @@ def test_formal_runtime_paths_use_garden_home(monkeypatch, tmp_path):
     assert paths.reports_dir == home / "reports"
     assert paths.logs_dir == home / "logs"
     assert paths.runtime_dir == home / "runtime"
+
+
+def test_formal_runtime_creates_private_temporary_secret_directory(tmp_path):
+    from app.cli.paths import GardenPaths
+
+    paths = GardenPaths(tmp_path / "garden-home")
+
+    paths.ensure_directories()
+
+    assert paths.secrets_dir.is_dir()
+    assert stat.S_IMODE(paths.secrets_dir.stat().st_mode) == 0o700
 
 
 def test_formal_runtime_reads_home_config_not_working_directory_dotenv(monkeypatch, tmp_path):

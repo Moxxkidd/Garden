@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "garden"
-version = "0.2.0"
+version = "0.3.0"
 description = "One-URL automated asset discovery, analysis, and evidence reporting service."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,6 +14,7 @@ authors = [
 ]
 dependencies = [
   "alembic>=1.14.0,<2.0.0",
+  "click==8.3.1",
   "fastapi>=0.116.0,<1.0.0",
   "httpx>=0.28.0,<1.0.0",
   "jinja2>=3.1.0,<4.0.0",
@@ -23,7 +24,7 @@ dependencies = [
   "python-multipart>=0.0.20,<1.0.0",
   "rich>=13.0.0,<14.0.0",
   "sqlalchemy>=2.0.0,<3.0.0",
-  "typer>=0.16.0,<1.0.0",
+  "typer==0.24.1",
   "uvicorn[standard]>=0.35.0,<1.0.0",
 ]
 
@@ -33,7 +34,7 @@ dev = [
   "pre-commit>=4.2.0,<5.0.0",
   "pytest>=8.3.0,<9.0.0",
   "pytest-cov>=6.1.0,<7.0.0",
-  "ruff>=0.11.0,<1.0.0",
+  "ruff==0.15.8",
 ]
 
 [project.scripts]

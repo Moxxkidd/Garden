@@ -21,7 +21,7 @@ def _default_database_url() -> str:
 
 class Settings(BaseSettings):
     project_name: str = Field(default="Garden", alias="GARDEN_PROJECT_NAME")
-    project_version: str = Field(default="0.2.0", alias="GARDEN_PROJECT_VERSION")
+    project_version: str = Field(default="0.3.0", alias="GARDEN_PROJECT_VERSION")
     environment: str = Field(default="development", alias="GARDEN_ENVIRONMENT")
     log_level: str = Field(default="INFO", alias="GARDEN_LOG_LEVEL")
     api_host: str = Field(default="127.0.0.1", alias="GARDEN_API_HOST")

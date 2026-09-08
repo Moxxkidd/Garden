@@ -1,0 +1,8 @@
+adapter: playwright
+login_url: /login
+validate_url: /account
+username_selector: input[name="username"]
+password_selector: input[name="password"]
+submit_selector: button[type="submit"]
+success_text: Authenticated account
+request_timeout_seconds: 10

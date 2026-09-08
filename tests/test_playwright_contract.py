@@ -1,3 +1,6 @@
+import pytest
+
+from app.core.errors import OverallScanTimeout, ScanInterrupted
 from app.db.bootstrap import session_scope
 from app.integrations.auth.playwright_adapter import PlaywrightLoginAdapter
 from app.models.enums import AuthType, LoginFailureReason, TargetStatus, TargetType
@@ -29,6 +32,17 @@ class FailingPlaywrightGateway:
 
     def validate(self, config, target, storage_state):
         raise TimeoutError("selector not found")
+
+
+class InterruptedPlaywrightGateway:
+    def __init__(self, error: RuntimeError) -> None:
+        self.error = error
+
+    def login(self, config, target, username, password, *, before_request=None):
+        raise self.error
+
+    def validate(self, config, target, storage_state, *, before_request=None):
+        raise self.error
 
 
 def test_playwright_adapter_contract_success() -> None:
@@ -116,3 +130,30 @@ def test_playwright_adapter_contract_failure() -> None:
     login_result = adapter.login(target, credential, "demo-admin-password", config)
     assert login_result.success is False
     assert login_result.failure_reason == LoginFailureReason.FORM_NOT_FOUND
+
+
+@pytest.mark.parametrize(
+    "error",
+    [OverallScanTimeout("deadline"), ScanInterrupted("cancelled")],
+)
+def test_playwright_adapter_propagates_pipeline_control_flow(error) -> None:
+    adapter = PlaywrightLoginAdapter(gateway=InterruptedPlaywrightGateway(error))
+    config = PlaywrightLoginConfig.model_validate(
+        {
+            "adapter": "playwright",
+            "login_url": "/login",
+            "validate_url": "/me",
+            "auto_detect_selectors": True,
+        }
+    )
+    target = type("TargetStub", (), {"name": "target", "base_url": "https://app.test"})()
+    credential = type(
+        "CredentialStub",
+        (),
+        {"name": "user", "role": "user", "username": "user"},
+    )()
+
+    with pytest.raises(type(error)):
+        adapter.login(target, credential, "secret", config)
+    with pytest.raises(type(error)):
+        adapter.validate(target, credential, config, {"storage_state": {}})

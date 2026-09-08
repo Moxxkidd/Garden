@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -7,7 +8,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 
-from app.core.errors import InputValidationError
+from app.core.errors import ConflictError, InputValidationError
 from app.core.settings import get_settings
 from app.db.bootstrap import get_session
 from app.models.credential_profile import CredentialProfile
@@ -15,6 +16,7 @@ from app.models.scan_run import ScanAsset, ScanRun
 from app.models.target import Target
 from app.schemas.assessment import AssessmentStartRequest
 from app.schemas.scan import ScanOptions
+from app.services.ephemeral_secret_store import EphemeralSecretStore
 from app.services.scan_application import InlineScanDispatcher, ScanApplicationService
 from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_pipeline import ScanPipeline
@@ -55,6 +57,11 @@ class HoldingDispatcher:
 
     def submit(self, scan_run_id: int, callback) -> None:
         self.ids.append(scan_run_id)
+
+
+class FailingDispatcher:
+    def submit(self, scan_run_id: int, callback) -> None:
+        raise RuntimeError("dispatcher unavailable")
 
 
 def build_holding_service(tmp_path) -> tuple[ScanApplicationService, HoldingDispatcher]:
@@ -170,7 +177,8 @@ def test_completed_quick_context_reflects_real_collection(completed_quick_run):
     assert all(asset.identity_key for asset in assets)
 
 
-def test_start_assessment_creates_three_contexts(assessment_profiles, inline_service):
+def test_start_assessment_creates_three_contexts(assessment_profiles, tmp_path):
+    service, dispatcher = build_holding_service(tmp_path)
     request = AssessmentStartRequest(
         url=assessment_profiles.url,
         mode="authenticated_coverage",
@@ -178,7 +186,7 @@ def test_start_assessment_creates_three_contexts(assessment_profiles, inline_ser
         admin_profile_id=assessment_profiles.admin_id,
     )
 
-    view = inline_service.start_assessment(request)
+    view = service.start_assessment(request)
 
     assert [item.kind for item in view.contexts] == ["anonymous", "user", "admin"]
     assert [stage.name for stage in view.stages] == [
@@ -192,12 +200,318 @@ def test_start_assessment_creates_three_contexts(assessment_profiles, inline_ser
         "report",
     ]
     assert view.status == "queued"
+    assert dispatcher.ids == [view.id]
+
+
+def test_quick_run_is_not_readable_through_assessment_interface(tmp_path) -> None:
+    service, _dispatcher = build_holding_service(tmp_path)
+    quick = service.start_scan("http://127.0.0.1:8080/")
+
+    with pytest.raises(InputValidationError, match="authenticated coverage"):
+        service.get_assessment(quick.id)
+
+
+def test_cancelling_queued_assessment_deletes_temporary_profile_secrets(
+    assessment_profiles,
+    tmp_path,
+) -> None:
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    references = [store.write("temporary-user"), store.write("temporary-admin")]
+    with get_session() as session:
+        session.get(CredentialProfile, assessment_profiles.user_id).secret_ref = references[0]
+        session.get(CredentialProfile, assessment_profiles.admin_id).secret_ref = references[1]
+        session.commit()
+
+    settings = get_settings()
+    policy = TargetNetworkPolicy(settings, resolver=_loopback_resolver)
+    dispatcher = HoldingDispatcher()
+    service = ScanApplicationService(
+        settings=settings,
+        pipeline=ScanPipeline(
+            policy=policy,
+            gateway=HttpScanGateway(policy),
+            report_service=ScanReportService(tmp_path / "reports"),
+            ephemeral_secret_store=store,
+        ),
+        dispatcher=dispatcher,
+    )
+    view = service.start_assessment(
+        AssessmentStartRequest(
+            url=assessment_profiles.url,
+            mode="authenticated_coverage",
+            user_profile_id=assessment_profiles.user_id,
+            admin_profile_id=assessment_profiles.admin_id,
+        )
+    )
+
+    cancelled = service.cancel_assessment(view.id)
+
+    assert cancelled.status == "interrupted"
+    assert all(not store.path_for(reference).exists() for reference in references)
+
+
+def test_assessment_owns_ephemeral_secret_snapshots_and_rejects_reuse(
+    assessment_profiles,
+    tmp_path,
+) -> None:
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    references = [store.write("temporary-user"), store.write("temporary-admin")]
+    with get_session() as session:
+        session.get(CredentialProfile, assessment_profiles.user_id).secret_ref = references[0]
+        session.get(CredentialProfile, assessment_profiles.admin_id).secret_ref = references[1]
+        session.commit()
+    settings = get_settings()
+    policy = TargetNetworkPolicy(settings, resolver=_loopback_resolver)
+    service = ScanApplicationService(
+        settings=settings,
+        pipeline=ScanPipeline(
+            policy=policy,
+            gateway=HttpScanGateway(policy),
+            report_service=ScanReportService(tmp_path / "reports"),
+            ephemeral_secret_store=store,
+        ),
+        dispatcher=HoldingDispatcher(),
+    )
+    request = AssessmentStartRequest(
+        url=assessment_profiles.url,
+        mode="authenticated_coverage",
+        user_profile_id=assessment_profiles.user_id,
+        admin_profile_id=assessment_profiles.admin_id,
+    )
+
+    view = service.start_assessment(request)
+
+    with get_session() as session:
+        run = session.get(ScanRun, view.id)
+        snapshots = {
+            context.kind: context.temporary_secret_ref
+            for context in run.contexts
+            if context.kind != "anonymous"
+        }
+    assert snapshots == {"user": references[0], "admin": references[1]}
+
+    with pytest.raises(ConflictError, match="一次性秘密"):
+        service.start_assessment(request.model_copy(update={"options": ScanOptions(max_pages=51)}))
+
+
+def test_assessment_cleanup_does_not_delete_a_later_profile_rotation(
+    assessment_profiles,
+    tmp_path,
+) -> None:
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    owned_refs = [store.write("temporary-user"), store.write("temporary-admin")]
+    with get_session() as session:
+        session.get(CredentialProfile, assessment_profiles.user_id).secret_ref = owned_refs[0]
+        session.get(CredentialProfile, assessment_profiles.admin_id).secret_ref = owned_refs[1]
+        session.commit()
+    settings = get_settings()
+    policy = TargetNetworkPolicy(settings, resolver=_loopback_resolver)
+    service = ScanApplicationService(
+        settings=settings,
+        pipeline=ScanPipeline(
+            policy=policy,
+            gateway=HttpScanGateway(policy),
+            report_service=ScanReportService(tmp_path / "reports"),
+            ephemeral_secret_store=store,
+        ),
+        dispatcher=HoldingDispatcher(),
+    )
+    view = service.start_assessment(
+        AssessmentStartRequest(
+            url=assessment_profiles.url,
+            mode="authenticated_coverage",
+            user_profile_id=assessment_profiles.user_id,
+            admin_profile_id=assessment_profiles.admin_id,
+        )
+    )
+    rotated_refs = [store.write("rotated-user"), store.write("rotated-admin")]
+    with get_session() as session:
+        session.get(CredentialProfile, assessment_profiles.user_id).secret_ref = rotated_refs[0]
+        session.get(CredentialProfile, assessment_profiles.admin_id).secret_ref = rotated_refs[1]
+        session.commit()
+
+    service.cancel_assessment(view.id)
+
+    assert all(not store.path_for(reference).exists() for reference in owned_refs)
+    assert all(store.path_for(reference).exists() for reference in rotated_refs)
+
+
+def test_startup_interrupt_deletes_temporary_assessment_secrets(
+    assessment_profiles,
+    tmp_path,
+) -> None:
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    references = [store.write("temporary-user"), store.write("temporary-admin")]
+    with get_session() as session:
+        session.get(CredentialProfile, assessment_profiles.user_id).secret_ref = references[0]
+        session.get(CredentialProfile, assessment_profiles.admin_id).secret_ref = references[1]
+        session.commit()
+
+    settings = get_settings()
+    policy = TargetNetworkPolicy(settings, resolver=_loopback_resolver)
+    service = ScanApplicationService(
+        settings=settings,
+        pipeline=ScanPipeline(
+            policy=policy,
+            gateway=HttpScanGateway(policy),
+            report_service=ScanReportService(tmp_path / "reports"),
+            ephemeral_secret_store=store,
+        ),
+        dispatcher=HoldingDispatcher(),
+    )
+    service.start_assessment(
+        AssessmentStartRequest(
+            url=assessment_profiles.url,
+            mode="authenticated_coverage",
+            user_profile_id=assessment_profiles.user_id,
+            admin_profile_id=assessment_profiles.admin_id,
+        )
+    )
+
+    interrupted = service.interrupt_active_scans()
+
+    assert interrupted == 1
+    assert all(not store.path_for(reference).exists() for reference in references)
+
+
+def test_service_startup_purges_expired_temporary_secrets(tmp_path) -> None:
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    expired = store.write("expired")
+    fresh = store.write("fresh")
+    os.utime(store.path_for(expired), (0, 0))
+    settings = get_settings()
+    policy = TargetNetworkPolicy(settings, resolver=_loopback_resolver)
+    service = ScanApplicationService(
+        settings=settings,
+        pipeline=ScanPipeline(
+            policy=policy,
+            gateway=HttpScanGateway(policy),
+            ephemeral_secret_store=store,
+        ),
+        dispatcher=HoldingDispatcher(),
+    )
+
+    deleted = service.purge_expired_temporary_secrets(max_age_seconds=900)
+
+    assert deleted == (expired,)
+    assert not store.path_for(expired).exists()
+    assert store.path_for(fresh).exists()
+
+
+def test_dispatch_failure_marks_assessment_failed_and_deletes_temporary_secrets(
+    assessment_profiles,
+    tmp_path,
+) -> None:
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    references = [store.write("temporary-user"), store.write("temporary-admin")]
+    with get_session() as session:
+        session.get(CredentialProfile, assessment_profiles.user_id).secret_ref = references[0]
+        session.get(CredentialProfile, assessment_profiles.admin_id).secret_ref = references[1]
+        session.commit()
+
+    settings = get_settings()
+    policy = TargetNetworkPolicy(settings, resolver=_loopback_resolver)
+    service = ScanApplicationService(
+        settings=settings,
+        pipeline=ScanPipeline(
+            policy=policy,
+            gateway=HttpScanGateway(policy),
+            report_service=ScanReportService(tmp_path / "reports"),
+            ephemeral_secret_store=store,
+        ),
+        dispatcher=FailingDispatcher(),
+    )
+
+    with pytest.raises(RuntimeError, match="dispatcher unavailable"):
+        service.start_assessment(
+            AssessmentStartRequest(
+                url=assessment_profiles.url,
+                mode="authenticated_coverage",
+                user_profile_id=assessment_profiles.user_id,
+                admin_profile_id=assessment_profiles.admin_id,
+            )
+        )
+
+    assert all(not store.path_for(reference).exists() for reference in references)
+    with get_session() as session:
+        run = session.scalar(select(ScanRun).order_by(ScanRun.id.desc()))
+        assert run.status == "failed"
+        assert run.error_code == "dispatch_failed"
+        assert run.active_key is None
+
+
+def test_runtime_wrapper_deletes_temporary_secrets_when_pipeline_raises_early(
+    assessment_profiles,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    references = [store.write("temporary-user"), store.write("temporary-admin")]
+    with get_session() as session:
+        session.get(CredentialProfile, assessment_profiles.user_id).secret_ref = references[0]
+        session.get(CredentialProfile, assessment_profiles.admin_id).secret_ref = references[1]
+        session.commit()
+
+    settings = get_settings()
+    policy = TargetNetworkPolicy(settings, resolver=_loopback_resolver)
+    pipeline = ScanPipeline(
+        policy=policy,
+        gateway=HttpScanGateway(policy),
+        report_service=ScanReportService(tmp_path / "reports"),
+        ephemeral_secret_store=store,
+    )
+    service = ScanApplicationService(
+        settings=settings,
+        pipeline=pipeline,
+        dispatcher=HoldingDispatcher(),
+    )
+    view = service.start_assessment(
+        AssessmentStartRequest(
+            url=assessment_profiles.url,
+            mode="authenticated_coverage",
+            user_profile_id=assessment_profiles.user_id,
+            admin_profile_id=assessment_profiles.admin_id,
+        )
+    )
+
+    def fail_before_pipeline_guard(session, scan_run_id):
+        raise RuntimeError("early runtime failure")
+
+    monkeypatch.setattr(pipeline, "execute_authenticated", fail_before_pipeline_guard)
+
+    with pytest.raises(RuntimeError, match="early runtime failure"):
+        service.execute_authenticated_assessment(view.id)
+
+    assert all(not store.path_for(reference).exists() for reference in references)
+
+
+def test_new_authenticated_and_quick_runs_are_dispatched_once(
+    tmp_path,
+    assessment_profiles,
+) -> None:
+    service, dispatcher = build_holding_service(tmp_path)
+    request = AssessmentStartRequest(
+        url=assessment_profiles.url,
+        mode="authenticated_coverage",
+        user_profile_id=assessment_profiles.user_id,
+        admin_profile_id=assessment_profiles.admin_id,
+    )
+
+    authenticated = service.start_assessment(request)
+    duplicate = service.start_assessment(request)
+    quick = service.start_assessment(
+        AssessmentStartRequest(url=assessment_profiles.url, mode="quick")
+    )
+
+    assert duplicate.id == authenticated.id
+    assert dispatcher.ids == [authenticated.id, quick.id]
 
 
 def test_authenticated_assessment_can_reference_quick_source_run(
-    inline_service, completed_quick_run, assessment_profiles
+    completed_quick_run, assessment_profiles, tmp_path
 ):
-    view = inline_service.start_assessment(
+    service, _dispatcher = build_holding_service(tmp_path)
+    view = service.start_assessment(
         AssessmentStartRequest(
             url=completed_quick_run.normalized_url,
             mode="authenticated_coverage",
@@ -382,7 +696,13 @@ def test_active_key_distinguishes_mode_profiles_active_flag_and_full_options(
         len({base.id, changed_profile.id, changed_active_flag.id, changed_options.id, quick.id})
         == 5
     )
-    assert dispatcher.ids == [quick.id]
+    assert dispatcher.ids == [
+        base.id,
+        changed_profile.id,
+        changed_active_flag.id,
+        changed_options.id,
+        quick.id,
+    ]
 
 
 @pytest.mark.parametrize(

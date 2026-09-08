@@ -37,6 +37,27 @@ garden stop                                   # 中断活动扫描并停止本�
 
 `gardenctl` 是兼容别名，既有命令组和 `gardenctl scan --url URL` 均继续可用。
 
+## 被动认证覆盖（高级工作流）
+
+默认入口仍是 quick scan；`garden scan`、首页单 URL 表单和 `/api/scans` 的交互没有改变。需要比较匿名、普通用户和管理员三个登录上下文时，才使用独立入口：
+
+```bash
+garden coverage URL
+```
+
+在交互式终端中，向导会按 assessment URL 的同源信息选择或创建 Target，再分别选择或创建角色精确为 `user` 和 `admin` 的凭据档案。新凭据的敏感值使用隐藏输入；原始值只写入权限为 `0600` 的短生命周期文件，档案只保存 `ephemeral-file://` 引用，并在会话建立与验证后删除该临时文件。密码、令牌和 Cookie 不会进入命令参数、普通数据库字段、日志或报告。
+
+自动化环境必须显式提供两个档案，缺少任一参数会立即失败而不会等待输入：
+
+```bash
+garden coverage https://app.example/ \
+  --user-profile 12 \
+  --admin-profile 13 \
+  --non-interactive
+```
+
+coverage 固定执行 `anonymous`、`user`、`admin` 三上下文的有界被动采集。主动权限重放未执行；报告中的覆盖差异不是已确认漏洞，需要结合业务授权模型复核。上下文失败或不完整时，未观察到的资产显示为 `unknown`，不会被误报为 `absent`。
+
 ## 仓库开发快速开始
 
 环境要求：Python 3.10+。
@@ -161,6 +182,8 @@ ScanReportService
 ```
 
 CLI、路由和页面模板只是适配层，核心业务流程位于应用服务和流水线中。单个阶段或页面失败会被持久化并显示在任务和报告中，不会静默伪装成完整结果。
+
+认证覆盖使用独立的 `start_assessment` / `execute_authenticated` 链路，在 quick 六阶段之外建立并比较固定三上下文；`garden scan` 仍使用原有 quick 链路。
 
 需要登录态、人工 triage、retest 或高级证据生命周期时，原有高级工作流仍然可用，但它们不是 URL 自动扫描的前置步骤。迁移说明见 [docs/legacy-cli-migration.md](docs/legacy-cli-migration.md)。
 

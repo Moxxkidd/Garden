@@ -29,6 +29,14 @@ class ConflictError(GardenError):
     """Raised when an operation conflicts with current persisted state."""
 
 
+class OverallScanTimeout(RuntimeError):
+    """Control-flow signal raised when an assessment exhausts its overall deadline."""
+
+
+class ScanInterrupted(RuntimeError):
+    """Control-flow signal raised when persisted cancellation is observed."""
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(ResourceNotFoundError)
     async def handle_not_found_error(request: Request, exc: ResourceNotFoundError) -> JSONResponse:

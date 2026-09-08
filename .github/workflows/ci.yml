@@ -31,6 +31,9 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium --no-shell
+
       - name: Ruff lint
         run: ruff check .
 
@@ -38,8 +41,6 @@ jobs:
         run: ruff format --check .
 
       - name: Run tests
-        # The suite uses Playwright contract/mocks, not a real browser,
-        # so no browser install step is needed here.
         run: pytest -q
 
   docker-build:

@@ -28,6 +28,10 @@ class ScanContext(TimestampMixin, Base):
         ),
         UniqueConstraint("scan_run_id", "kind", name="uq_scan_contexts_run_kind"),
         UniqueConstraint("scan_run_id", "id", name="uq_scan_contexts_run_id_id"),
+        UniqueConstraint(
+            "temporary_secret_ref",
+            name="uq_scan_contexts_temporary_secret_ref",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -36,6 +40,7 @@ class ScanContext(TimestampMixin, Base):
     credential_profile_id: Mapped[int | None] = mapped_column(
         ForeignKey("credential_profiles.id"), nullable=True, index=True
     )
+    temporary_secret_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     auth_session_id: Mapped[int | None] = mapped_column(
         ForeignKey("auth_sessions.id"), nullable=True, index=True
     )

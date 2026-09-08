@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urljoin
 
+from app.core.errors import OverallScanTimeout, ScanInterrupted, TargetPolicyError
+from app.core.settings import get_settings
 from app.models.credential_profile import CredentialProfile
 from app.models.enums import LoginFailureReason, SessionStatus, SessionType
 from app.models.target import Target
@@ -14,11 +17,19 @@ from app.schemas.auth import (
     PlaywrightLoginConfig,
     SessionValidationResult,
 )
+from app.services.authenticated_network import AuthenticatedNetworkGuard
+from app.services.scan_network import TargetNetworkPolicy
 
 
 class PlaywrightGatewayProtocol:
     def login(
-        self, config: PlaywrightLoginConfig, target: Target, username: str, password: str
+        self,
+        config: PlaywrightLoginConfig,
+        target: Target,
+        username: str,
+        password: str,
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         raise NotImplementedError
 
@@ -27,13 +38,26 @@ class PlaywrightGatewayProtocol:
         config: PlaywrightLoginConfig,
         target: Target,
         storage_state: dict[str, Any],
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         raise NotImplementedError
 
 
 class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
+    def __init__(self, *, policy: TargetNetworkPolicy | None = None) -> None:
+        self.network_guard = AuthenticatedNetworkGuard(
+            policy or TargetNetworkPolicy(get_settings())
+        )
+
     def login(
-        self, config: PlaywrightLoginConfig, target: Target, username: str, password: str
+        self,
+        config: PlaywrightLoginConfig,
+        target: Target,
+        username: str,
+        password: str,
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         try:
             from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -45,18 +69,29 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=True)
+                browser = playwright.chromium.launch(headless=True, channel="chromium")
                 context = browser.new_context()
                 page = context.new_page()
-                page.goto(
+                violations = self._install_request_guard(
+                    context,
+                    page,
+                    target.base_url,
+                    before_request=before_request,
+                )
+                self._guarded_goto(
+                    page,
+                    target.base_url,
                     self._resolve_url(target.base_url, config.login_url),
-                    timeout=config.request_timeout_seconds * 1000,
+                    config.request_timeout_seconds * 1000,
+                    violations,
                 )
                 if config.auto_detect_selectors and self._visible_password_count(page) == 0:
-                    page.goto(
+                    self._guarded_goto(
+                        page,
+                        target.base_url,
                         self._resolve_url(target.base_url, "/"),
-                        wait_until="domcontentloaded",
-                        timeout=config.request_timeout_seconds * 1000,
+                        config.request_timeout_seconds * 1000,
+                        violations,
                     )
                     self._wait_after_submit(page, config.request_timeout_seconds * 1000)
                 login_url = page.url
@@ -72,6 +107,7 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
                         "submit_selector": config.submit_selector,
                     }
                 self._wait_after_submit(page, config.request_timeout_seconds * 1000)
+                self._raise_request_guard_error(violations)
                 if config.success_url_contains:
                     try:
                         page.wait_for_url(
@@ -91,6 +127,7 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
                     page.wait_for_selector(
                         config.success_selector, timeout=config.request_timeout_seconds * 1000
                     )
+                self._raise_request_guard_error(violations)
                 storage_state = context.storage_state()
                 current_url = page.url
                 page_text = page.text_content("body") or ""
@@ -112,6 +149,8 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
         config: PlaywrightLoginConfig,
         target: Target,
         storage_state: dict[str, Any],
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         try:
             from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -123,14 +162,24 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=True)
+                browser = playwright.chromium.launch(headless=True, channel="chromium")
                 context = browser.new_context(storage_state=storage_state)
                 page = context.new_page()
-                page.goto(
+                violations = self._install_request_guard(
+                    context,
+                    page,
+                    target.base_url,
+                    before_request=before_request,
+                )
+                self._guarded_goto(
+                    page,
+                    target.base_url,
                     self._resolve_url(target.base_url, config.validate_url),
-                    timeout=config.request_timeout_seconds * 1000,
+                    config.request_timeout_seconds * 1000,
+                    violations,
                 )
                 self._wait_after_submit(page, config.request_timeout_seconds * 1000)
+                self._raise_request_guard_error(violations)
                 if config.success_text:
                     try:
                         page.locator("body").filter(has_text=config.success_text).wait_for(
@@ -142,6 +191,7 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
                     page.wait_for_selector(
                         config.success_selector, timeout=config.request_timeout_seconds * 1000
                     )
+                self._raise_request_guard_error(violations)
                 current_url = page.url
                 page_text = page.text_content("body") or ""
                 password_inputs_count = self._visible_password_count(page)
@@ -153,6 +203,60 @@ class SyncPlaywrightGateway(PlaywrightGatewayProtocol):
                 }
         except PlaywrightTimeoutError as error:
             raise TimeoutError(str(error)) from error
+
+    def _install_request_guard(
+        self,
+        context,
+        page,
+        base_url: str,
+        *,
+        before_request: Callable[[], None] | None,
+    ) -> list[BaseException]:
+        violations: list[BaseException] = []
+        cdp = context.new_cdp_session(page)
+
+        def guard_request(event: dict[str, Any]) -> None:
+            request_id = str(event["requestId"])
+            try:
+                if before_request is not None:
+                    before_request()
+                self.network_guard.ensure_allowed(base_url, str(event["request"]["url"]))
+            except (OverallScanTimeout, ScanInterrupted, TargetPolicyError) as error:
+                violations.append(error)
+                cdp.send(
+                    "Fetch.failRequest",
+                    {"requestId": request_id, "errorReason": "BlockedByClient"},
+                )
+                return
+            cdp.send("Fetch.continueRequest", {"requestId": request_id})
+
+        cdp.on("Fetch.requestPaused", guard_request)
+        cdp.send("Fetch.enable", {"patterns": [{"urlPattern": "*", "requestStage": "Request"}]})
+        return violations
+
+    def _guarded_goto(
+        self,
+        page,
+        base_url: str,
+        url: str,
+        timeout_ms: int,
+        violations: list[BaseException],
+    ):
+        self.network_guard.ensure_allowed(base_url, url)
+        try:
+            response = page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+        except Exception as error:
+            if violations:
+                raise violations[0] from error
+            raise
+        if violations:
+            raise violations[0]
+        self.network_guard.ensure_allowed(base_url, page.url)
+        return response
+
+    def _raise_request_guard_error(self, violations: list[BaseException]) -> None:
+        if violations:
+            raise violations[0]
 
     def _resolve_url(self, base_url: str, configured_url: str) -> str:
         return urljoin(f"{base_url.rstrip('/')}/", configured_url.lstrip("/"))
@@ -305,9 +409,27 @@ class PlaywrightLoginAdapter:
         credential_profile: CredentialProfile,
         secret_value: str,
         config: PlaywrightLoginConfig,
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> LoginExecutionResult:
         try:
-            result = self.gateway.login(config, target, credential_profile.username, secret_value)
+            if before_request is None:
+                result = self.gateway.login(
+                    config,
+                    target,
+                    credential_profile.username,
+                    secret_value,
+                )
+            else:
+                result = self.gateway.login(
+                    config,
+                    target,
+                    credential_profile.username,
+                    secret_value,
+                    before_request=before_request,
+                )
+        except (OverallScanTimeout, ScanInterrupted):
+            raise
         except TimeoutError as error:
             return self._failure(
                 target,
@@ -322,6 +444,14 @@ class PlaywrightLoginAdapter:
                 credential_profile,
                 LoginFailureReason.CONFIG_ERROR,
                 str(error),
+                last_error=str(error),
+            )
+        except TargetPolicyError as error:
+            return self._failure(
+                target,
+                credential_profile,
+                LoginFailureReason.CONFIG_ERROR,
+                "Playwright login was blocked by the authenticated target boundary.",
                 last_error=str(error),
             )
 
@@ -364,13 +494,25 @@ class PlaywrightLoginAdapter:
         credential_profile: CredentialProfile,
         config: PlaywrightLoginConfig,
         stored_payload: dict[str, object],
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> SessionValidationResult:
         try:
-            result = self.gateway.validate(
-                config,
-                target,
-                stored_payload.get("storage_state", {}),
-            )
+            if before_request is None:
+                result = self.gateway.validate(
+                    config,
+                    target,
+                    stored_payload.get("storage_state", {}),
+                )
+            else:
+                result = self.gateway.validate(
+                    config,
+                    target,
+                    stored_payload.get("storage_state", {}),
+                    before_request=before_request,
+                )
+        except (OverallScanTimeout, ScanInterrupted):
+            raise
         except TimeoutError as error:
             return SessionValidationResult(
                 valid=False,
@@ -385,6 +527,14 @@ class PlaywrightLoginAdapter:
                 status=SessionStatus.ERROR,
                 failure_reason=LoginFailureReason.CONFIG_ERROR,
                 message=str(error),
+                last_error=str(error),
+            )
+        except TargetPolicyError as error:
+            return SessionValidationResult(
+                valid=False,
+                status=SessionStatus.ERROR,
+                failure_reason=LoginFailureReason.CONFIG_ERROR,
+                message="Playwright validation was blocked by the authenticated target boundary.",
                 last_error=str(error),
             )
         if not self._is_success(config, result):
@@ -415,6 +565,8 @@ class PlaywrightLoginAdapter:
         secret_value: str,
         config: PlaywrightLoginConfig,
         stored_payload: dict[str, object],
+        *,
+        before_request: Callable[[], None] | None = None,
     ) -> LoginExecutionResult:
         if not config.refresh_via_relogin:
             return self._failure(
@@ -423,7 +575,13 @@ class PlaywrightLoginAdapter:
                 LoginFailureReason.CONFIG_ERROR,
                 "Playwright refresh is not configured.",
             )
-        return self.login(target, credential_profile, secret_value, config)
+        return self.login(
+            target,
+            credential_profile,
+            secret_value,
+            config,
+            before_request=before_request,
+        )
 
     def _is_success(self, config: PlaywrightLoginConfig, result: dict[str, Any]) -> bool:
         current_url = str(result.get("current_url", ""))

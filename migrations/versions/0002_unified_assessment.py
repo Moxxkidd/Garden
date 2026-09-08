@@ -185,6 +185,7 @@ def upgrade() -> None:
         sa.Column("scan_run_id", sa.Integer(), nullable=False),
         sa.Column("kind", sa.String(length=32), nullable=False),
         sa.Column("credential_profile_id", sa.Integer(), nullable=True),
+        sa.Column("temporary_secret_ref", sa.String(length=255), nullable=True),
         sa.Column("auth_session_id", sa.Integer(), nullable=True),
         sa.Column("status", sa.String(length=40), server_default="pending", nullable=False),
         sa.Column("login_status", sa.String(length=40), server_default="pending", nullable=False),
@@ -217,6 +218,10 @@ def upgrade() -> None:
         ),
         sa.UniqueConstraint("scan_run_id", "kind", name="uq_scan_contexts_run_kind"),
         sa.UniqueConstraint("scan_run_id", "id", name="uq_scan_contexts_run_id_id"),
+        sa.UniqueConstraint(
+            "temporary_secret_ref",
+            name="uq_scan_contexts_temporary_secret_ref",
+        ),
     )
     op.create_index("ix_scan_contexts_scan_run_id", "scan_contexts", ["scan_run_id"])
     op.create_index("ix_scan_contexts_kind", "scan_contexts", ["kind"])

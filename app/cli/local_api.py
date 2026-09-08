@@ -7,6 +7,11 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.core.errors import GardenError
+from app.schemas.assessment import (
+    AssessmentRunView,
+    CoverageDifferenceView,
+    PassiveCoverageStartRequest,
+)
 from app.schemas.scan import ScanOptions, ScanRunView
 
 
@@ -29,9 +34,43 @@ class LocalScanApi:
     def cancel_scan(self, scan_run_id: int) -> ScanRunView:
         return self._scan_request("POST", f"/api/scans/{scan_run_id}/cancel")
 
+    def start_assessment(
+        self,
+        request: PassiveCoverageStartRequest,
+    ) -> AssessmentRunView:
+        payload = request.model_dump(exclude_none=True)
+        return AssessmentRunView.model_validate(
+            self._request_json("POST", "/api/assessments", payload)
+        )
+
+    def get_assessment(self, assessment_id: int) -> AssessmentRunView:
+        return AssessmentRunView.model_validate(
+            self._request_json("GET", f"/api/assessments/{assessment_id}")
+        )
+
+    def cancel_assessment(self, assessment_id: int) -> AssessmentRunView:
+        return AssessmentRunView.model_validate(
+            self._request_json("POST", f"/api/assessments/{assessment_id}/cancel")
+        )
+
+    def list_coverage_differences(
+        self,
+        assessment_id: int,
+    ) -> list[CoverageDifferenceView]:
+        payload = self._request_json("GET", f"/api/assessments/{assessment_id}/differences")
+        return [CoverageDifferenceView.model_validate(item) for item in payload]
+
     def _scan_request(
         self, method: str, path: str, payload: dict[str, object] | None = None
     ) -> ScanRunView:
+        return ScanRunView.model_validate(self._request_json(method, path, payload))
+
+    def _request_json(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+    ):
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         request = Request(
             f"{self.base_url}{path}",
@@ -41,7 +80,7 @@ class LocalScanApi:
         )
         try:
             with urlopen(request, timeout=5) as response:  # noqa: S310 - loopback URL only
-                return ScanRunView.model_validate(json.loads(response.read()))
+                return json.loads(response.read())
         except HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
             raise LocalApiError(f"本机 Garden Web UI 返回 HTTP {error.code}: {detail}") from error

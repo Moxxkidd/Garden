@@ -59,6 +59,10 @@ def test_upgrade_database_creates_current_schema(tmp_path):
         "scan_jobs",
         "inventory_runs",
     } <= tables
+    context_columns = {
+        column["name"] for column in inspect(create_engine(url)).get_columns("scan_contexts")
+    }
+    assert "temporary_secret_ref" in context_columns
 
 
 def test_stamp_existing_database_preserves_rows(tmp_path):
