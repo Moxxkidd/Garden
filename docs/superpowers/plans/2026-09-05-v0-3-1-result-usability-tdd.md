@@ -229,4 +229,5 @@ def test_authentication_failure_does_not_assume_wrong_password():
 - 子任务代理中途因额度终止后由主代理接手；最终独立审阅及兼容补丁复核均无发现。
 - 未升级依赖、版本号或数据库，未更改默认 quick 的启动流程、参数、进度与退出语义。
 - 原有 CLI 诊断正文中的 Rich 标记解释及进程内 CliRunner 日志捕获问题不属于本次新增建议逻辑，本轮未改动；新增建议使用 `markup=False`。
-- 交付：待创建计数与诊断两个依赖 PR；不自动合并。仓库 CI 仅匹配面向 main 的 PR，依赖 PR 应在前置合并并改基线后运行 CI。
+- 交付：[PR #21：计数展示](https://github.com/Moxxkidd/Garden/pull/21) 与 [PR #22：诊断建议](https://github.com/Moxxkidd/Garden/pull/22) 已推送并创建，均为 OPEN；依赖顺序为 #20 → #21 → #22，不自动合并。
+- 远端检查：两个依赖 PR 当前均无检查记录。仓库 CI 仅匹配面向 main 的 PR，应在前置 PR 合并并改基线后运行 CI；本地测试通过不等同于远端 CI 通过。
