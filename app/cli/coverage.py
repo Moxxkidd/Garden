@@ -21,6 +21,7 @@ from app.schemas.assessment import AssessmentRunView, PassiveCoverageStartReques
 from app.schemas.scan import ScanOptions
 from app.services.scan_result_presentation import (
     coverage_summary,
+    diagnostic_hint,
     format_execution_progress,
     format_finding_count,
 )
@@ -221,6 +222,19 @@ def _print_result(result, differences) -> None:
         console.print("- 暂无差异")
     for classification, count in sorted(counts.items()):
         console.print(f"- {classification}: {count}", markup=False)
+    hints: dict[str, None] = {}
+    for context in result.contexts:
+        if context.error_code:
+            console.print(f"- {context.kind.value}: {context.error_code}", markup=False)
+            if hint := diagnostic_hint("context", context.error_code):
+                hints[hint] = None
+    for failure in result.failures:
+        if hint := diagnostic_hint(failure.stage, failure.code):
+            hints[hint] = None
+    if hints:
+        console.print("下一步：")
+        for hint in hints:
+            console.print(f"- {hint}", markup=False)
 
 
 def _cancel_from_interrupt(api, assessment_id, manager) -> None:

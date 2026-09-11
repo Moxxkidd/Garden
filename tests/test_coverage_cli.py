@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
+import pytest
 from click import unstyle
 from typer.testing import CliRunner
 
@@ -12,9 +14,94 @@ from app.schemas.assessment import (
     CoverageDifferenceView,
     PassiveCoverageStartRequest,
 )
-from app.schemas.scan import ScanContextView, ScanRunView
+from app.schemas.scan import ScanContextView, ScanFailureView, ScanRunView
 
 runner = CliRunner()
+
+
+@pytest.mark.parametrize(
+    ("code", "snippet"),
+    [
+        ("authentication_session_unavailable", "登录后验证地址"),
+        ("authentication_session_mismatch", "user/admin 角色"),
+        ("unrecognized_auth_error", None),
+        (None, None),
+    ],
+)
+def test_coverage_terminal_guidance_preserves_roles_and_unknown(monkeypatch, code, snippet):
+    view = _assessment_view(status="completed", stage="finished", progress=100)
+    if code:
+        view.status = "incomplete"
+        view.completeness = "incomplete"
+        user = view.contexts[1]
+        user.status = "failed"
+        user.collection_status = "failed"
+        user.completeness = "incomplete"
+        user.error_code = code
+        user.error_message = "password=TEST_SECRET"
+        view.failures = [
+            ScanFailureView(
+                stage="context",
+                code=code,
+                message="token=TEST_SECRET",
+                retryable=False,
+                attempt=1,
+                occurred_at=view.created_at,
+            ),
+            ScanFailureView(
+                stage="establish_contexts",
+                code="context_establishment_failed",
+                message="cookie=TEST_SECRET",
+                retryable=False,
+                attempt=1,
+                occurred_at=view.created_at,
+            ),
+        ]
+    runtime = SimpleNamespace(base_url="http://127.0.0.1:8000")
+    monkeypatch.setattr(
+        coverage_cli,
+        "WebRuntimeManager",
+        lambda **kwargs: SimpleNamespace(
+            ensure=lambda **kwargs: runtime,
+        ),
+    )
+    monkeypatch.setattr(
+        coverage_cli,
+        "LocalScanApi",
+        lambda base_url: SimpleNamespace(
+            start_assessment=lambda request: view,
+            list_coverage_differences=lambda run_id: [
+                CoverageDifferenceView(
+                    id=1,
+                    identity_key="GET:/admin",
+                    classification="unknown" if code else "admin_only",
+                )
+            ],
+        ),
+    )
+    result = runner.invoke(
+        app,
+        [
+            "coverage",
+            "http://127.0.0.1:8080/",
+            "--non-interactive",
+            "--user-profile",
+            "12",
+            "--admin-profile",
+            "13",
+        ],
+    )
+    assert result.exit_code == 0
+    text = unstyle(result.stdout).replace("\n", "")
+    assert "TEST_SECRET" not in text
+    assert "admin: 状态=completed" in text
+    if code:
+        assert f"user: {code}" in text
+        assert "unknown: 1" in text
+    if snippet:
+        assert text.count(snippet) == 1
+    else:
+        assert "下一步" not in text
 
 
 def _assessment_view(*, status="queued", stage="queued", progress=0):

@@ -145,6 +145,7 @@ def test_authenticated_report_preserves_unknown_and_omits_forbidden_asset_values
     assert "unknown" in text
     assert "## 失败与未覆盖部分" in text
     assert "user：采集=failed，完整性=incomplete，代码=authentication_session_unavailable" in text
+    assert "请通过 coverage 向导检查凭据档案、登录地址和登录后验证地址" in text
     assert all(value not in text for value in raw_values)
 
 

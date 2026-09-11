@@ -1,6 +1,35 @@
 import pytest
 
-from app.services.scan_result_presentation import coverage_summary, format_finding_count
+from app.services.scan_result_presentation import (
+    coverage_summary,
+    diagnostic_hint,
+    format_finding_count,
+)
+
+
+def test_authentication_mismatch_guidance():
+    assert diagnostic_hint("context", "authentication_session_mismatch") == (
+        "请检查凭据档案所属 Target 和 user/admin 角色，选择与当前目标匹配的档案后重新提交。"
+    )
+
+
+def test_authentication_unavailable_guidance():
+    assert diagnostic_hint("context", "authentication_session_unavailable") == (
+        "请通过 coverage 向导检查凭据档案、登录地址和登录后验证地址，必要时重新输入凭据。"
+    )
+
+
+def test_cross_origin_guidance():
+    assert diagnostic_hint("collect", "cross_origin_redirect_blocked") == (
+        "跳转目标超出当前同源边界；请先确认其是否在授权范围内，如需采集，应以该目标作为新入口单独扫描。"
+    )
+
+
+def test_budget_guidance():
+    assert diagnostic_hint("collect", "coverage_limit_reached") == (
+        "请根据报告中的命中限制检查 --max-pages、--max-resources 或 --max-depth；"
+        "调整后重新扫描会创建新任务。"
+    )
 
 
 def test_finding_count_text():
@@ -30,3 +59,15 @@ def test_legacy_finding_count():
 )
 def test_coverage_explanation_does_not_infer_completeness(status, completeness, mode, expected):
     assert expected in coverage_summary(status, completeness, mode)
+
+
+def test_unknown_code_and_unrelated_stage_have_no_speculative_advice():
+    assert diagnostic_hint("report", "unrecognized_failure") is None
+    assert diagnostic_hint("report", "overall_timeout") is None
+    assert diagnostic_hint("collect", "token=TEST_SECRET") is None
+
+
+def test_collection_timeout_explains_new_run():
+    assert diagnostic_hint("collect", "overall_timeout") == (
+        "可增加 --overall-timeout 后重新扫描；重新扫描会创建新任务，不是断点续扫。"
+    )

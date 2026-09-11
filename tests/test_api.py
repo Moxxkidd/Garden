@@ -2,10 +2,68 @@ import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.db.bootstrap import session_scope
 from app.models.scan_run import ScanAsset, ScanFinding, ScanRun
+from app.schemas.scan import ScanFailureView, ScanRunView
+
+
+@pytest.mark.parametrize(
+    ("code", "snippet"),
+    [
+        ("overall_timeout", "不是断点续扫"),
+        ("coverage_limit_reached", "请根据报告中的命中限制检查"),
+        ("cross_origin_redirect_blocked", "应以该目标作为新入口单独扫描"),
+        ("unknown_code", None),
+        (None, None),
+    ],
+)
+def test_scan_detail_diagnostic_guidance_is_fixed_and_escaped(app, code, snippet):
+    view = ScanRunView(
+        id=7,
+        input_url="http://127.0.0.1/",
+        normalized_url="http://127.0.0.1/",
+        status="completed_with_warnings" if code else "completed",
+        current_stage="finished",
+        progress=100,
+        retry_count=0,
+        created_at=datetime.now(timezone.utc),
+        finding_group_count=0,
+    )
+    if code:
+        view.failures = [
+            ScanFailureView(
+                stage="collect",
+                code=code,
+                message="<script>TEST_SECRET</script>",
+                url="http://127.0.0.1/?token=TEST_SECRET",
+                retryable=False,
+                attempt=1,
+                occurred_at=view.created_at,
+            )
+        ]
+    with TestClient(app) as client:
+        original_service = app.state.scan_service
+        app.state.scan_service = SimpleNamespace(get_scan=lambda run_id: view)
+        try:
+            response = client.get("/scans/7")
+        finally:
+            app.state.scan_service = original_service
+    assert response.status_code == 200
+    assert "<dd>0 类关注项，0 条原始观察</dd>" in response.text
+    assert "<script>TEST_SECRET</script>" not in response.text
+    if code:
+        assert "&lt;script&gt;TEST_SECRET&lt;/script&gt;" in response.text
+        assert code in response.text
+    hints = re.findall(r'<p class="mt-1">下一步：(.*?)</p>', response.text)
+    if snippet:
+        assert len(hints) == 1
+        assert snippet in hints[0]
+        assert "TEST_SECRET" not in hints[0]
+    else:
+        assert not hints
 
 
 def test_healthz_returns_ok(app) -> None:
@@ -233,3 +291,38 @@ def test_finding_status_update_route_updates_lifecycle_state(app, seeded_finding
     assert response.status_code == 200
     assert "Status" in response.text
     assert "triaged" in response.text
+
+
+@pytest.mark.parametrize("role_index", [1, 2])
+@pytest.mark.parametrize(
+    ("code", "snippet"),
+    [
+        ("authentication_session_unavailable", "登录后验证地址"),
+        ("authentication_session_mismatch", "user/admin 角色"),
+        ("unrecognized_auth_error", None),
+    ],
+)
+def test_context_diagnostic_is_visible_without_report(app, role_index, code, snippet):
+    from tests.test_coverage_cli import _assessment_view
+
+    view = _assessment_view(status="incomplete", stage="finished", progress=100)
+    context = view.contexts[role_index]
+    context.status = "failed"
+    context.error_code = code
+    context.error_message = "password=TEST_SECRET"
+    view.report_path = None
+    view.failures = []
+    with TestClient(app) as client:
+        original_service = app.state.scan_service
+        app.state.scan_service = SimpleNamespace(get_scan=lambda run_id: view)
+        try:
+            response = client.get(f"/scans/{view.id}")
+        finally:
+            app.state.scan_service = original_service
+    assert response.status_code == 200
+    assert f"{context.kind.value} / {code}" in response.text
+    assert "TEST_SECRET" not in response.text
+    if snippet:
+        assert snippet in response.text
+    else:
+        assert "下一步" not in response.text

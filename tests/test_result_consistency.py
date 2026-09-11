@@ -57,6 +57,12 @@ def test_quick_progress_and_coverage_are_distinct_on_all_surfaces(
     for text in (listing, dashboard):
         assert "执行进度" in text
         assert "不代表覆盖完整" in text
+    if max_pages == 1:
+        for text in (terminal, report, detail.split("<pre", 1)[0]):
+            assert "调整后重新扫描会创建新任务" in text
+    else:
+        for text in (terminal, report, detail):
+            assert "下一步" not in text
     count = "2 类关注项，4 条原始观察" if max_pages == 10 else "2 类关注项，2 条原始观察"
     for text in (terminal, report, detail):
         assert count in text
@@ -100,6 +106,12 @@ def test_authenticated_api_report_web_and_cli_agree(
         assert "100%" in text
         assert "2 类关注项，" in text
     assert "- 完整性：pending" not in Path(scan.report_path).read_text()
+    if missing_user:
+        for text in (terminal, report, detail.split("<pre", 1)[0]):
+            assert "请通过 coverage 向导检查凭据档案" in text.replace("\n", "")
+    else:
+        for text in (terminal, report, detail):
+            assert "下一步" not in text
 
 
 def test_report_write_failure_does_not_persist_100_percent_or_complete(tmp_path):

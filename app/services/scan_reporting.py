@@ -19,6 +19,7 @@ from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_report_quality import project_finding_groups, report_version_values
 from app.services.scan_result_presentation import (
     coverage_summary,
+    diagnostic_hint,
     format_execution_progress,
     format_finding_count,
 )
@@ -233,11 +234,15 @@ class ScanReportService:
                 f"完整性={self._inline(context.completeness)}，"
                 f"代码={self._inline(context.error_code or '-')}"
             )
+            if hint := diagnostic_hint("context", context.error_code or ""):
+                lines.append(f"  - 下一步：{hint}")
         for failure in sorted(run.failures, key=lambda item: item.id):
             lines.append(
                 f"- 阶段={self._inline(failure.stage)}，"
                 f"代码={self._inline(failure.code)}，尝试={failure.attempt}"
             )
+            if hint := diagnostic_hint(failure.stage, failure.code):
+                lines.append(f"  - 下一步：{hint}")
         if not incomplete_contexts and not run.failures:
             lines.append("未记录上下文缺失或阶段失败。")
 
@@ -471,6 +476,8 @@ class ScanReportService:
                 f"- [{warning.stage}/{warning.code}] {warning.message}{location}；"
                 f"尝试次数={warning.attempt}，可重试={str(warning.retryable).lower()}"
             )
+            if hint := diagnostic_hint(warning.stage, warning.code):
+                lines.append(f"  - 下一步：{hint}")
         lines.extend(["", "## 请求失败", ""])
         if not request_failures:
             lines.append("未记录阶段失败或单个 URL 请求失败。")
@@ -480,6 +487,8 @@ class ScanReportService:
                 f"- [{failure.stage}/{failure.code}] {failure.message}{location}；"
                 f"尝试次数={failure.attempt}，可重试={str(failure.retryable).lower()}"
             )
+            if hint := diagnostic_hint(failure.stage, failure.code):
+                lines.append(f"  - 下一步：{hint}")
         lines.extend(
             [
                 "",
