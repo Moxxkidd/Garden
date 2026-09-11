@@ -200,7 +200,7 @@ def test_dashboard_page_shows_summary_cards(app, seeded_findings) -> None:
     for label, value in (
         ("URL Scans", 1),
         ("Assets", 3),
-        ("Passive Findings", 2),
+        ("原始关注项观察", 2),
         ("High Severity", 1),
         ("High Confidence", 1),
     ):

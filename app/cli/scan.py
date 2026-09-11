@@ -16,6 +16,11 @@ from app.core.settings import get_settings
 from app.models.scan_run import TERMINAL_SCAN_RUN_STATUSES
 from app.schemas.scan import ScanFailureView, ScanOptions, ScanRunView
 from app.services.scan_failure_classification import is_coverage_warning
+from app.services.scan_result_presentation import (
+    coverage_summary,
+    format_execution_progress,
+    format_finding_count,
+)
 
 
 def scan(
@@ -101,15 +106,16 @@ def _print_result(result: ScanRunView) -> None:
         [
             ("扫描", str(result.id)),
             ("状态", result.status),
-            ("进度", f"{result.progress}%"),
+            ("执行进度", format_execution_progress(result.progress)),
             ("阶段", result.current_stage),
             ("资产", str(result.asset_count)),
             ("证据", str(result.evidence_count)),
-            ("关注项", str(result.finding_count)),
+            ("关注项", format_finding_count(result.finding_count, result.finding_group_count)),
             ("报告", result.report_path or "未生成"),
         ],
         title="Garden 扫描结果",
     )
+    console.print(coverage_summary(result.status, result.completeness, result.mode), markup=False)
     coverage_warnings = [
         failure for failure in result.failures if is_coverage_warning(failure.stage, failure.code)
     ]

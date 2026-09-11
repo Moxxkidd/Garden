@@ -19,6 +19,11 @@ from app.core.settings import get_settings
 from app.models.scan_run import TERMINAL_SCAN_RUN_STATUSES
 from app.schemas.assessment import AssessmentRunView, PassiveCoverageStartRequest
 from app.schemas.scan import ScanOptions
+from app.services.scan_result_presentation import (
+    coverage_summary,
+    format_execution_progress,
+    format_finding_count,
+)
 
 
 class TyperCoveragePrompts:
@@ -196,10 +201,13 @@ def _print_result(result, differences) -> None:
             ("认证覆盖", str(result.id)),
             ("状态", result.status),
             ("完整性", result.completeness),
+            ("执行进度", format_execution_progress(result.progress)),
+            ("关注项", format_finding_count(result.finding_count, result.finding_group_count)),
             ("报告", result.report_path or "未生成"),
         ],
         title="Garden 认证覆盖结果",
     )
+    console.print(coverage_summary(result.status, result.completeness, result.mode), markup=False)
     console.print("三上下文：")
     for context in result.contexts:
         console.print(

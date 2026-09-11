@@ -17,6 +17,11 @@ from app.models.scan_run import ScanRun
 from app.services.coverage_identity import redacted_observed_url
 from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_report_quality import project_finding_groups, report_version_values
+from app.services.scan_result_presentation import (
+    coverage_summary,
+    format_execution_progress,
+    format_finding_count,
+)
 
 
 class ScanReportService:
@@ -67,6 +72,9 @@ class ScanReportService:
         contexts = sorted(run.contexts, key=lambda item: item.id)
         differences = sorted(run.coverage_differences, key=lambda item: item.identity_key)
         classification_counts = Counter(item.classification for item in differences)
+        finding_count_text = format_finding_count(
+            len(run.findings), len(project_finding_groups(run.findings))
+        )
         stages = sorted(run.stages, key=lambda item: item.position)
         entry_url = redacted_observed_url(run.normalized_url)
         summary_status = run.status
@@ -90,10 +98,13 @@ class ScanReportService:
             "## 执行摘要",
             "",
             f"- 任务状态：{summary_status}",
+            f"- 执行进度：{format_execution_progress(run.progress)}",
+            f"- 覆盖说明：{coverage_summary(summary_status, run.completeness, run.mode)}",
             f"- 完整性：{run.completeness}",
             f"- 入口 URL：{self._inline(entry_url)}",
             f"- 上下文：{len(contexts)}",
             f"- 覆盖差异：{len(differences)}",
+            f"- 风险或关注项：{finding_count_text}",
             "- 模式：anonymous / user / admin 三上下文，仅执行被动采集。",
             "- 主动权限重放未执行；本报告不包含利用、写入或破坏性操作。",
             "",
@@ -283,10 +294,12 @@ class ScanReportService:
             "## 执行摘要",
             "",
             f"- 任务状态：{summary_status}",
+            f"- 执行进度：{format_execution_progress(run.progress)}",
+            f"- 覆盖说明：{coverage_summary(summary_status, run.completeness, run.mode)}",
             f"- 入口 URL：{entry_url}",
             f"- 发现资产：{len(assets)}",
             f"- 证据记录：{len(evidence)}",
-            f"- 风险或关注项：{len(finding_groups)} 类（{len(findings)} 条原始观察）",
+            f"- 风险或关注项：{format_finding_count(len(findings), len(finding_groups))}",
             f"- 覆盖告警：{len(coverage_warnings)}",
             f"- 请求或阶段失败：{len(request_failures)}",
             "",

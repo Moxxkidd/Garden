@@ -9,8 +9,17 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Red
 from fastapi.templating import Jinja2Templates
 
 from app.schemas.scan import ScanOptions, ScanRunView, ScanStartRequest
+from app.services.scan_result_presentation import (
+    coverage_summary,
+    format_execution_progress,
+    format_finding_count,
+)
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[2] / "templates"))
+templates.env.globals.update(
+    coverage_summary=coverage_summary,
+    format_execution_progress=format_execution_progress,
+)
 router = APIRouter(tags=["scans"])
 
 
@@ -87,5 +96,12 @@ def scan_detail_page(request: Request, scan_run_id: int) -> HTMLResponse:
     return templates.TemplateResponse(
         request=request,
         name="scan_detail.html",
-        context={"scan": scan, "report": report, "page_title": f"Scan {scan.id}"},
+        context={
+            "scan": scan,
+            "report": report,
+            "page_title": f"Scan {scan.id}",
+            "finding_count_text": format_finding_count(
+                scan.finding_count, scan.finding_group_count
+            ),
+        },
     )

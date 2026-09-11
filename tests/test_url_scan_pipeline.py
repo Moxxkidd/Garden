@@ -12,8 +12,8 @@ import app.main as main_app
 from app.core.errors import InputValidationError, TargetPolicyError
 from app.core.settings import get_settings
 from app.db.bootstrap import session_scope
-from app.models.scan_run import ScanAsset, ScanEvidence, ScanRun
-from app.schemas.scan import ScanOptions
+from app.models.scan_run import ScanAsset, ScanEvidence, ScanFinding, ScanRun
+from app.schemas.scan import ScanOptions, ScanRunView
 from app.services.scan_application import InlineScanDispatcher, ScanApplicationService
 from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_network import MAX_RESPONSE_BYTES, HttpScanGateway, TargetNetworkPolicy
@@ -609,7 +609,7 @@ def test_version_hints_require_context_and_include_version_query(tmp_path) -> No
     ]
 
 
-def test_njau_style_report_keeps_104_raw_findings_and_trusted_versions(tmp_path) -> None:
+def test_njau_style_report_keeps_104_raw_findings_and_trusted_versions(tmp_path, app) -> None:
     # 根页面加前 51 个子页面会形成 52 个已采集 HTML 资产；最后一个候选留在预算外。
     page_links = "".join(f'<a href="/page-{index}">Page</a>' for index in range(52))
 
@@ -662,8 +662,28 @@ def test_njau_style_report_keeps_104_raw_findings_and_trusted_versions(tmp_path)
     report = service.read_report(scan.id)
 
     assert scan.finding_count == 104
+    assert scan.finding_group_count == 2
+    saved = service.get_scan(scan.id)
+    assert saved.finding_count == 104
+    assert saved.finding_group_count == 2
+    assert (saved.asset_count, saved.evidence_count) == (55, 55)
+    with TestClient(app) as client:
+        app.state.scan_service = service
+        response = client.get(f"/api/scans/{scan.id}")
+        detail = client.get(f"/scans/{scan.id}")
+    assert detail.status_code == 200
+    assert "<dd>2 类关注项，104 条原始观察</dd>" in detail.text
+    assert response.status_code == 200
+    assert response.json()["finding_count"] == 104
+    assert response.json()["finding_group_count"] == 2
+    assert response.json()["evidence_count"] == 55
+    legacy_payload = response.json()
+    legacy_payload.pop("finding_group_count")
+    legacy = ScanRunView.model_validate(legacy_payload)
+    assert legacy.finding_count == 104
+    assert legacy.finding_group_count is None
     assert scan.status == "completed_with_warnings"
-    assert "2 类（104 条原始观察）" in report
+    assert "2 类关注项，104 条原始观察" in report
     assert "- 覆盖告警：1" in report
     assert "- 请求或阶段失败：0" in report
     assert "版本线索=1.0.0, 2.4.1" in report
@@ -691,6 +711,51 @@ def test_njau_style_report_keeps_104_raw_findings_and_trusted_versions(tmp_path)
     request_failures = report.split("## 请求失败", 1)[1]
     assert "coverage_limit_reached" in coverage
     assert "coverage_limit_reached" not in request_failures
+
+
+def test_scan_with_no_findings_returns_zero_groups(tmp_path) -> None:
+    service = _service(
+        tmp_path,
+        lambda request: httpx.Response(
+            200,
+            headers={
+                "content-type": "text/html",
+                "content-security-policy": "default-src 'self'",
+                "x-content-type-options": "nosniff",
+            },
+            text="<html>Healthy</html>",
+        ),
+    )
+    scan = service.start_scan("http://127.0.0.1/", ScanOptions())
+    assert (scan.finding_count, scan.finding_group_count) == (0, 0)
+    saved = service.get_scan(scan.id)
+    assert (saved.finding_count, saved.finding_group_count) == (0, 0)
+
+
+def test_api_group_count_keeps_different_remediation_separate(tmp_path) -> None:
+    service = _service(
+        tmp_path, lambda request: httpx.Response(200, headers={"content-type": "text/plain"})
+    )
+    scan = service.start_scan("http://127.0.0.1/", ScanOptions())
+    with session_scope() as session:
+        for index, remediation in enumerate(("应用层配置", "边缘层配置")):
+            session.add(
+                ScanFinding(
+                    scan_run_id=scan.id,
+                    dedup_key=f"fixture-{index}",
+                    title="缺少安全头",
+                    category="security-headers",
+                    severity="low",
+                    confidence="high",
+                    summary="未观察到安全头。",
+                    remediation=remediation,
+                    asset_ids=[],
+                    evidence_ids=[],
+                    created_at=scan.created_at,
+                )
+            )
+    saved = service.get_scan(scan.id)
+    assert (saved.finding_count, saved.finding_group_count) == (2, 2)
 
 
 def test_regenerated_legacy_report_omits_unverifiable_body_versions(tmp_path) -> None:
@@ -757,7 +822,7 @@ def test_report_uses_request_buckets_and_aggregates_repeated_findings(tmp_path) 
     assert report.count("缺少 Content-Security-Policy 响应头") == 1
     assert report.count("缺少 X-Content-Type-Options 响应头") == 1
     assert "3 个资产" in report
-    assert "2 类（6 条原始观察）" in report
+    assert "2 类关注项，6 条原始观察" in report
 
 
 def test_active_duplicate_submission_returns_same_parent_task(tmp_path) -> None:

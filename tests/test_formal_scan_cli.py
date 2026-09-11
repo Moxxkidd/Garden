@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
+import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 import app.cli.scan as scan_cli
@@ -12,6 +15,40 @@ from app.cli.main import app
 from app.schemas.scan import ScanRunView
 
 runner = CliRunner()
+
+
+@pytest.fixture
+def run_terminal_scan(monkeypatch):
+    runtime = SimpleNamespace(base_url="http://127.0.0.1:8000")
+    manager = SimpleNamespace(ensure=lambda **kwargs: runtime)
+    monkeypatch.setattr(scan_cli, "WebRuntimeManager", lambda **kwargs: manager)
+
+    def invoke(view):
+        api = SimpleNamespace(start_scan=lambda url, options: view)
+        monkeypatch.setattr(scan_cli, "LocalScanApi", lambda base_url: api)
+        return runner.invoke(app, ["scan", "http://127.0.0.1:3000/"])
+
+    return invoke
+
+
+@pytest.mark.parametrize(
+    ("raw", "groups", "text"),
+    [
+        (104, 2, "2 类关注项，104 条原始观察"),
+        (0, 0, "0 类关注项，0 条原始观察"),
+        (104, None, "104 条原始观察（分类数未提供）"),
+    ],
+)
+def test_terminal_scan_shows_grouped_count(run_terminal_scan, raw, groups, text):
+    payload = _view(status="completed", stage="finished", progress=100).model_dump()
+    payload["finding_count"] = raw
+    if groups is None:
+        payload.pop("finding_group_count")
+    else:
+        payload["finding_group_count"] = groups
+    result = run_terminal_scan(ScanRunView.model_validate(payload))
+    assert result.exit_code == 0
+    assert text in unstyle(result.stdout)
 
 
 def _view(*, status="queued", stage="queued", progress=0):
@@ -146,3 +183,10 @@ def test_stop_interrupts_active_scans_and_stops_ui(monkeypatch):
     assert result.exit_code == 0
     assert calls == ["interrupt", "stop"]
     assert "已中断 2 个活动扫描" in result.stdout
+
+
+def test_legacy_result_with_100_percent_does_not_claim_complete_coverage(run_terminal_scan):
+    result = run_terminal_scan(_view(status="completed", stage="finished", progress=100))
+    assert result.exit_code == 0
+    assert "覆盖完整性未知" in unstyle(result.stdout)
+    assert "不代表覆盖完整" in unstyle(result.stdout)

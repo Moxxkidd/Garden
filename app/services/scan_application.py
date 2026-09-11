@@ -38,6 +38,7 @@ from app.schemas.scan import (
 )
 from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_pipeline import STAGES, ScanPipeline
+from app.services.scan_report_quality import project_finding_groups
 
 
 def create_assessment_stages(session: Session, run: ScanRun) -> None:
@@ -401,7 +402,6 @@ class ScanApplicationService:
             context_counts[context.kind] += 1
         return AssessmentRunView(
             **self._view_data(run),
-            completeness=run.completeness,
             active_checks_enabled=run.active_checks_enabled,
             authorization_confirmed_at=run.authorization_confirmed_at,
             authorization_confirmed_by=run.authorization_confirmed_by,
@@ -421,6 +421,7 @@ class ScanApplicationService:
             "status": run.status,
             "current_stage": run.current_stage,
             "progress": run.progress,
+            "completeness": run.completeness,
             "retry_count": run.retry_count,
             "report_path": run.report_path,
             "error_code": run.error_code,
@@ -459,6 +460,7 @@ class ScanApplicationService:
             "asset_count": len(run.assets),
             "evidence_count": len(run.evidence),
             "finding_count": len(run.findings),
+            "finding_group_count": len(project_finding_groups(run.findings)),
         }
 
     def _resolve_options(self, options: ScanOptions) -> ScanOptions:
