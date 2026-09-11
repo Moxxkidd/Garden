@@ -672,7 +672,7 @@ def test_njau_style_report_keeps_104_raw_findings_and_trusted_versions(tmp_path,
         response = client.get(f"/api/scans/{scan.id}")
         detail = client.get(f"/scans/{scan.id}")
     assert detail.status_code == 200
-    assert "<dd>2 类（104 条原始观察）</dd>" in detail.text
+    assert "<dd>2 类关注项，104 条原始观察</dd>" in detail.text
     assert response.status_code == 200
     assert response.json()["finding_count"] == 104
     assert response.json()["finding_group_count"] == 2
@@ -683,7 +683,7 @@ def test_njau_style_report_keeps_104_raw_findings_and_trusted_versions(tmp_path,
     assert legacy.finding_count == 104
     assert legacy.finding_group_count is None
     assert scan.status == "completed_with_warnings"
-    assert "2 类（104 条原始观察）" in report
+    assert "2 类关注项，104 条原始观察" in report
     assert "- 覆盖告警：1" in report
     assert "- 请求或阶段失败：0" in report
     assert "版本线索=1.0.0, 2.4.1" in report
@@ -822,7 +822,7 @@ def test_report_uses_request_buckets_and_aggregates_repeated_findings(tmp_path) 
     assert report.count("缺少 Content-Security-Policy 响应头") == 1
     assert report.count("缺少 X-Content-Type-Options 响应头") == 1
     assert "3 个资产" in report
-    assert "2 类（6 条原始观察）" in report
+    assert "2 类关注项，6 条原始观察" in report
 
 
 def test_active_duplicate_submission_returns_same_parent_task(tmp_path) -> None:

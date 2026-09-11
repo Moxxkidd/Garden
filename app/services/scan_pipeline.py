@@ -405,6 +405,22 @@ class ScanPipeline:
                 lambda: self._analyze(session, run),
                 enforce_deadline=False,
             )
+            incomplete = any(
+                context.collection_status != "completed" or context.completeness != "complete"
+                for context in run.contexts
+            )
+            coverage_warnings = any(
+                is_coverage_warning(failure.stage, failure.code) for failure in run.failures
+            )
+            if incomplete:
+                if run.completeness not in {
+                    CompletenessStatus.MISSING_USER_CONTEXT.value,
+                    CompletenessStatus.MISSING_ADMIN_CONTEXT.value,
+                }:
+                    run.completeness = CompletenessStatus.INCOMPLETE.value
+            else:
+                run.completeness = CompletenessStatus.COMPLETE.value
+            # Freeze collection completeness before serializing the report.
             self._run_stage(
                 session,
                 run,
@@ -415,27 +431,12 @@ class ScanPipeline:
             )
             self._check_interrupted(session, run.id)
             run = session.get(ScanRun, run.id)
-            incomplete = any(
-                context.collection_status != "completed" or context.completeness != "complete"
-                for context in run.contexts
-            )
-            coverage_warnings = any(
-                is_coverage_warning(failure.stage, failure.code) for failure in run.failures
-            )
             if incomplete:
                 run.status = ScanRunStatus.INCOMPLETE.value
             elif coverage_warnings:
                 run.status = ScanRunStatus.COMPLETED_WITH_WARNINGS.value
             else:
                 run.status = ScanRunStatus.COMPLETED.value
-            if incomplete:
-                if run.completeness not in {
-                    CompletenessStatus.MISSING_USER_CONTEXT.value,
-                    CompletenessStatus.MISSING_ADMIN_CONTEXT.value,
-                }:
-                    run.completeness = CompletenessStatus.INCOMPLETE.value
-            else:
-                run.completeness = CompletenessStatus.COMPLETE.value
             run.current_stage = "finished"
             run.progress = 100
             run.finished_at = datetime.now(timezone.utc)
@@ -845,6 +846,9 @@ class ScanPipeline:
         return None, f"Created {created_count} passive, explainable finding(s)."
 
     def _report(self, session: Session, run: ScanRun):
+        # This value is committed only if final report generation succeeds.
+        # Diagnostic failure reports bypass this path and retain interrupted progress.
+        run.progress = PROGRESS_AFTER_STAGE[ScanStageName.REPORT.value]
         path = self.report_service.generate(session, run.id)
         return path, f"Generated structured Markdown report at {path}."
 

@@ -402,7 +402,6 @@ class ScanApplicationService:
             context_counts[context.kind] += 1
         return AssessmentRunView(
             **self._view_data(run),
-            completeness=run.completeness,
             active_checks_enabled=run.active_checks_enabled,
             authorization_confirmed_at=run.authorization_confirmed_at,
             authorization_confirmed_by=run.authorization_confirmed_by,
@@ -422,6 +421,7 @@ class ScanApplicationService:
             "status": run.status,
             "current_stage": run.current_stage,
             "progress": run.progress,
+            "completeness": run.completeness,
             "retry_count": run.retry_count,
             "report_path": run.report_path,
             "error_code": run.error_code,

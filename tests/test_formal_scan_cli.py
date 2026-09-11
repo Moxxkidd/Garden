@@ -34,8 +34,8 @@ def run_terminal_scan(monkeypatch):
 @pytest.mark.parametrize(
     ("raw", "groups", "text"),
     [
-        (104, 2, "2 类（104 条原始观察）"),
-        (0, 0, "0 类（0 条原始观察）"),
+        (104, 2, "2 类关注项，104 条原始观察"),
+        (0, 0, "0 类关注项，0 条原始观察"),
         (104, None, "104 条原始观察（分类数未提供）"),
     ],
 )
@@ -183,3 +183,10 @@ def test_stop_interrupts_active_scans_and_stops_ui(monkeypatch):
     assert result.exit_code == 0
     assert calls == ["interrupt", "stop"]
     assert "已中断 2 个活动扫描" in result.stdout
+
+
+def test_legacy_result_with_100_percent_does_not_claim_complete_coverage(run_terminal_scan):
+    result = run_terminal_scan(_view(status="completed", stage="finished", progress=100))
+    assert result.exit_code == 0
+    assert "覆盖完整性未知" in unstyle(result.stdout)
+    assert "不代表覆盖完整" in unstyle(result.stdout)

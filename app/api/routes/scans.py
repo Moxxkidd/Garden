@@ -9,9 +9,17 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Red
 from fastapi.templating import Jinja2Templates
 
 from app.schemas.scan import ScanOptions, ScanRunView, ScanStartRequest
-from app.services.scan_result_presentation import format_finding_count
+from app.services.scan_result_presentation import (
+    coverage_summary,
+    format_execution_progress,
+    format_finding_count,
+)
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[2] / "templates"))
+templates.env.globals.update(
+    coverage_summary=coverage_summary,
+    format_execution_progress=format_execution_progress,
+)
 router = APIRouter(tags=["scans"])
 
 

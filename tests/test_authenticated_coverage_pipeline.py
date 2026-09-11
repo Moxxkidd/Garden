@@ -163,6 +163,10 @@ def test_authenticated_pipeline_completes_all_passive_stages(db_session, tmp_pat
     assert run.active_checks_enabled is False
     assert run.report_path is not None
     assert Path(run.report_path).exists()
+    assert run.completeness == "complete"
+    report = Path(run.report_path).read_text(encoding="utf-8")
+    assert "- 完整性：complete\n" in report
+    assert "- 完整性：pending" not in report
     assert {stage.name: stage.status for stage in run.stages} == {
         "validate": "completed",
         "establish_contexts": "completed",
