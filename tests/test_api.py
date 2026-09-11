@@ -291,3 +291,38 @@ def test_finding_status_update_route_updates_lifecycle_state(app, seeded_finding
     assert response.status_code == 200
     assert "Status" in response.text
     assert "triaged" in response.text
+
+
+@pytest.mark.parametrize("role_index", [1, 2])
+@pytest.mark.parametrize(
+    ("code", "snippet"),
+    [
+        ("authentication_session_unavailable", "登录后验证地址"),
+        ("authentication_session_mismatch", "user/admin 角色"),
+        ("unrecognized_auth_error", None),
+    ],
+)
+def test_context_diagnostic_is_visible_without_report(app, role_index, code, snippet):
+    from tests.test_coverage_cli import _assessment_view
+
+    view = _assessment_view(status="incomplete", stage="finished", progress=100)
+    context = view.contexts[role_index]
+    context.status = "failed"
+    context.error_code = code
+    context.error_message = "password=TEST_SECRET"
+    view.report_path = None
+    view.failures = []
+    with TestClient(app) as client:
+        original_service = app.state.scan_service
+        app.state.scan_service = SimpleNamespace(get_scan=lambda run_id: view)
+        try:
+            response = client.get(f"/scans/{view.id}")
+        finally:
+            app.state.scan_service = original_service
+    assert response.status_code == 200
+    assert f"{context.kind.value} / {code}" in response.text
+    assert "TEST_SECRET" not in response.text
+    if snippet:
+        assert snippet in response.text
+    else:
+        assert "下一步" not in response.text
