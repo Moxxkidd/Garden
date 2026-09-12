@@ -11,32 +11,45 @@
       </div>
       <a href="/scans" class="rounded-full border border-black/10 px-4 py-2 text-sm">All scans</a>
     </div>
-    <div class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
-      <div class="flex items-center justify-between">
-        <div>{{ status_badge(scan.status) }} <span class="ml-2 text-sm text-slate-600">{{ scan.current_stage }}</span></div>
-        <div class="text-sm font-semibold">{{ format_execution_progress(scan.progress) }}</div>
-      </div>
-      <div class="mt-4 h-3 overflow-hidden rounded-full bg-stone-200"><div class="h-full rounded-full bg-emerald-600" style="width: {{ scan.progress }}%"></div></div>
-      <p class="mt-3 text-sm font-medium" role="status">{{ coverage_summary(scan.status, scan.completeness, scan.mode) }}</p>
-      {% if scan.error_message %}<p class="mt-4 rounded-2xl bg-red-50 p-4 text-sm text-red-800"><strong>{{ scan.error_code }}</strong> — {{ scan.error_message }}</p>{% endif %}
-      <dl class="mt-5 grid gap-4 sm:grid-cols-3">
-        <div><dt>Assets</dt><dd>{{ scan.asset_count }}</dd></div>
-        <div><dt>Evidence</dt><dd>{{ scan.evidence_count }}</dd></div>
-        <div><dt>Findings</dt><dd>{{ finding_count_text }}</dd></div>
-      </dl>
-    </div>
-    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {% for stage in scan.stages %}
-        <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-          <div class="flex items-center justify-between"><h2 class="font-semibold">{{ stage.position }}. {{ stage.name }}</h2>{{ status_badge(stage.status) }}</div>
-          <p class="mt-3 text-sm leading-6 text-slate-600">{{ stage.summary or stage.error_message or "Waiting" }}</p>
-          <p class="mt-2 text-xs text-slate-500">attempt {{ stage.attempt }}</p>
+    <section id="result-summary" aria-labelledby="result-summary-title" class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
+      <h2 id="result-summary-title" class="text-xl font-semibold">结果摘要</h2>
+      <div class="mt-5 grid gap-5 md:grid-cols-2">
+        <div class="rounded-2xl bg-stone-50 p-5">
+          <h3 class="text-sm font-medium text-slate-600">执行状态</h3>
+          <p class="mt-2 text-lg font-semibold">{{ execution_text }}</p>
+          <p class="mt-2 text-sm">{{ format_execution_progress(scan.progress) }}</p>
+          <div class="mt-3 h-2 overflow-hidden rounded-full bg-stone-200" role="progressbar" aria-label="执行进度" aria-valuenow="{{ scan.progress }}" aria-valuemin="0" aria-valuemax="100"><div class="h-full rounded-full bg-emerald-600" style="width: {{ scan.progress }}%"></div></div>
         </div>
-      {% endfor %}
-    </div>
-    {% if scan.failures or context_diagnostics %}
-      <div class="rounded-3xl border border-amber-200 bg-amber-50 p-6">
-        <h2 class="text-lg font-semibold">Failures and uncovered work</h2>
+        <div class="rounded-2xl bg-stone-50 p-5">
+          <h3 class="text-sm font-medium text-slate-600">覆盖情况</h3>
+          <p class="mt-2 font-medium leading-7" role="status">{{ coverage_summary(scan.status, scan.completeness, scan.mode) }}</p>
+          {% if scan.failures or context_diagnostics or scan.error_message %}<a class="mt-2 inline-block text-sm underline" href="#diagnostics">查看诊断与未覆盖部分</a>{% endif %}
+        </div>
+        <div class="rounded-2xl bg-stone-50 p-5">
+          <h3 class="text-sm font-medium text-slate-600">关注项</h3>
+          <dl class="mt-2"><dt class="sr-only">关注项计数</dt><dd>{{ finding_count_text }}</dd></dl>
+          <p class="mt-2 text-sm leading-6 text-slate-600">关注项是待复核的被动观察，不等同于已确认漏洞；没有关注项也不代表目标安全。</p>
+          <p class="mt-2 text-sm text-slate-600">资产 {{ scan.asset_count }} · 证据 {{ scan.evidence_count }}</p>
+        </div>
+        <div class="rounded-2xl bg-stone-50 p-5">
+          <h3 class="text-sm font-medium text-slate-600">建议操作</h3>
+          {% if summary_hints %}
+            <ul class="mt-2 list-disc space-y-2 pl-5 text-sm leading-6">{% for hint in summary_hints %}<li>{{ hint }}</li>{% endfor %}</ul>
+          {% elif scan.status in ["queued", "running"] %}
+            <p class="mt-2 text-sm leading-6">等待任务结束后复核结果；当前观察和覆盖情况仍可能变化。</p>
+          {% elif scan.status in ["failed", "interrupted", "incomplete", "completed_with_warnings"] %}
+            <p class="mt-2 text-sm leading-6">查看诊断和执行阶段，确认失败或未覆盖原因后再决定是否重新扫描。</p>
+          {% else %}
+            <p class="mt-2 text-sm leading-6">结合覆盖说明与原始报告复核关注项及证据，再判断是否需要补充扫描。</p>
+          {% endif %}
+          {% if report %}<a class="mt-3 inline-block text-sm underline" href="#report-details" onclick="document.getElementById('report-details').open = true">阅读原始报告</a>{% else %}<a class="mt-3 inline-block text-sm underline" href="#execution-details" onclick="document.getElementById('execution-details').open = true">查看执行阶段</a>{% endif %}
+        </div>
+      </div>
+    </section>
+    {% if scan.failures or context_diagnostics or scan.error_message %}
+      <div id="diagnostics" class="rounded-3xl border border-amber-200 bg-amber-50 p-6">
+        <h2 class="text-lg font-semibold">诊断与未覆盖部分</h2>
+        {% if scan.error_message %}<p class="mt-3 break-words text-sm"><strong>{{ scan.error_code }}</strong> — {{ scan.error_message }}</p>{% endif %}
         <ul class="mt-3 space-y-2 text-sm">
           {% for diagnostic in context_diagnostics %}
             <li><strong>{{ diagnostic.kind }} / {{ diagnostic.code }}</strong>
@@ -52,12 +65,33 @@
         </ul>
       </div>
     {% endif %}
+    <details id="execution-details"{% if scan.status in ["queued", "running"] %} open{% endif %} class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
+      <summary class="cursor-pointer text-lg font-semibold">执行阶段 <span class="text-sm font-normal text-slate-600">（{{ scan.current_stage }} · {{ scan.status }}）</span></summary>
+      <div class="mt-5">
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {% for stage in scan.stages %}
+        <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+          <div class="flex items-center justify-between"><h2 class="font-semibold">{{ stage.position }}. {{ stage.name }}</h2>{{ status_badge(stage.status) }}</div>
+          <p class="mt-3 text-sm leading-6 text-slate-600">{{ stage.summary or stage.error_message or "Waiting" }}</p>
+          <p class="mt-2 text-xs text-slate-500">attempt {{ stage.attempt }}</p>
+        </div>
+      {% endfor %}
+    </div>
+      </div>
+    </details>
     {% if report %}
       <div class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
-        <div class="flex items-center justify-between"><h2 class="text-lg font-semibold">Report</h2><a class="rounded-full bg-slate-900 px-4 py-2 text-sm text-white" href="/api/scans/{{ scan.id }}/report?download=true">Download Markdown</a></div>
-        <pre class="mt-5 max-h-[48rem] overflow-auto whitespace-pre-wrap rounded-2xl bg-stone-50 p-5 text-sm leading-6">{{ report }}</pre>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-lg font-semibold">报告与证据</h2>
+          <a class="rounded-full bg-slate-900 px-4 py-2 text-sm text-white" hx-boost="false" href="/api/scans/{{ scan.id }}/report?download=true">下载 Markdown 报告</a>
+        </div>
+        <details id="report-details" class="mt-4">
+          <summary class="cursor-pointer font-medium">展开原始报告</summary>
+          <pre class="mt-4 max-h-[48rem] overflow-auto whitespace-pre-wrap break-words rounded-2xl bg-stone-50 p-5 text-sm leading-6">{{ report }}</pre>
+        </details>
       </div>
-    {% elif scan.status in ["queued", "running"] %}
+    {% endif %}
+    {% if scan.status in ["queued", "running"] %}
       <script>window.setTimeout(function () { window.location.reload(); }, 1000);</script>
     {% endif %}
   </section>

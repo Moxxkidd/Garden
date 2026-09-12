@@ -52,3 +52,16 @@ def coverage_summary(status: str, completeness: str | None, mode: str) -> str:
         if mode == "authenticated_coverage" and completeness == "complete":
             return "本次范围内三上下文采集完成；不代表整个站点已覆盖。"
     return "覆盖完整性未知：当前响应未提供可确认的完整性信息。"
+
+
+def execution_summary(status: str) -> str:
+    """Describe lifecycle only; coverage is explained separately."""
+    return {
+        "queued": "任务排队中",
+        "running": "任务执行中",
+        "completed": "任务执行结束",
+        "completed_with_warnings": "任务执行结束（有告警）",
+        "incomplete": "任务执行结束（覆盖不完整）",
+        "failed": "任务执行失败",
+        "interrupted": "任务已中断",
+    }.get(status, "任务状态未知")
