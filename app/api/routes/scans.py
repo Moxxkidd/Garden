@@ -12,6 +12,7 @@ from app.schemas.scan import ScanOptions, ScanRunView, ScanStartRequest
 from app.services.scan_result_presentation import (
     coverage_summary,
     diagnostic_hint,
+    execution_summary,
     format_execution_progress,
     format_finding_count,
 )
@@ -94,6 +95,11 @@ def scan_detail_page(request: Request, scan_run_id: int) -> HTMLResponse:
     report = None
     if scan.report_path:
         report = request.app.state.scan_service.read_report(scan_run_id)
+    hints = [
+        diagnostic_hint("context", context.error_code)
+        for context in scan.contexts
+        if context.error_code
+    ] + [diagnostic_hint(failure.stage, failure.code) for failure in scan.failures]
     return templates.TemplateResponse(
         request=request,
         name="scan_detail.html",
@@ -101,6 +107,8 @@ def scan_detail_page(request: Request, scan_run_id: int) -> HTMLResponse:
             "scan": scan,
             "report": report,
             "page_title": f"Scan {scan.id}",
+            "execution_text": execution_summary(scan.status),
+            "summary_hints": list(dict.fromkeys(hint for hint in hints if hint)),
             "context_diagnostics": [
                 {
                     "kind": context.kind.value,
