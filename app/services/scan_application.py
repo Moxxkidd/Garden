@@ -37,6 +37,7 @@ from app.schemas.scan import (
     ScanStageView,
 )
 from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
+from app.services.scan_options import resolve_scan_options
 from app.services.scan_pipeline import STAGES, ScanPipeline
 from app.services.scan_report_quality import project_finding_groups
 
@@ -464,19 +465,7 @@ class ScanApplicationService:
         }
 
     def _resolve_options(self, options: ScanOptions) -> ScanOptions:
-        return options.model_copy(
-            update={
-                "request_timeout_seconds": options.request_timeout_seconds
-                or self.settings.scan_request_timeout_seconds,
-                "overall_timeout_seconds": options.overall_timeout_seconds
-                or self.settings.scan_overall_timeout_seconds,
-                "retry_attempts": (
-                    options.retry_attempts
-                    if options.retry_attempts is not None
-                    else self.settings.scan_retry_attempts
-                ),
-            }
-        )
+        return resolve_scan_options(options, self.settings)
 
     def _active_key(
         self,

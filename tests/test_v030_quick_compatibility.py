@@ -73,7 +73,7 @@ def test_v030_keeps_quick_http_and_homepage_contract(app) -> None:
     assert service.started is not None
     assert service.started[0] == "https://quick.test/"
     assert service.started[1].max_pages == 7
-    assert '<form action="/scans" method="post"' in homepage.text
+    assert '<form action="/scans/preview" method="post"' in homepage.text
     assert 'name="url"' in homepage.text
 
 

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="mx-auto max-w-3xl rounded-3xl border border-black/10 bg-white p-6 space-y-6">
+  <h1 class="text-2xl font-semibold">预览扫描</h1>
+  {% if errors %}
+  <div role="alert" class="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800">
+    <p class="font-medium">请修正后重新预览</p>
+    <ul class="mt-2 list-disc pl-5">{% for field, message in errors.items() %}<li>{{ message }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% if preview %}
+  <div class="space-y-3">
+    <p class="font-medium">quick · 匿名</p>
+    <p class="break-all">入口：{{ preview.entry_display }}</p>
+    <p class="break-all">同源范围：{{ preview.origin_display }}</p>
+    <p>配置检查：{{ '匹配' if preview.can_submit else '需修正' }}。登录身份：不使用（仅匿名）。覆盖状态：尚未产生。</p>
+    <p class="text-sm text-slate-600">{{ preview.budget_note }}</p>
+    <dl class="grid grid-cols-2 gap-3 rounded-2xl bg-stone-50 p-4 text-sm">
+      {% for key, label in [('max_pages', '页面上限'), ('max_resources', '静态资源上限'), ('max_depth', '深度上限'), ('request_timeout_seconds', '单次请求超时（秒）'), ('overall_timeout_seconds', '整体超时（秒）'), ('retry_attempts', '重试次数'), ('max_redirects', '重定向上限'), ('user_agent', 'User-Agent')] %}
+      <dt>{{ label }}</dt><dd class="break-all font-medium">{{ preview.effective_options | attr(key) }}</dd>
+      {% endfor %}
+    </dl>
+    <ul class="space-y-2 text-sm text-slate-600">{% for issue in preview.issues %}<li>{{ issue.message }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% if preview and preview.can_submit and not errors %}
+  <form action="/scans/confirm" method="post" hx-boost="false" class="flex flex-wrap gap-3">
+    {% for key, value in values.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+    <input type="hidden" name="preview_token" value="{{ preview_token }}">
+    <button type="submit" formaction="/scans/edit" class="rounded-2xl border border-black/15 px-5 py-3">返回修改</button>
+    <button type="submit" class="rounded-2xl bg-slate-900 px-5 py-3 font-medium text-white">开始匿名扫描</button>
+  </form>
+  {% else %}
+    {% include "_scan_preview_form.html" %}
+  {% endif %}
+</section>
+{% endblock %}

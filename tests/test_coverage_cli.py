@@ -152,7 +152,7 @@ def test_coverage_command_invokes_guided_wizard_and_renders_contexts(monkeypatch
         def __init__(self, *, prompts):
             calls.append("wizard-created")
 
-        def run(self, url):
+        def run(self, url, *, options=None, source_run_id=None):
             calls.append(("wizard-run", url))
             return PassiveCoverageStartRequest(
                 url=url,
@@ -235,7 +235,7 @@ def test_coverage_command_cleans_wizard_secrets_when_runtime_fails_before_submit
         def __init__(self, *, prompts):
             pass
 
-        def run(self, url):
+        def run(self, url, *, options=None, source_run_id=None):
             return PassiveCoverageStartRequest(
                 url=url,
                 target_id=4,
@@ -440,3 +440,109 @@ def test_terminal_secret_prompt_uses_hidden_input(monkeypatch) -> None:
 
     assert value == "hidden-value"
     assert captured == {"label": "user 密码（输入已隐藏）", "hide_input": True}
+
+
+def test_coverage_confirmation_shows_the_request_that_is_submitted(monkeypatch):
+    from test_coverage_wizard import ScriptedPrompts, _create_source_run, _setup_records
+
+    setup = _setup_records()
+    _create_source_run(setup.url, setup.target_id)
+    prompts = ScriptedPrompts(
+        [str(setup.target_id), str(setup.user_id), str(setup.admin_id), "submit"]
+    )
+    submitted = []
+
+    class Api:
+        def start_assessment(self, request):
+            assert "页面上限: 7" in prompts.rendered_text
+            assert "深度上限: 1" in prompts.rendered_text
+            submitted.append(request)
+            return _assessment_view()
+
+    monkeypatch.setattr(coverage_cli, "TyperCoveragePrompts", lambda: prompts)
+    monkeypatch.setattr(coverage_cli, "_is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(
+        coverage_cli,
+        "WebRuntimeManager",
+        lambda **kw: SimpleNamespace(
+            ensure=lambda **kw: SimpleNamespace(base_url="http://127.0.0.1:8000")
+        ),
+    )
+    monkeypatch.setattr(coverage_cli, "LocalScanApi", lambda url: Api())
+    result = runner.invoke(
+        app,
+        [
+            "coverage",
+            setup.url,
+            "--max-pages",
+            "7",
+            "--max-depth",
+            "1",
+            "--source-run",
+            "17",
+            "--detach",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert submitted[0].options.max_pages == 7
+    assert submitted[0].options.max_depth == 1
+    assert submitted[0].options.request_timeout_seconds is not None
+    assert submitted[0].source_run_id == 17
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        RuntimeError("private-runtime-detail"),
+        WebRuntimeError("private-runtime-detail"),
+        KeyboardInterrupt(),
+    ],
+)
+def test_runtime_failure_rolls_back_real_wizard_drafts(monkeypatch, tmp_path, failure):
+    from sqlalchemy import select
+    from test_coverage_wizard import ScriptedPrompts, _setup_records
+
+    from app.cli.coverage_wizard import CoverageSetupWizard
+    from app.db.bootstrap import session_scope
+    from app.models.credential_profile import CredentialProfile
+    from app.services.ephemeral_secret_store import EphemeralSecretStore
+
+    setup = _setup_records()
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    prompts = ScriptedPrompts(
+        [
+            str(setup.target_id),
+            "__create__",
+            "draft-user",
+            "/login",
+            "/me",
+            "reader",
+            "new-secret",
+            str(setup.admin_id),
+            "submit",
+        ]
+    )
+    wizard = CoverageSetupWizard(prompts=prompts, secret_store=store)
+
+    started = []
+
+    def fail(**kwargs):
+        started.append(True)
+        raise failure
+
+    monkeypatch.setattr(coverage_cli, "CoverageSetupWizard", lambda **kwargs: wizard)
+    monkeypatch.setattr(coverage_cli, "_is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(
+        coverage_cli, "WebRuntimeManager", lambda **kw: SimpleNamespace(ensure=fail)
+    )
+    result = runner.invoke(app, ["coverage", setup.url, "--detach"])
+    assert result.exit_code in (1, 130)
+    assert started == [True]
+    assert "private-runtime-detail" not in result.output
+    assert list(store.root.glob("*.secret")) == []
+    with session_scope() as session:
+        assert (
+            session.scalar(select(CredentialProfile).where(CredentialProfile.name == "draft-user"))
+            is None
+        )
+        assert session.get(CredentialProfile, setup.user_id) is not None

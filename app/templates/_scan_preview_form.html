@@ -1,0 +1,36 @@
+{% set values = values | default({}) %}
+{% set errors = errors | default({}) %}
+<form action="/scans/preview" method="post" hx-boost="false" class="mt-6 space-y-4">
+  <div>
+    <label class="block text-sm font-medium" for="scan-url">Entry URL · 授权入口</label>
+    <input id="scan-url" name="url" type="url" required maxlength="1000" value="{{ values.get('url', '') }}" placeholder="http://127.0.0.1:8080/" class="mt-2 w-full min-w-0 rounded-2xl border border-black/15 px-4 py-3 focus:border-emerald-600" {% if errors.get('url') %}aria-invalid="true" aria-describedby="error-url" autofocus{% endif %} />
+    {% if errors.get('url') %}<p id="error-url" class="mt-2 text-sm text-red-700">{{ errors.url }}</p>{% endif %}
+  </div>
+  <details class="rounded-2xl border border-black/10 p-4" {% if errors %}open{% endif %}>
+    <summary class="cursor-pointer font-medium">预算选项</summary>
+    <p class="mt-2 text-sm text-slate-600">留空使用当前运行配置；下一步显示实际生效值。以下均为上限。</p>
+    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+      {% for key, label, minimum, maximum, step in [
+        ('max_pages', '页面上限', 1, 500, 1),
+        ('max_resources', '静态资源上限', 0, 2000, 1),
+        ('max_depth', '深度上限', 0, 5, 1),
+        ('request_timeout_seconds', '单次请求超时（秒）', 0.001, 60, 'any'),
+        ('overall_timeout_seconds', '整体超时（秒）', 0.001, 1800, 'any'),
+        ('retry_attempts', '重试次数', 0, 2, 1),
+        ('max_redirects', '重定向上限', 0, 10, 1)
+      ] %}
+      <div>
+        <label class="block text-sm" for="scan-{{ key }}">{{ label }} · {{ minimum }}–{{ maximum }}</label>
+        <input id="scan-{{ key }}" name="{{ key }}" type="number" min="{{ minimum }}" max="{{ maximum }}" step="{{ step }}" value="{{ values.get(key, '') }}" class="mt-1 w-full min-w-0 rounded-xl border border-black/15 px-3 py-2" {% if errors.get(key) %}aria-invalid="true" aria-describedby="error-{{ key }}" {% if not errors.get('url') and key == (errors.keys() | list | first) %}autofocus{% endif %}{% endif %} />
+        {% if errors.get(key) %}<p id="error-{{ key }}" class="mt-1 text-sm text-red-700">{{ errors[key] }}</p>{% endif %}
+      </div>
+      {% endfor %}
+      <div class="sm:col-span-2">
+        <label class="block text-sm" for="scan-user_agent">User-Agent</label>
+        <input id="scan-user_agent" name="user_agent" maxlength="200" value="{{ values.get('user_agent', '') }}" class="mt-1 w-full min-w-0 rounded-xl border border-black/15 px-3 py-2" {% if errors.get('user_agent') %}aria-invalid="true" aria-describedby="error-user_agent"{% endif %} />
+        {% if errors.get('user_agent') %}<p id="error-user_agent" class="text-sm text-red-700">{{ errors.user_agent }}</p>{% endif %}
+      </div>
+    </div>
+  </details>
+  <button class="rounded-2xl bg-slate-900 px-6 py-3 font-medium text-white" type="submit">预览扫描</button>
+</form>

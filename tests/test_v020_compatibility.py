@@ -102,7 +102,8 @@ def test_homepage_keeps_single_url_submission(app) -> None:
     assert 'id="scan-url"' in response.text
     assert 'name="url"' in response.text
     assert 'type="url"' in response.text
-    assert "Start scan" in response.text
+    assert "预览扫描" in response.text
+    assert 'action="/scans/preview"' in response.text
 
 
 def test_report_section_names_and_order_are_unchanged(tmp_path) -> None:
