@@ -13,11 +13,7 @@
           Submit one authorized HTTP or HTTPS entry URL. Garden validates the network destination,
           discovers and normalizes assets, analyzes passive evidence, and produces a readable report.
         </p>
-        <form action="/scans" method="post" class="mt-6 grid gap-3 sm:grid-cols-[1fr_auto]">
-          <label class="sr-only" for="scan-url">Entry URL</label>
-          <input id="scan-url" name="url" type="url" required placeholder="http://127.0.0.1:8080/" class="rounded-2xl border border-black/15 bg-white px-4 py-3 outline-none focus:border-emerald-600" />
-          <button class="rounded-2xl bg-slate-900 px-6 py-3 font-medium text-white" type="submit">Start scan</button>
-        </form>
+        {% include "_scan_preview_form.html" %}
       </div>
       <aside class="rounded-3xl border border-black/10 bg-stone-50 p-6 shadow-sm">
         <h2 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Runtime</h2>

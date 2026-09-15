@@ -32,6 +32,8 @@ class ScriptedPrompts:
         self.offered[label] = values
         self.offered_labels[label] = tuple(choice.label for choice in choices)
         answer = self.answers.pop(0)
+        if label == "确认提交或返回调整":
+            answer = {"yes": "submit", "no": "cancel"}.get(answer, answer)
         assert answer in values
         return answer
 
@@ -180,9 +182,9 @@ def test_wizard_reprompts_for_an_expired_temporary_profile_secret(
         [
             str(setup.target_id),
             str(setup.user_id),
-            "replacement-user-secret",
             str(setup.admin_id),
             "yes",
+            "replacement-user-secret",
         ]
     )
 
@@ -236,9 +238,11 @@ def test_wizard_rejects_a_selected_profile_with_invalid_login_config() -> None:
     with session_scope() as session:
         session.get(CredentialProfile, setup.user_id).login_config_path = "inline://broken"
         session.commit()
-    prompts = ScriptedPrompts([str(setup.target_id), str(setup.user_id)])
+    prompts = ScriptedPrompts(
+        [str(setup.target_id), str(setup.user_id), str(setup.admin_id), "cancel"]
+    )
 
-    with pytest.raises(InputValidationError, match="Inline login config"):
+    with pytest.raises(InputValidationError, match="已取消"):
         CoverageSetupWizard(prompts=prompts).run(setup.url)
 
     assert prompts.hidden_values == []
@@ -257,9 +261,11 @@ def test_wizard_rejects_cross_origin_urls_in_a_selected_login_config() -> None:
     with session_scope() as session:
         session.get(CredentialProfile, setup.user_id).login_config_path = cross_origin_config
         session.commit()
-    prompts = ScriptedPrompts([str(setup.target_id), str(setup.user_id)])
+    prompts = ScriptedPrompts(
+        [str(setup.target_id), str(setup.user_id), str(setup.admin_id), "cancel"]
+    )
 
-    with pytest.raises(InputValidationError, match="同源"):
+    with pytest.raises(InputValidationError, match="已取消"):
         CoverageSetupWizard(prompts=prompts).run(setup.url)
 
     assert prompts.hidden_values == []
@@ -453,3 +459,260 @@ def test_wizard_profile_creation_failure_rolls_back_and_deletes_all_draft_secret
         assert [(profile.id, profile.name, profile.role) for profile in profiles] == [
             (existing_id, "collision", "auditor")
         ]
+
+
+def test_preview_shows_effective_options_and_allows_adjustment() -> None:
+    from app.schemas.scan import ScanOptions
+
+    setup = _setup_records()
+    _create_source_run(setup.url, setup.target_id)
+    prompts = ScriptedPrompts(
+        [
+            str(setup.target_id),
+            str(setup.user_id),
+            str(setup.admin_id),
+            "edit_options",
+            "9",
+            "40",
+            "1",
+            "4",
+            "90",
+            "0",
+            "submit",
+        ]
+    )
+    request = CoverageSetupWizard(prompts=prompts).run(
+        setup.url + "?token=private-preview-value",
+        options=ScanOptions(max_pages=7),
+        source_run_id=17,
+    )
+    assert request.options.max_pages == 9
+    assert request.options.retry_attempts == 0
+    assert request.source_run_id == 17
+    assert "页面上限: 7" in prompts.rendered_text
+    assert "页面上限: 9" in prompts.rendered_text
+    assert "private-preview-value" not in prompts.rendered_text
+    assert "尚未验证" in prompts.rendered_text
+
+
+def test_wizard_defers_session_network_until_final_confirmation(tmp_path: Path) -> None:
+    setup = _setup_records()
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    reference = store.write("expired")
+    store.delete(reference)
+    with session_scope() as session:
+        session.get(CredentialProfile, setup.user_id).secret_ref = reference
+    events = []
+
+    class Prompts(ScriptedPrompts):
+        def choose(self, label, choices):
+            answer = super().choose(label, choices)
+            if answer == "submit":
+                events.append("confirmed")
+            return answer
+
+    class Sessions:
+        def ensure_valid_for_profile(self, session, profile_id):
+            events.append("network")
+            assert events[0] == "confirmed"
+            return object()
+
+    prompts = Prompts([str(setup.target_id), str(setup.user_id), str(setup.admin_id), "submit"])
+    CoverageSetupWizard(prompts=prompts, secret_store=store, auth_session_service=Sessions()).run(
+        setup.url
+    )
+    assert events == ["confirmed", "network"]
+    assert prompts.hidden_values == []
+
+
+def test_cleanup_after_runtime_failure_removes_only_unsubmitted_drafts(tmp_path):
+    setup = _setup_records()
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    prompts = ScriptedPrompts(
+        [
+            str(setup.target_id),
+            "__create__",
+            "draft-user",
+            "/login",
+            "/me",
+            "reader",
+            "new-secret",
+            str(setup.admin_id),
+            "submit",
+        ]
+    )
+    wizard = CoverageSetupWizard(prompts=prompts, secret_store=store)
+    request = wizard.run(setup.url)
+    wizard.cleanup_unsubmitted_secrets()
+    with session_scope() as session:
+        assert session.get(CredentialProfile, request.user_profile_id) is None
+        assert session.get(CredentialProfile, setup.user_id) is not None
+        assert session.get(CredentialProfile, setup.admin_id) is not None
+        assert session.get(Target, setup.target_id) is not None
+    assert list(store.root.glob("*.secret")) == []
+
+
+def test_interrupt_during_confirmed_secret_replacement_preserves_existing_refs(tmp_path):
+    setup = _setup_records()
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    expired = store.write("old")
+    store.delete(expired)
+    with session_scope() as session:
+        for profile_id in (setup.user_id, setup.admin_id):
+            session.get(CredentialProfile, profile_id).secret_ref = expired
+
+    class Prompts(ScriptedPrompts):
+        def secret(self, label):
+            if self.hidden_values:
+                raise KeyboardInterrupt
+            return super().secret(label)
+
+    class Sessions:
+        def ensure_valid_for_profile(self, session, profile_id):
+            raise InputValidationError("expired")
+
+    prompts = Prompts(
+        [str(setup.target_id), str(setup.user_id), str(setup.admin_id), "submit", "replacement"]
+    )
+    with pytest.raises(KeyboardInterrupt):
+        CoverageSetupWizard(
+            prompts=prompts, secret_store=store, auth_session_service=Sessions()
+        ).run(setup.url)
+    assert list(store.root.glob("*.secret")) == []
+    with session_scope() as session:
+        assert session.get(CredentialProfile, setup.user_id).secret_ref == expired
+        assert session.get(CredentialProfile, setup.admin_id).secret_ref == expired
+
+
+def test_wizard_rejects_configuration_changed_during_session_preparation(tmp_path):
+    setup = _setup_records()
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    expired = store.write("old")
+    store.delete(expired)
+    with session_scope() as session:
+        session.get(CredentialProfile, setup.user_id).secret_ref = expired
+
+    class Sessions:
+        def ensure_valid_for_profile(self, session, profile_id):
+            session.get(CredentialProfile, profile_id).name = "changed-config"
+            return object()
+
+    prompts = ScriptedPrompts(
+        [str(setup.target_id), str(setup.user_id), str(setup.admin_id), "submit"]
+    )
+    with pytest.raises(InputValidationError, match="配置已变化"):
+        CoverageSetupWizard(
+            prompts=prompts, secret_store=store, auth_session_service=Sessions()
+        ).run(setup.url)
+
+
+def _create_source_run(url, target_id):
+    from app.models.scan_run import ScanRun
+
+    with session_scope() as session:
+        session.add(
+            ScanRun(
+                id=17, target_id=target_id, input_url=url, normalized_url=url, status="completed"
+            )
+        )
+
+
+def test_wizard_reloads_configuration_changed_while_confirmation_is_open():
+    setup = _setup_records()
+
+    class Prompts(ScriptedPrompts):
+        def choose(self, label, choices):
+            answer = super().choose(label, choices)
+            if answer == "submit":
+                with session_scope() as external:
+                    external.get(CredentialProfile, setup.admin_id).role = "auditor"
+            return answer
+
+    prompts = Prompts([str(setup.target_id), str(setup.user_id), str(setup.admin_id), "submit"])
+    with pytest.raises(InputValidationError, match="配置已变化"):
+        CoverageSetupWizard(prompts=prompts).run(setup.url)
+
+
+def test_cleanup_preserves_draft_and_secret_adopted_by_another_run(tmp_path):
+    from app.models.scan_context import ScanContext
+    from app.models.scan_run import ScanRun
+
+    setup = _setup_records()
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    prompts = ScriptedPrompts(
+        [
+            str(setup.target_id),
+            "__create__",
+            "draft-user",
+            "/login",
+            "/me",
+            "reader",
+            "new-secret",
+            str(setup.admin_id),
+            "submit",
+        ]
+    )
+    wizard = CoverageSetupWizard(prompts=prompts, secret_store=store)
+    request = wizard.run(setup.url)
+    with session_scope() as session:
+        profile = session.get(CredentialProfile, request.user_profile_id)
+        reference = profile.secret_ref
+        run = ScanRun(input_url=setup.url, normalized_url=setup.url, target_id=setup.target_id)
+        session.add(run)
+        session.flush()
+        session.add(
+            ScanContext(
+                scan_run_id=run.id,
+                kind="user",
+                credential_profile_id=profile.id,
+                temporary_secret_ref=reference,
+            )
+        )
+    wizard.cleanup_unsubmitted_secrets()
+    with session_scope() as session:
+        assert session.get(CredentialProfile, request.user_profile_id) is not None
+    assert store.read(reference) == "new-secret"
+
+
+@pytest.mark.parametrize("change", ["edited", "cleanup_failure"])
+def test_cleanup_preserves_changed_draft_or_failed_compensation(tmp_path, change):
+    from contextlib import contextmanager
+
+    from sqlalchemy.exc import SQLAlchemyError
+
+    setup = _setup_records()
+    store = EphemeralSecretStore(tmp_path / "secrets")
+    prompts = ScriptedPrompts(
+        [
+            str(setup.target_id),
+            "__create__",
+            "draft-user",
+            "/login",
+            "/me",
+            "reader",
+            "new-secret",
+            str(setup.admin_id),
+            "submit",
+        ]
+    )
+    wizard = CoverageSetupWizard(prompts=prompts, secret_store=store)
+    request = wizard.run(setup.url)
+    with session_scope() as session:
+        profile = session.get(CredentialProfile, request.user_profile_id)
+        reference = profile.secret_ref
+        if change == "edited":
+            profile.name = "externally-edited"
+
+    @contextmanager
+    def failing_commit():
+        with session_scope() as session:
+            yield session
+            raise SQLAlchemyError("private-database-detail")
+
+    if change == "cleanup_failure":
+        wizard.session_factory = failing_commit
+    wizard.cleanup_unsubmitted_secrets()
+    assert "private-database-detail" not in prompts.rendered_text
+    with session_scope() as session:
+        assert session.get(CredentialProfile, request.user_profile_id) is not None
+    assert store.read(reference) == "new-secret"

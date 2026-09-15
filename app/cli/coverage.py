@@ -121,8 +121,7 @@ def coverage(
                 console.print("当前输入不是交互终端；请使用 --non-interactive 并提供两个档案 ID。")
                 raise typer.Exit(code=2)
             wizard = CoverageSetupWizard(prompts=TyperCoveragePrompts())
-            request = wizard.run(entry_url)
-            request = request.model_copy(update={"source_run_id": source_run, "options": options})
+            request = wizard.run(entry_url, options=options, source_run_id=source_run)
 
         manager = WebRuntimeManager(
             paths=GardenPaths.from_environment(),
@@ -146,13 +145,27 @@ def coverage(
     except KeyboardInterrupt:
         if api is not None and result is not None and manager is not None:
             _cancel_from_interrupt(api, result.id, manager)
-        if wizard is not None and not submission_started:
-            wizard.cleanup_unsubmitted_secrets()
         raise typer.Exit(code=130) from None
     except (GardenError, WebRuntimeError) as error:
+        if wizard is not None:
+            safe_messages = {
+                "已取消认证覆盖任务。",
+                "配置已变化，请重新运行向导并确认新预览。",
+            }
+            message = (
+                str(error)
+                if str(error) in safe_messages
+                else "认证覆盖准备或提交失败，请检查配置与本地运行时。"
+            )
+            handle_cli_error(GardenError(message))
+        handle_cli_error(error)
+    except Exception as error:
+        if wizard is None or isinstance(error, typer.Exit):
+            raise
+        handle_cli_error(GardenError("认证覆盖准备或提交失败，请检查配置与本地运行时。"))
+    finally:
         if wizard is not None and not submission_started:
             wizard.cleanup_unsubmitted_secrets()
-        handle_cli_error(error)
 
 
 def _wait_for_assessment(api: LocalScanApi, initial: AssessmentRunView) -> AssessmentRunView:

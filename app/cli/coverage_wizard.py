@@ -7,19 +7,27 @@ from pathlib import Path
 from typing import Protocol
 from urllib.parse import urljoin, urlparse
 
+from pydantic import ValidationError
+from sqlalchemy import delete, exists, select, update
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.cli.paths import formal_runtime_paths
 from app.core.errors import GardenError, InputValidationError
+from app.core.settings import get_settings
 from app.db.bootstrap import session_scope
 from app.models.credential_profile import CredentialProfile
 from app.models.enums import AuthType, TargetType
+from app.models.scan_context import ScanContext
 from app.models.target import Target
 from app.schemas.assessment import PassiveCoverageStartRequest
 from app.schemas.auth import HttpLoginConfig, PlaywrightLoginConfig
 from app.schemas.credential import CredentialProfileCreate
+from app.schemas.scan import ScanOptions
 from app.schemas.target import TargetCreate
 from app.services.credentials import CredentialProfileService
 from app.services.ephemeral_secret_store import EphemeralSecretStore
 from app.services.login_configs import LoginConfigService, encode_inline_login_config
+from app.services.scan_submission_preview import build_preview
 from app.services.secret_resolver import SecretResolver
 from app.services.sessions import AuthSessionService
 from app.services.targets import TargetService
@@ -67,8 +75,18 @@ class CoverageSetupWizard:
         )
         self.session_factory = session_factory
         self._unsubmitted_secret_refs: tuple[str, ...] = ()
+        self._draft_snapshots: dict[tuple[str, int], dict] = {}
+        self._draft_profile_ids: list[int] = []
+        self._draft_target_ids: list[int] = []
+        self._replaced_secret_refs: list[tuple[int, str, str]] = []
 
-    def run(self, entry_url: str) -> PassiveCoverageStartRequest:
+    def run(
+        self,
+        entry_url: str,
+        *,
+        options: ScanOptions | None = None,
+        source_run_id: int | None = None,
+    ) -> PassiveCoverageStartRequest:
         entry_origin = self._origin(entry_url)
         draft_secret_refs: list[str] = []
         self.secret_store.purge_expired()
@@ -82,31 +100,189 @@ class CoverageSetupWizard:
                 target = self._select_or_create_target(session, entry_url, targets)
                 user = self._select_or_create_profile(session, target, "user", draft_secret_refs)
                 admin = self._select_or_create_profile(session, target, "admin", draft_secret_refs)
-                self.prompts.write(
-                    "\n认证覆盖配置摘要\n"
-                    f"Target: #{target.id} {target.name}\n"
-                    f"user: #{user.id} {user.name}\n"
-                    f"admin: #{admin.id} {admin.name}\n"
-                    "模式: 仅被动采集\n"
-                )
-                if not self.prompts.confirm("提交认证覆盖任务？", default=True):
-                    raise InputValidationError("已取消认证覆盖任务。")
-                request = PassiveCoverageStartRequest(
-                    url=entry_url,
-                    target_id=target.id,
-                    user_profile_id=user.id,
-                    admin_profile_id=admin.id,
-                )
-                self._unsubmitted_secret_refs = tuple(draft_secret_refs)
-                return request
+                selected_options = options or ScanOptions()
+                while True:
+                    request = PassiveCoverageStartRequest(
+                        url=entry_url,
+                        target_id=target.id,
+                        source_run_id=source_run_id,
+                        user_profile_id=user.id,
+                        admin_profile_id=admin.id,
+                        options=selected_options,
+                    )
+                    preview = build_preview(
+                        session, request.to_assessment_request(), get_settings()
+                    )
+                    request = request.model_copy(update={"options": preview.effective_options})
+                    selected_options = preview.effective_options
+                    self._write_preview(preview, target.id, source_run_id)
+                    choices = []
+                    if preview.can_submit:
+                        choices.append(PromptChoice("submit", "确认并提交认证覆盖任务"))
+                    choices.extend(
+                        [
+                            PromptChoice("edit_profiles", "返回调整身份配置"),
+                            PromptChoice("edit_options", "返回调整采集参数"),
+                            PromptChoice("cancel", "取消"),
+                        ]
+                    )
+                    action = self.prompts.choose("确认提交或返回调整", choices)
+                    if action == "cancel":
+                        raise InputValidationError("已取消认证覆盖任务。")
+                    if action == "edit_options":
+                        selected_options = self._edit_options(selected_options)
+                        continue
+                    if action == "edit_profiles":
+                        user = self._select_or_create_profile(
+                            session, target, "user", draft_secret_refs
+                        )
+                        admin = self._select_or_create_profile(
+                            session, target, "admin", draft_secret_refs
+                        )
+                        continue
+                    self._check_preview_unchanged(session, request, preview)
+                    for profile, role in ((user, "user"), (admin, "admin")):
+                        self._prepare_existing_profile(
+                            session, target, profile, role, draft_secret_refs
+                        )
+                    self._check_preview_unchanged(session, request, preview)
+                    for model, ids in (
+                        (CredentialProfile, self._draft_profile_ids),
+                        (Target, self._draft_target_ids),
+                    ):
+                        for record_id in ids:
+                            record = session.get(model, record_id)
+                            self._draft_snapshots[(model.__tablename__, record_id)] = {
+                                column.name: getattr(record, column.name)
+                                for column in model.__table__.columns
+                            }
+                    self._unsubmitted_secret_refs = tuple(draft_secret_refs)
+                    return request
         except BaseException:
+            self._draft_profile_ids.clear()
+            self._draft_target_ids.clear()
+            self._replaced_secret_refs.clear()
+            self._unsubmitted_secret_refs = ()
             for reference in draft_secret_refs:
                 self.secret_store.delete(reference)
             raise
 
+    def _check_preview_unchanged(self, session, request, original) -> None:
+        # Preserve this transaction's drafts, then reload persisted relationships
+        # so edits made while the final choice was open cannot bypass inspection.
+        session.flush()
+        session.expire_all()
+        current = build_preview(session, request.to_assessment_request(), get_settings())
+        if (
+            not current.can_submit
+            or current.configuration_fingerprint != original.configuration_fingerprint
+        ):
+            raise InputValidationError("配置已变化，请重新运行向导并确认新预览。")
+
+    def _write_preview(self, preview, target_id, source_run_id) -> None:
+        options = preview.effective_options
+        self.prompts.write(
+            "\n认证覆盖提交预览\n"
+            f"入口: {preview.entry_display}\n同源范围: {preview.origin_display}\n"
+            f"Target: #{target_id}\n来源任务: {source_run_id or '无'}\n"
+            "模式: 仅被动采集\n"
+        )
+        for context in preview.contexts:
+            self.prompts.write(
+                f"{context.kind}: #{context.profile_id or '—'} {context.profile_name or '匿名'}\n"
+            )
+        self.prompts.write(
+            f"页面上限: {options.max_pages}\n请求记录上限: {options.max_resources}\n"
+            f"深度上限: {options.max_depth}\n单请求超时（秒）: {options.request_timeout_seconds}\n"
+            f"总超时（秒）: {options.overall_timeout_seconds}\n重试上限: {options.retry_attempts}\n"
+            f"{preview.budget_note}\n登录状态: 本次尚未验证\n覆盖状态: 尚未产生\n"
+        )
+        for issue in preview.issues:
+            self.prompts.write(f"{issue.field}: {issue.message}\n")
+
+    def _edit_options(self, options: ScanOptions) -> ScanOptions:
+        fields = (
+            ("max_pages", "页面上限"),
+            ("max_resources", "请求记录上限"),
+            ("max_depth", "深度上限"),
+            ("request_timeout_seconds", "单请求超时（秒）"),
+            ("overall_timeout_seconds", "总超时（秒）"),
+            ("retry_attempts", "重试上限"),
+        )
+        values = options.model_dump()
+        for field, label in fields:
+            values[field] = self.prompts.text(label, default=str(values[field]))
+        try:
+            return ScanOptions.model_validate(values)
+        except ValidationError:
+            self.prompts.write("采集参数无效，请在预览中选择返回调整。\n")
+            return options
+
+    @staticmethod
+    def _unreferenced(model, record_id):
+        # Cover every mapped FK, including assessment contexts and audit rows;
+        # use SQL predicates so a concurrent adopter cannot race a read/delete.
+        table = model.__table__
+        return [
+            ~exists(select(1).where(foreign_key.parent == record_id))
+            for dependent in table.metadata.tables.values()
+            for foreign_key in dependent.foreign_keys
+            if foreign_key.column is table.c.id
+        ]
+
     def cleanup_unsubmitted_secrets(self) -> None:
-        for reference in self._unsubmitted_secret_refs:
+        # Runtime bootstrap needs a committed database. Compensate only unchanged,
+        # unreferenced drafts; adopted records and their secrets belong to their users.
+        removable_refs = []
+        try:
+            with self.session_factory() as session:
+                for profile_id, original, replacement in self._replaced_secret_refs:
+                    session.execute(
+                        update(CredentialProfile)
+                        .where(
+                            CredentialProfile.id == profile_id,
+                            CredentialProfile.secret_ref == replacement,
+                            *self._unreferenced(CredentialProfile, profile_id),
+                        )
+                        .values(secret_ref=original)
+                    )
+                for model, ids in (
+                    (CredentialProfile, self._draft_profile_ids),
+                    (Target, self._draft_target_ids),
+                ):
+                    for record_id in ids:
+                        snapshot = self._draft_snapshots.get((model.__tablename__, record_id))
+                        if snapshot is None:
+                            continue
+                        session.execute(
+                            delete(model).where(
+                                *(getattr(model, key) == value for key, value in snapshot.items()),
+                                *self._unreferenced(model, record_id),
+                            )
+                        )
+                for reference in self._unsubmitted_secret_refs:
+                    profile_uses = session.scalar(
+                        select(CredentialProfile.id)
+                        .where(CredentialProfile.secret_ref == reference)
+                        .limit(1)
+                    )
+                    context_uses = session.scalar(
+                        select(ScanContext.id)
+                        .where(ScanContext.temporary_secret_ref == reference)
+                        .limit(1)
+                    )
+                    if profile_uses is None and context_uses is None:
+                        removable_refs.append(reference)
+        except SQLAlchemyError:
+            self.prompts.write("草稿清理未完成；已保留凭据与临时秘密以避免损坏现有任务。\n")
+            return
+        # Never remove a file when database compensation rolled back.
+        for reference in removable_refs:
             self.secret_store.delete(reference)
+        self._draft_profile_ids.clear()
+        self._draft_target_ids.clear()
+        self._draft_snapshots.clear()
+        self._replaced_secret_refs.clear()
         self._unsubmitted_secret_refs = ()
 
     def _select_or_create_target(
@@ -121,7 +297,7 @@ class CoverageSetupWizard:
             raise InputValidationError("没有与入口 URL 同源的 Target。")
         name = self.prompts.text("Target 名称", default=urlparse(entry_url).hostname)
         owner = self.prompts.text("Target 负责人（用于资产归属）", default="local-user")
-        return self.target_service.create(
+        created = self.target_service.create(
             session,
             TargetCreate(
                 name=name,
@@ -130,6 +306,8 @@ class CoverageSetupWizard:
                 owner=owner,
             ),
         )
+        self._draft_target_ids.append(created.id)
+        return created
 
     def _select_target(self, targets: list[Target]) -> Target:
         if not targets:
@@ -174,13 +352,7 @@ class CoverageSetupWizard:
         if profiles:
             selected = self._select_profile_or_create(profiles, role)
             if selected is not None:
-                return self._prepare_existing_profile(
-                    session,
-                    target,
-                    selected,
-                    role,
-                    draft_secret_refs,
-                )
+                return selected
         elif not self.prompts.confirm(
             f"没有 role={role} 的凭据档案，立即创建？",
             default=True,
@@ -211,7 +383,7 @@ class CoverageSetupWizard:
                 "auto_detect_selectors": True,
             }
         )
-        return self.credential_service.create(
+        created = self.credential_service.create(
             session,
             CredentialProfileCreate(
                 target_id=target.id,
@@ -223,6 +395,8 @@ class CoverageSetupWizard:
                 login_config_path=login_config,
             ),
         )
+        self._draft_profile_ids.append(created.id)
+        return created
 
     def _prepare_existing_profile(
         self,
@@ -249,6 +423,7 @@ class CoverageSetupWizard:
         secret = self.prompts.secret(f"{role} 密码已过期，请重新输入（输入已隐藏）")
         reference = self.secret_store.write(secret)
         draft_secret_refs.append(reference)
+        self._replaced_secret_refs.append((profile.id, profile.secret_ref, reference))
         profile.secret_ref = reference
         return profile
 

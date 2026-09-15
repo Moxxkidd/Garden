@@ -84,7 +84,8 @@ def test_index_page_loads(app) -> None:
     assert "Garden" in response.text
     assert "Dashboard" in response.text
     assert "One URL to a structured report" in response.text
-    assert "Start scan" in response.text
+    assert "预览扫描" in response.text
+    assert 'action="/scans/preview"' in response.text
     assert "Authorized public + local by default" in response.text
 
 
