@@ -2,6 +2,7 @@
 {% block content %}
 <section class="mx-auto max-w-3xl rounded-3xl border border-black/10 bg-white p-6 space-y-6">
   <h1 class="text-2xl font-semibold">预览扫描</h1>
+  {% if values.get("rerun_of_run_id") %}<p>沿用任务 #{{ values.rerun_of_run_id }} 的配置；修改后将创建新任务，原任务保留。</p>{% endif %}
   {% if errors %}
   <div role="alert" class="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800">
     <p class="font-medium">请修正后重新预览</p>

@@ -103,6 +103,8 @@ class ScanRunView(BaseModel):
     id: int
     mode: AssessmentMode = AssessmentMode.QUICK
     target_id: int | None = None
+    can_reuse_configuration: bool = False
+    rerun_of_run_id: int | None = Field(default=None, gt=0)
     source_run_id: int | None = None
     input_url: str
     normalized_url: str

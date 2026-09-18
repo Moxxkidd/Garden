@@ -86,7 +86,7 @@ def test_stamp_existing_database_preserves_rows(tmp_path):
 
     with engine.connect() as connection:
         assert connection.scalar(text("select count(*) from targets")) == 1
-        assert connection.scalar(text("select version_num from alembic_version")) == "0002"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0003"
 
 
 def test_legacy_scan_assets_are_backfilled_into_anonymous_context(tmp_path):
@@ -180,7 +180,7 @@ def test_unified_assessment_migration_round_trip(tmp_path):
 
     upgrade_database(url)
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0002"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0003"
 
 
 def test_application_requires_explicit_stamp_for_unversioned_legacy_database(tmp_path, monkeypatch):
@@ -234,7 +234,7 @@ def test_application_auto_migrates_fresh_database_in_development(tmp_path, monke
         assert client.get("/healthz").status_code == 200
 
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0002"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0003"
 
 
 def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
@@ -247,7 +247,7 @@ def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
     current_result = runner.invoke(cli_app, ["db", "current"])
 
     assert upgrade_result.exit_code == 0
-    assert "0002" in current_result.stdout
+    assert "0003" in current_result.stdout
 
 
 def test_database_cli_stamp_existing_preserves_legacy_rows(tmp_path, monkeypatch):
@@ -312,6 +312,7 @@ def test_built_wheel_installs_with_loadable_migration_assets(tmp_path):
         "app/db/migration_assets/migrations/script.py.mako",
         "app/db/migration_assets/migrations/versions/0001_existing_schema_baseline.py",
         "app/db/migration_assets/migrations/versions/0002_unified_assessment.py",
+        "app/db/migration_assets/migrations/versions/0003_scan_rerun_link.py",
     }
     assert expected_paths <= packaged_paths
 
@@ -373,3 +374,31 @@ def test_percent_encoded_non_sqlite_url_fails_without_leaking_credentials(capsys
     assert encoded_password not in str(exc_info.value)
     assert encoded_password not in captured.out
     assert encoded_password not in captured.err
+
+
+def test_rerun_link_migration_preserves_existing_run_and_round_trips(tmp_path):
+    url = f"sqlite+pysqlite:///{tmp_path / 'rerun.db'}"
+    upgrade_database(url, "0002")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text("""
+            INSERT INTO scan_runs (id, input_url, normalized_url, status, current_stage,
+                progress, options, retry_count, created_at, updated_at)
+            VALUES (1, 'http://localhost/', 'http://localhost/', 'completed', 'report',
+                100, '{"max_pages": 7}', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """)
+        )
+    upgrade_database(url)
+    with engine.connect() as connection:
+        row = connection.execute(
+            text("SELECT input_url, options, rerun_of_run_id FROM scan_runs WHERE id=1")
+        ).one()
+        assert tuple(row) == ("http://localhost/", '{"max_pages": 7}', None)
+    foreign_keys = inspect(engine).get_foreign_keys("scan_runs")
+    assert any(fk["constrained_columns"] == ["rerun_of_run_id"] for fk in foreign_keys)
+    downgrade_database(url, "0002")
+    assert "rerun_of_run_id" not in {c["name"] for c in inspect(engine).get_columns("scan_runs")}
+    upgrade_database(url)
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT count(*) FROM scan_runs")) == 1

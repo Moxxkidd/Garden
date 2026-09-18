@@ -14,6 +14,7 @@ class AssessmentStartRequest(BaseModel):
     url: str = Field(min_length=1, max_length=1000)
     mode: AssessmentMode = AssessmentMode.QUICK
     target_id: int | None = Field(default=None, gt=0)
+    rerun_of_run_id: int | None = Field(default=None, gt=0)
     source_run_id: int | None = Field(default=None, gt=0)
     user_profile_id: int | None = Field(default=None, gt=0)
     admin_profile_id: int | None = Field(default=None, gt=0)

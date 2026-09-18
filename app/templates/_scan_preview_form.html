@@ -1,6 +1,7 @@
 {% set values = values | default({}) %}
 {% set errors = errors | default({}) %}
 <form action="/scans/preview" method="post" hx-boost="false" class="mt-6 space-y-4">
+  {% if values.get("rerun_of_run_id") %}<input type="hidden" name="rerun_of_run_id" value="{{ values.rerun_of_run_id }}">{% endif %}
   <div>
     <label class="block text-sm font-medium" for="scan-url">Entry URL · 授权入口</label>
     <input id="scan-url" name="url" type="url" required maxlength="1000" value="{{ values.get('url', '') }}" placeholder="http://127.0.0.1:8080/" class="mt-2 w-full min-w-0 rounded-2xl border border-black/15 px-4 py-3 focus:border-emerald-600" {% if errors.get('url') %}aria-invalid="true" aria-describedby="error-url" autofocus{% endif %} />
@@ -8,7 +9,7 @@
   </div>
   <details class="rounded-2xl border border-black/10 p-4" {% if errors %}open{% endif %}>
     <summary class="cursor-pointer font-medium">预算选项</summary>
-    <p class="mt-2 text-sm text-slate-600">留空使用当前运行配置；下一步显示实际生效值。以下均为上限。</p>
+    <p class="mt-2 text-sm text-slate-600">{% if values.get("rerun_of_run_id") %}沿用历史任务的预算；缺失字段需补齐后才能预览。{% else %}留空使用当前运行配置；下一步显示实际生效值。{% endif %}以下均为上限。</p>
     <div class="mt-4 grid gap-4 sm:grid-cols-2">
       {% for key, label, minimum, maximum, step in [
         ('max_pages', '页面上限', 1, 500, 1),
