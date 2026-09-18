@@ -14,11 +14,13 @@ from app.models.scan_run import TERMINAL_SCAN_RUN_STATUSES, ScanRun
 from app.models.target import Target
 from app.schemas.assessment import AssessmentStartRequest
 from app.schemas.auth import PlaywrightLoginConfig
+from app.schemas.scan import ScanOptions
 from app.schemas.scan_preview import PreviewContext, PreviewIssue, ScanPreview
 from app.services.coverage_identity import redacted_observed_url
 from app.services.login_configs import LoginConfigService
 from app.services.scan_network import TargetNetworkPolicy
 from app.services.scan_options import resolve_scan_options
+from app.services.scan_reuse import reusable_run
 
 
 def _origin(normalized: str) -> tuple[str, str, int]:
@@ -74,6 +76,28 @@ def _inspect(session, request: AssessmentStartRequest, settings: Settings) -> Sc
         settings.allow_non_local_targets,
         settings.allow_private_targets,
     ]
+    if request.rerun_of_run_id is not None:
+        try:
+            original = reusable_run(session, request.rerun_of_run_id)
+            fingerprint_data.append(
+                [
+                    original.id,
+                    original.mode,
+                    original.status,
+                    original.target_id,
+                    original.input_url,
+                    original.normalized_url,
+                    {key: original.options.get(key) for key in ScanOptions.model_fields},
+                ]
+            )
+            if (
+                request.mode.value != "quick"
+                or request.source_run_id is not None
+                or original.target_id != request.target_id
+            ):
+                error("invalid_rerun", "rerun_of_run_id", "沿用配置仅支持同一 Target 的匿名任务。")
+        except GardenError as exc:
+            error("invalid_rerun", "rerun_of_run_id", str(exc))
     target_id = request.target_id
     if request.mode.value == "authenticated_coverage":
         issues.append(

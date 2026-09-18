@@ -112,6 +112,30 @@ def test_browser_preview_edit_confirm_preserves_budget_without_early_requests(
                     assert stored.options["max_pages"] == 8
                     assert stored.options["max_depth"] == 1
                     assert stored.options["retry_attempts"] == 0
+                # Reuse the completed run through the result page, with no new target
+                # requests until the second confirmation (also works without JavaScript).
+                original = app.state.scan_service.get_reuse_configuration(run_id)
+                request_count = len(requests)
+                page.reload()
+                page.get_by_role("link", name="沿用配置重新扫描", exact=True).click()
+                expect(page.locator("#scan-max_pages")).to_have_value("8")
+                expect(page.locator("#scan-retry_attempts")).to_have_value("0")
+                page.get_by_text("预算选项", exact=True).click()
+                page.locator("#scan-max_pages").fill("9")
+                page.get_by_role("button", name="预览扫描", exact=True).click()
+                expect(page.get_by_text(f"沿用任务 #{run_id}", exact=False)).to_be_visible()
+                page.get_by_role("button", name="返回修改", exact=True).click()
+                expect(page.locator("#scan-max_pages")).to_have_value("9")
+                page.get_by_role("button", name="预览扫描", exact=True).click()
+                assert len(requests) == request_count
+                assert len(app.state.scan_service.list_scans()) == 1
+                page.get_by_role("button", name="开始匿名扫描", exact=True).click()
+                page.wait_for_url("**/scans/*")
+                new_id = int(page.url.rsplit("/", 1)[1])
+                assert new_id != run_id
+                expect(page.get_by_role("link", name=f"任务 #{run_id}", exact=True)).to_be_visible()
+                assert app.state.scan_service.get_scan(new_id).rerun_of_run_id == run_id
+                assert app.state.scan_service.get_reuse_configuration(run_id) == original
                 # Force server validation beyond the browser's numeric constraint.
                 page.goto(garden_origin)
                 page.get_by_label("Entry URL").fill(target_origin)
@@ -130,6 +154,6 @@ def test_browser_preview_edit_confirm_preserves_budget_without_early_requests(
                 assert invalid.value.status == 422
                 expect(page.locator("#error-max_pages")).to_be_visible()
                 expect(page.locator("#scan-max_pages")).to_be_focused()
-                assert len(app.state.scan_service.list_scans()) == 1
+                assert len(app.state.scan_service.list_scans()) == 2
             finally:
                 browser.close()

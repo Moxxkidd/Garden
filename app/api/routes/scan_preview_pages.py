@@ -12,6 +12,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
+from app.core.errors import GardenError, ResourceNotFoundError
 from app.db.bootstrap import session_scope
 from app.schemas.assessment import AssessmentStartRequest
 from app.schemas.scan import ScanOptions
@@ -69,13 +70,29 @@ def _render(request, values, *, preview=None, errors=None, status_code=200):
     )
 
 
+def _missing_reuse_values(values):
+    return {
+        key: "历史配置中的此项缺失或已被清空，请明确填写。"
+        for key in ScanOptions.model_fields
+        if values.get(key, "") == ""
+    }
+
+
 async def _submit(request, *, confirm=False):
     form = await request.form()
-    values = {key: str(form.get(key, "")) for key in ("url", *ScanOptions.model_fields)}
+    values = {
+        key: str(form.get(key, "")) for key in ("url", "rerun_of_run_id", *ScanOptions.model_fields)
+    }
+    if values.get("rerun_of_run_id"):
+        missing = _missing_reuse_values(values)
+        if missing:
+            return _render(request, values, errors=missing, status_code=422)
     try:
+        rerun_id = values.get("rerun_of_run_id") or None
         payload = AssessmentStartRequest(
             url=values["url"],
-            options={k: v for k, v in values.items() if k != "url" and v != ""},
+            rerun_of_run_id=rerun_id,
+            options={k: values[k] for k in ScanOptions.model_fields if values[k] != ""},
         )
     except ValidationError as exc:
         errors = {
@@ -83,7 +100,14 @@ async def _submit(request, *, confirm=False):
             for error in exc.errors(include_input=False)
         }
         return _render(request, values, errors=errors, status_code=422)
-    settings = request.app.state.scan_service.settings
+    service = request.app.state.scan_service
+    if payload.rerun_of_run_id is not None:
+        try:
+            source = service.get_reuse_configuration(payload.rerun_of_run_id)
+        except GardenError as exc:
+            return _render(request, values, errors={"rerun_of_run_id": str(exc)}, status_code=422)
+        payload.target_id = source["target_id"]
+    settings = service.settings
     with session_scope() as session:
         preview = build_preview(session, payload, settings)
     if not preview.can_submit:
@@ -99,7 +123,12 @@ async def _submit(request, *, confirm=False):
                 errors={"preview_token": "预览已过期或参数、配置发生变化，请重新预览。"},
                 status_code=409,
             )
-        scan = request.app.state.scan_service.start_scan(payload.url, preview.effective_options)
+        payload.options = preview.effective_options
+        scan = (
+            service.start_assessment(payload)
+            if payload.rerun_of_run_id is not None
+            else service.start_scan(payload.url, preview.effective_options)
+        )
         return RedirectResponse(url=f"/scans/{scan.id}", status_code=303)
     return _render(request, values, preview=preview)
 
@@ -117,5 +146,25 @@ async def confirm_scan(request: Request):
 @router.post("/scans/edit", include_in_schema=False)
 async def edit_scan(request: Request):
     form = await request.form()
-    values = {key: str(form.get(key, "")) for key in ("url", *ScanOptions.model_fields)}
+    values = {
+        key: str(form.get(key, "")) for key in ("url", "rerun_of_run_id", *ScanOptions.model_fields)
+    }
     return _render(request, values)
+
+
+@router.get("/scans/{scan_run_id}/reuse", include_in_schema=False)
+def reuse_scan(request: Request, scan_run_id: int):
+    try:
+        source = request.app.state.scan_service.get_reuse_configuration(scan_run_id)
+    except GardenError as exc:
+        return _render(
+            request,
+            {},
+            errors={"rerun_of_run_id": str(exc)},
+            status_code=404 if isinstance(exc, ResourceNotFoundError) else 409,
+        )
+    values = {
+        key: str(value) if value is not None else "" for key, value in source["options"].items()
+    }
+    values.update(url=source["url"], rerun_of_run_id=str(source["id"]))
+    return _render(request, values, errors=_missing_reuse_values(values))

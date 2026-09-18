@@ -40,6 +40,7 @@ from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_options import resolve_scan_options
 from app.services.scan_pipeline import STAGES, ScanPipeline
 from app.services.scan_report_quality import project_finding_groups
+from app.services.scan_reuse import reusable_run, reuse_block_reason
 
 
 def create_assessment_stages(session: Session, run: ScanRun) -> None:
@@ -134,6 +135,15 @@ class ScanApplicationService:
         with self._start_lock, session_scope() as session:
             target_id = self._resolve_target_id(session, request)
             self._validate_source_run(session, request, target_id)
+            if request.rerun_of_run_id is not None:
+                original = reusable_run(session, request.rerun_of_run_id)
+                if (
+                    request.mode != AssessmentMode.QUICK
+                    or request.source_run_id is not None
+                    or request.active_checks_enabled
+                    or original.target_id != target_id
+                ):
+                    raise InputValidationError("沿用配置仅支持同一 Target 的被动匿名任务。")
             active_key = self._active_key(normalized, request, resolved, target_id)
             existing = session.scalar(select(ScanRun).where(ScanRun.active_key == active_key))
             if existing is not None:
@@ -142,6 +152,7 @@ class ScanApplicationService:
                 mode=request.mode.value,
                 target_id=target_id,
                 source_run_id=request.source_run_id,
+                rerun_of_run_id=request.rerun_of_run_id,
                 input_url=request.url.strip(),
                 normalized_url=normalized,
                 active_key=active_key,
@@ -246,6 +257,17 @@ class ScanApplicationService:
         if store is None:
             return ()
         return store.purge_expired(max_age_seconds=max_age_seconds)
+
+    def get_reuse_configuration(self, scan_run_id: int) -> dict:
+        """Read only reusable controls; never return credentials or session state."""
+        with session_scope() as session:
+            run = reusable_run(session, scan_run_id)
+            return {
+                "id": run.id,
+                "url": run.input_url,
+                "target_id": run.target_id,
+                "options": {key: run.options.get(key) for key in ScanOptions.model_fields},
+            }
 
     def get_scan(self, scan_run_id: int) -> ScanRunView:
         with session_scope() as session:
@@ -417,6 +439,8 @@ class ScanApplicationService:
             "mode": run.mode,
             "target_id": run.target_id,
             "source_run_id": run.source_run_id,
+            "rerun_of_run_id": run.rerun_of_run_id,
+            "can_reuse_configuration": reuse_block_reason(run) is None,
             "input_url": run.input_url,
             "normalized_url": run.normalized_url,
             "status": run.status,
@@ -483,6 +507,11 @@ class ScanApplicationService:
                 "admin_profile_id": request.admin_profile_id,
                 "active_checks_enabled": request.active_checks_enabled,
                 "source_run_id": request.source_run_id,
+                **(
+                    {"rerun_of_run_id": request.rerun_of_run_id}
+                    if request.rerun_of_run_id is not None
+                    else {}
+                ),
                 "options": options.model_dump(),
             },
             sort_keys=True,
