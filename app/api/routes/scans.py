@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Form, Query, Request, status
+from fastapi import APIRouter, Form, Query, Request, Response, status
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from app.core.errors import ConflictError, GardenError, ResourceNotFoundError
 from app.schemas.scan import ScanOptions, ScanRunView, ScanStartRequest
+from app.schemas.scan_comparison import ScanComparison
 from app.services.scan_result_presentation import (
     coverage_summary,
     diagnostic_hint,
@@ -126,4 +128,39 @@ def scan_detail_page(request: Request, scan_run_id: int) -> HTMLResponse:
                 scan.finding_count, scan.finding_group_count
             ),
         },
+    )
+
+
+@router.get("/api/scans/{scan_run_id}/comparison", response_model=ScanComparison)
+def scan_comparison_api(request: Request, response: Response, scan_run_id: int) -> ScanComparison:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return request.app.state.scan_service.compare_with_source(scan_run_id)
+
+
+@router.get("/scans/{scan_run_id}/comparison", response_class=HTMLResponse, include_in_schema=False)
+def scan_comparison_page(request: Request, scan_run_id: int) -> HTMLResponse:
+    comparison, error, status_code = None, None, 200
+    try:
+        comparison = request.app.state.scan_service.compare_with_source(scan_run_id)
+    except GardenError as exc:
+        error = str(exc)
+        status_code = (
+            404
+            if isinstance(exc, ResourceNotFoundError)
+            else 409
+            if isinstance(exc, ConflictError)
+            else 400
+        )
+    return templates.TemplateResponse(
+        request=request,
+        name="scan_comparison.html",
+        context={
+            "comparison": comparison,
+            "error": error,
+            "scan_run_id": scan_run_id,
+            "page_title": "与上次对比",
+        },
+        status_code=status_code,
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
     )
