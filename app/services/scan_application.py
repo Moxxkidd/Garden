@@ -36,6 +36,7 @@ from app.schemas.scan import (
     ScanRunView,
     ScanStageView,
 )
+from app.schemas.scan_comparison import ScanComparison
 from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_options import resolve_scan_options
 from app.services.scan_pipeline import STAGES, ScanPipeline
@@ -257,6 +258,12 @@ class ScanApplicationService:
         if store is None:
             return ()
         return store.purge_expired(max_age_seconds=max_age_seconds)
+
+    def compare_with_source(self, scan_run_id: int) -> ScanComparison:
+        from app.services.scan_comparison import ScanComparisonService
+
+        with session_scope() as session:
+            return ScanComparisonService().compare(session, scan_run_id)
 
     def get_reuse_configuration(self, scan_run_id: int) -> dict:
         """Read only reusable controls; never return credentials or session state."""
