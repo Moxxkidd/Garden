@@ -7,6 +7,7 @@ from typing import Annotated
 
 import typer
 
+from app.cli.coverage_gaps import print_coverage_gaps
 from app.cli.local_api import LocalScanApi
 from app.cli.paths import GardenPaths
 from app.cli.utils import console, handle_cli_error, render_key_value
@@ -117,6 +118,7 @@ def _print_result(result: ScanRunView) -> None:
         title="Garden 扫描结果",
     )
     console.print(coverage_summary(result.status, result.completeness, result.mode), markup=False)
+    print_coverage_gaps(result.coverage_gaps)
     coverage_warnings = [
         failure for failure in result.failures if is_coverage_warning(failure.stage, failure.code)
     ]

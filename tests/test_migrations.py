@@ -86,7 +86,7 @@ def test_stamp_existing_database_preserves_rows(tmp_path):
 
     with engine.connect() as connection:
         assert connection.scalar(text("select count(*) from targets")) == 1
-        assert connection.scalar(text("select version_num from alembic_version")) == "0003"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0004"
 
 
 def test_legacy_scan_assets_are_backfilled_into_anonymous_context(tmp_path):
@@ -180,7 +180,7 @@ def test_unified_assessment_migration_round_trip(tmp_path):
 
     upgrade_database(url)
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0003"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0004"
 
 
 def test_application_requires_explicit_stamp_for_unversioned_legacy_database(tmp_path, monkeypatch):
@@ -234,7 +234,7 @@ def test_application_auto_migrates_fresh_database_in_development(tmp_path, monke
         assert client.get("/healthz").status_code == 200
 
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0003"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0004"
 
 
 def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
@@ -247,7 +247,7 @@ def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
     current_result = runner.invoke(cli_app, ["db", "current"])
 
     assert upgrade_result.exit_code == 0
-    assert "0003" in current_result.stdout
+    assert "0004" in current_result.stdout
 
 
 def test_database_cli_stamp_existing_preserves_legacy_rows(tmp_path, monkeypatch):
@@ -313,6 +313,7 @@ def test_built_wheel_installs_with_loadable_migration_assets(tmp_path):
         "app/db/migration_assets/migrations/versions/0001_existing_schema_baseline.py",
         "app/db/migration_assets/migrations/versions/0002_unified_assessment.py",
         "app/db/migration_assets/migrations/versions/0003_scan_rerun_link.py",
+        "app/db/migration_assets/migrations/versions/0004_coverage_gap_details.py",
     }
     assert expected_paths <= packaged_paths
 
@@ -402,3 +403,43 @@ def test_rerun_link_migration_preserves_existing_run_and_round_trips(tmp_path):
     upgrade_database(url)
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT count(*) FROM scan_runs")) == 1
+
+
+def test_coverage_gap_migration_preserves_legacy_warning_and_round_trips(tmp_path):
+    url = f"sqlite+pysqlite:///{tmp_path / 'gaps.db'}"
+    upgrade_database(url, "0003")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text("""
+            INSERT INTO scan_runs (id, input_url, normalized_url, status, current_stage,
+                progress, options, retry_count, created_at, updated_at)
+            VALUES (1, 'http://localhost/', 'http://localhost/', 'completed_with_warnings',
+                'report', 100, '{}', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """)
+        )
+        connection.execute(
+            text("""
+            INSERT INTO scan_failures (id, scan_run_id, stage, code, message,
+                retryable, attempt, occurred_at)
+            VALUES (1, 1, 'collect', 'coverage_limit_reached', 'legacy warning',
+                0, 1, CURRENT_TIMESTAMP)
+        """)
+        )
+    upgrade_database(url)
+    with engine.connect() as connection:
+        assert tuple(
+            connection.execute(
+                text("SELECT message, coverage_details FROM scan_failures WHERE id=1")
+            ).one()
+        ) == ("legacy warning", None)
+    downgrade_database(url, "0003")
+    assert "coverage_details" not in {
+        column["name"] for column in inspect(engine).get_columns("scan_failures")
+    }
+    upgrade_database(url)
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(text("SELECT message FROM scan_failures WHERE id=1"))
+            == "legacy warning"
+        )

@@ -37,6 +37,7 @@ from app.schemas.scan import (
     ScanStageView,
 )
 from app.schemas.scan_comparison import ScanComparison
+from app.services.coverage_gaps import explain_coverage_gaps
 from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_options import resolve_scan_options
 from app.services.scan_pipeline import STAGES, ScanPipeline
@@ -454,6 +455,7 @@ class ScanApplicationService:
             "current_stage": run.current_stage,
             "progress": run.progress,
             "completeness": run.completeness,
+            "coverage_gaps": explain_coverage_gaps(run),
             "retry_count": run.retry_count,
             "report_path": run.report_path,
             "error_code": run.error_code,

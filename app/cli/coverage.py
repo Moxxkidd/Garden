@@ -9,6 +9,7 @@ from typing import Annotated
 
 import typer
 
+from app.cli.coverage_gaps import print_coverage_gaps
 from app.cli.coverage_wizard import CoverageSetupWizard, PromptChoice
 from app.cli.local_api import LocalScanApi
 from app.cli.paths import GardenPaths
@@ -222,6 +223,7 @@ def _print_result(result, differences) -> None:
         title="Garden 认证覆盖结果",
     )
     console.print(coverage_summary(result.status, result.completeness, result.mode), markup=False)
+    print_coverage_gaps(result.coverage_gaps)
     console.print("三上下文：")
     for context in result.contexts:
         console.print(
