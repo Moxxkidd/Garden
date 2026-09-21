@@ -214,6 +214,7 @@ class ScanFailure(Base):
     stage: Mapped[str] = mapped_column(String(40), index=True)
     code: Mapped[str] = mapped_column(String(120), index=True)
     message: Mapped[str] = mapped_column(Text)
+    coverage_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     retryable: Mapped[bool] = mapped_column(default=False)
     attempt: Mapped[int] = mapped_column(Integer, default=1)

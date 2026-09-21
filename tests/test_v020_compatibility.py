@@ -74,7 +74,10 @@ def test_scan_api_schema_preserves_old_fields_and_adds_optional_presentation_fie
         "finding_count",
         "finding_group_count",
         "completeness",
+        "coverage_gaps",
     }
+    assert ScanRunView.model_fields["coverage_gaps"].default is None
+    assert not ScanRunView.model_fields["coverage_gaps"].is_required()
     assert not ScanRunView.model_fields["finding_group_count"].is_required()
     assert ScanRunView.model_fields["finding_group_count"].default is None
 

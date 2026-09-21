@@ -41,6 +41,7 @@ from app.services.context_collection import (
 )
 from app.services.context_establishment import ContextEstablishmentService
 from app.services.coverage_comparison import CoverageComparisonService
+from app.services.coverage_gaps import capture_budget_gaps
 from app.services.coverage_identity import canonical_asset_identity, redacted_observed_url
 from app.services.ephemeral_secret_store import EphemeralSecretStore
 from app.services.scan_analysis import PassiveScanAnalyzer
@@ -653,7 +654,7 @@ class ScanPipeline:
         page_queue: list[tuple[DiscoveredAsset, int]] = []
         resource_queue: list[tuple[DiscoveredAsset, int]] = []
         seen = {entry.final_url, run.normalized_url}
-        requested = {entry.final_url}
+        requested = {entry.requested_url, entry.final_url, *entry.redirects}
         candidates: dict[str, DiscoveredAsset] = {
             entry.final_url: DiscoveredAsset(url=entry.final_url, asset_type="page")
         }
@@ -696,6 +697,7 @@ class ScanPipeline:
                     url,
                     options,
                     expected_origin=origin,
+                    on_request_attempt=requested.add,
                     before_request=lambda: self._guard_network_request(session, run.id, deadline),
                 )
                 self._check_interrupted(session, run.id)
@@ -738,6 +740,7 @@ class ScanPipeline:
                     url,
                     options,
                     expected_origin=origin,
+                    on_request_attempt=requested.add,
                     before_request=lambda: self._guard_network_request(session, run.id, deadline),
                 )
                 self._check_interrupted(session, run.id)
@@ -764,13 +767,14 @@ class ScanPipeline:
             self._check_deadline(deadline)
 
         uncovered = [item for url, item in candidates.items() if url not in requested]
-        limits: list[str] = []
-        if page_queue:
-            limits.append(f"max_pages={options.max_pages}")
-        if resource_queue:
-            limits.append(f"max_resources={options.max_resources}")
-        if depth_limited:
-            limits.append(f"max_depth={options.max_depth}")
+        coverage_details = capture_budget_gaps(
+            uncovered, page_queue, resource_queue, depth_limited, options
+        )
+        limits = (
+            [f"{item['reason']}={item['limit']}" for item in coverage_details["items"]]
+            if coverage_details
+            else []
+        )
         if uncovered:
             counts = Counter(item.asset_type for item in uncovered)
             rendered_counts = ", ".join(
@@ -778,10 +782,15 @@ class ScanPipeline:
             )
             samples: list[str] = []
             for asset_type in sorted(counts):
-                urls = [item.url for item in uncovered if item.asset_type == asset_type][:3]
+                urls = [
+                    redacted_observed_url(item.url)
+                    for item in uncovered
+                    if item.asset_type == asset_type
+                ][:3]
                 samples.append(f"{asset_type}=[{', '.join(urls)}]")
             message = (
-                f"候选 URL 总数：{len(candidates)}；已请求数量：{len(requested)}；"
+                f"候选 URL 总数：{len(candidates)}；"
+                f"已请求数量：{len(candidates.keys() & requested)}；"
                 f"未覆盖数量：{len(uncovered)}；命中限制：{', '.join(limits) or '未知'}；"
                 f"未覆盖类型：{rendered_counts}；代表样本：{'；'.join(samples)}"
             )
@@ -790,6 +799,7 @@ class ScanPipeline:
                 run,
                 stage=ScanStageName.COLLECT.value,
                 code="coverage_limit_reached",
+                coverage_details=coverage_details,
                 message=message,
                 url=None,
                 retryable=False,
@@ -1013,6 +1023,7 @@ class ScanPipeline:
         url: str | None,
         retryable: bool,
         attempt: int,
+        coverage_details: dict | None = None,
     ) -> None:
         session.add(
             ScanFailure(
@@ -1024,6 +1035,7 @@ class ScanPipeline:
                 retryable=retryable,
                 attempt=attempt,
                 occurred_at=datetime.now(timezone.utc),
+                coverage_details=coverage_details,
             )
         )
         run.retry_count += max(0, attempt - 1)

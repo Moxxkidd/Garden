@@ -8,6 +8,7 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import AssessmentMode, CompletenessStatus, ContextKind
+from app.schemas.coverage_gap import CoverageGapView
 
 
 class ScanRunStatus(str, Enum):
@@ -127,6 +128,7 @@ class ScanRunView(BaseModel):
     finding_count: int = 0
     finding_group_count: int | None = Field(default=None, ge=0)
     completeness: str | None = None
+    coverage_gaps: list[CoverageGapView] | None = None
 
 
 class FetchResult(BaseModel):

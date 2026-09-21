@@ -14,6 +14,7 @@ from app.cli.paths import formal_runtime_paths
 from app.core.errors import ResourceNotFoundError
 from app.models.enums import AssessmentMode
 from app.models.scan_run import ScanRun
+from app.services.coverage_gaps import COVERAGE_GAP_NOTE, explain_coverage_gaps
 from app.services.coverage_identity import redacted_observed_url
 from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_report_quality import project_finding_groups, report_version_values
@@ -222,6 +223,7 @@ class ScanReportService:
             lines.append("未生成覆盖分类。")
 
         lines.extend(["", "## 失败与未覆盖部分", ""])
+        lines.extend(self._coverage_gap_lines(run))
         incomplete_contexts = [
             context
             for context in contexts
@@ -466,6 +468,7 @@ class ScanReportService:
                 summary = "本结构化报告已生成。"
             lines.append(f"- {stage.name}：{report_status(stage)}；{summary or '-'}")
         lines.extend(["", "## 失败或未覆盖部分", ""])
+        lines.extend(self._coverage_gap_lines(run))
         lines.append("覆盖边界告警与实际请求失败分开列示，避免把预算耗尽误判为网络失败。")
         lines.extend(["", "## 覆盖告警", ""])
         if not coverage_warnings:
@@ -501,6 +504,22 @@ class ScanReportService:
             ]
         )
         return lines
+
+    def _coverage_gap_lines(self, run: ScanRun) -> list[str]:
+        lines = ["### 覆盖缺口解释", "", COVERAGE_GAP_NOTE, ""]
+        for gap in explain_coverage_gaps(run):
+            lines.append(f"- {gap.summary}")
+            if gap.samples:
+                # Treat discovered paths as text, never Markdown links or HTML.
+                samples = [self._gap_sample(url) for url in gap.samples]
+                lines.append("  - 脱敏样例：" + "；".join(samples))
+            if gap.next_step:
+                lines.append(f"  - 下一步：{gap.next_step}")
+        return lines
+
+    def _gap_sample(self, value: str) -> str:
+        value = self._inline(value)
+        return re.sub(r"([\\`*_{}\[\]()<>#!])", r"\\\1", value)
 
     def _sample_refs(self, prefix: str, identifiers: list[int], limit: int = 10) -> str:
         if not identifiers:
