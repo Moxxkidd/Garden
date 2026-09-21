@@ -12,6 +12,9 @@
       <a href="/scans" class="rounded-full border border-black/10 px-4 py-2 text-sm">All scans</a>
     </div>
     {% if scan.rerun_of_run_id %}<p class="text-sm">配置来源：<a class="underline" href="/scans/{{ scan.rerun_of_run_id }}">任务 #{{ scan.rerun_of_run_id }}</a>。这是独立的新任务。</p>{% endif %}
+    {% if scan.rerun_of_run_id and scan.can_reuse_configuration %}
+      <a class="inline-block rounded-2xl border border-black/15 px-4 py-2" hx-boost="false" href="/scans/{{ scan.id }}/comparison">与上次对比</a>
+    {% endif %}
     <section id="result-summary" aria-labelledby="result-summary-title" class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
       <h2 id="result-summary-title" class="text-xl font-semibold">结果摘要</h2>
       <div class="mt-5 grid gap-5 md:grid-cols-2">

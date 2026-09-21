@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .scan-comparison { overflow-wrap: anywhere; min-width: 0; }
+  .scan-comparison table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .scan-comparison th, .scan-comparison td { padding: .6rem; text-align: left; vertical-align: top; border-bottom: 1px solid #ddd; }
+  .scan-comparison article { margin: 1rem 0; padding: 1rem; border: 1px solid #ddd; border-radius: 1rem; }
+  .scan-comparison a { text-decoration: underline; }
+</style>
+<section class="scan-comparison space-y-6">
+  <h1 class="text-3xl font-semibold">与上次对比</h1>
+  {% if error %}
+    <div role="alert" class="rounded-2xl border border-amber-200 bg-amber-50 p-5">{{ error }}</div>
+    <a hx-boost="false" href="/scans/{{ scan_run_id }}">返回任务</a>
+  {% else %}
+    {% set labels = {'new': '新增观察', 'persistent': '持续观察', 'not_observed': '未再观察到', 'unknown': '无法判断'} %}
+    <p><a hx-boost="false" href="/scans/{{ comparison.source.id }}">上次任务 #{{ comparison.source.id }}</a> → <a hx-boost="false" href="/scans/{{ comparison.current.id }}">本次任务 #{{ comparison.current.id }}</a></p>
+    <section aria-labelledby="comparability-title" class="rounded-2xl border border-black/10 bg-white p-5">
+      <h2 id="comparability-title" class="text-xl font-semibold">可比性：{{ '配置与范围一致' if comparison.comparable else '受限' }}</h2>
+      <p class="mt-2">这里只比较已存储的被动观察，不发起扫描。{{ comparison.notice }}</p>
+      {% if comparison.reasons %}
+        <ul class="mt-3 list-disc pl-5">{% for reason in comparison.reasons %}<li>{{ reason.message }}</li>{% endfor %}</ul>
+        <p class="mt-2">仅保留两次均观察到的匹配；不推断单边记录的新增或消失。</p>
+      {% else %}<p class="mt-2">单项判定还要求另一轮实际采集过对应资产；相同配置不保证覆盖整个站点。</p>{% endif %}
+      {% for label, run in [('上次', comparison.source), ('本次', comparison.current)] %}
+        <p class="mt-3"><strong>{{ label }}：</strong>{{ run.entry_display }}</p>
+        <p>{{ run.coverage }}</p>
+      {% endfor %}
+      <details class="mt-4" {% if not comparison.comparable %}open{% endif %}>
+        <summary>两次预算与请求配置</summary>
+        <table aria-label="两次预算与请求配置">
+          <thead><tr><th>配置</th><th>上次</th><th>本次</th><th>变化</th></tr></thead>
+          <tbody>{% for setting in comparison.configuration %}<tr><th scope="row">{{ setting.label }}</th><td>{{ setting.source }}</td><td>{{ setting.current }}</td><td>{{ '已变化' if setting.changed else '—' }}</td></tr>{% endfor %}</tbody>
+        </table>
+      </details>
+    </section>
+    <section aria-labelledby="changes-title">
+      <h2 id="changes-title" class="text-xl font-semibold">观察变化</h2>
+      <p class="mt-2">{% for status, label in labels.items() %}{{ label }} {{ comparison.counts[status] }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+      <p class="text-sm">按原始观察匹配，持续项代表两次记录的一组对应关系；此处计数不是首页的关注项分类数。</p>
+      {% if not comparison.items %}<p class="mt-4">两次均无可列出的观察记录；不代表目标安全。</p>{% endif %}
+      {% for item in comparison.items %}
+        {% set observation = item.after or item.before %}
+        <article>
+          <h3 class="font-semibold">{{ labels[item.status] }} · {{ observation.title }}</h3>
+          <p>{{ item.reason }}</p>
+          {% for url in observation.asset_urls %}<p class="text-sm">{{ url }}</p>{% endfor %}
+          <p class="mt-2">{% if item.before %}<a href="#observation-{{ item.before.run_id }}-{{ item.before.id }}">上次观察及证据 #{{ item.before.id }}</a>{% endif %} {% if item.after %}<a href="#observation-{{ item.after.run_id }}-{{ item.after.id }}">本次观察及证据 #{{ item.after.id }}</a>{% endif %}</p>
+        </article>
+      {% endfor %}
+    </section>
+    <section aria-labelledby="observations-title">
+      <h2 id="observations-title" class="text-xl font-semibold">原始观察与已存证据索引</h2>
+      <p class="text-sm">以下为持久化观察及证据摘要；入口查询值已脱敏，不展示 Cookie、认证头或响应原文。完整报告可从对应任务页查看。</p>
+      {% for item in comparison.items %}{% for label, observation in [('上次', item.before), ('本次', item.after)] %}{% if observation %}
+        <article id="observation-{{ observation.run_id }}-{{ observation.id }}" tabindex="-1">
+          <h3 class="font-semibold">{{ label }}观察 #{{ observation.id }} · {{ observation.title }}</h3>
+          <p>{{ observation.category }} · {{ observation.severity }} · {{ observation.confidence }}</p>
+          <p>{{ observation.summary }}</p>
+          {% for url in observation.asset_urls %}<p>{{ url }}</p>{% endfor %}
+          {% if observation.evidence_missing %}<p>关联证据缺失或无法核对，请查看原任务。</p>{% endif %}
+          <ul>{% for evidence in observation.evidence %}<li>证据 #{{ evidence.id }}：{{ evidence.source_url }} — {{ evidence.summary }}</li>{% endfor %}</ul>
+          <a hx-boost="false" href="/scans/{{ observation.run_id }}">查看任务 #{{ observation.run_id }} 与报告</a>
+        </article>
+      {% endif %}{% endfor %}{% endfor %}
+    </section>
+  {% endif %}
+</section>
+{% endblock %}
