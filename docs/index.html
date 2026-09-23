@@ -324,6 +324,16 @@ pre{
 </section>
 
 <div class="extra" style="margin-bottom:48px">
+  <div class="tag">Local diagnostics</div>
+  <h2>启动遇到问题，先运行 garden doctor</h2>
+  <p class="sub">检查当前安装、配置来源、浏览器文件、数据库版本、本地端口与存储权限，给出正常、需要处理或无法确认。</p>
+  <div class="card"><h3>看清原因，再决定如何处理</h3>
+    <p><code>garden doctor</code> 输出脱敏诊断与建议；<code>garden doctor --json</code> 方便收集结构化结果。可用 <code>--ui-port</code> 指定本机端口。</p>
+    <p>只读检查不会自动安装、迁移、创建目录、启动或停止服务，也不会访问扫描目标。端口有监听不等于 Garden 健康；浏览器文件存在不等于已验证实际运行能力。</p>
+  </div>
+</div>
+
+<div class="extra" style="margin-bottom:48px">
   <div class="tag">Coverage gaps</div>
   <h2>解释为什么没有覆盖</h2>
   <p class="sub">结果页、CLI 和新报告共用解释。执行进度 100% 不代表覆盖完整。</p>
