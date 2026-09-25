@@ -62,7 +62,7 @@ def test_quick_progress_and_coverage_are_distinct_on_all_surfaces(
             assert "调整后重新扫描会创建新任务" in text
     else:
         for text in (terminal, report, detail):
-            assert "下一步" not in text
+            assert "先阅读报告中的关注项及关联证据" in text
     count = "2 类关注项，4 条原始观察" if max_pages == 10 else "2 类关注项，2 条原始观察"
     for text in (terminal, report, detail):
         assert count in text
@@ -111,7 +111,7 @@ def test_authenticated_api_report_web_and_cli_agree(
             assert "请通过 coverage 向导检查凭据档案" in text.replace("\n", "")
     else:
         for text in (terminal, report, detail):
-            assert "下一步" not in text
+            assert "先阅读报告中的关注项及关联证据" in text
 
 
 def test_report_write_failure_does_not_persist_100_percent_or_complete(tmp_path):

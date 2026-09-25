@@ -10,6 +10,7 @@ import typer
 from app.cli.coverage_gaps import print_coverage_gaps
 from app.cli.local_api import LocalScanApi
 from app.cli.paths import GardenPaths
+from app.cli.result_summary import print_result_summary
 from app.cli.utils import console, handle_cli_error, render_key_value
 from app.cli.web_runtime import WebRuntimeError, WebRuntimeManager
 from app.core.errors import GardenError, InputValidationError
@@ -18,8 +19,6 @@ from app.models.scan_run import TERMINAL_SCAN_RUN_STATUSES
 from app.schemas.scan import ScanFailureView, ScanOptions, ScanRunView
 from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_result_presentation import (
-    coverage_summary,
-    diagnostic_hint,
     format_execution_progress,
     format_finding_count,
 )
@@ -104,6 +103,7 @@ def _print_locations(base_url: str, scan_run_id: int) -> None:
 
 
 def _print_result(result: ScanRunView) -> None:
+    print_result_summary(result)
     render_key_value(
         [
             ("扫描", str(result.id)),
@@ -117,7 +117,6 @@ def _print_result(result: ScanRunView) -> None:
         ],
         title="Garden 扫描结果",
     )
-    console.print(coverage_summary(result.status, result.completeness, result.mode), markup=False)
     print_coverage_gaps(result.coverage_gaps)
     coverage_warnings = [
         failure for failure in result.failures if is_coverage_warning(failure.stage, failure.code)
@@ -129,15 +128,6 @@ def _print_result(result: ScanRunView) -> None:
     ]
     _print_diagnostics("覆盖告警", coverage_warnings)
     _print_diagnostics("请求或阶段失败", request_failures)
-    hints = dict.fromkeys(
-        hint
-        for failure in result.failures
-        if (hint := diagnostic_hint(failure.stage, failure.code))
-    )
-    if hints:
-        console.print("下一步：")
-        for hint in hints:
-            console.print(f"- {hint}", markup=False)
 
 
 def _print_diagnostics(title: str, failures: list[ScanFailureView]) -> None:

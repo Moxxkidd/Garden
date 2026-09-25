@@ -52,7 +52,7 @@ def test_scan_detail_diagnostic_guidance_is_fixed_and_escaped(app, code, snippet
         finally:
             app.state.scan_service = original_service
     assert response.status_code == 200
-    assert "<dd>0 类关注项，0 条原始观察</dd>" in response.text
+    assert "<dd>0 类关注项，0 条原始观察" in response.text
     assert "<script>TEST_SECRET</script>" not in response.text
     if code:
         assert "&lt;script&gt;TEST_SECRET&lt;/script&gt;" in response.text
@@ -326,4 +326,4 @@ def test_context_diagnostic_is_visible_without_report(app, role_index, code, sni
     if snippet:
         assert snippet in response.text
     else:
-        assert "下一步" not in response.text
+        assert "查看诊断和执行阶段" in response.text

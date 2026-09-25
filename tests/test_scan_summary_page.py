@@ -59,9 +59,9 @@ def test_summary_answers_four_questions_before_technical_details(render_summary,
     summary = html.split('id="result-summary"', 1)[1].split("</section>", 1)[0]
     for text in (
         "执行状态",
-        "覆盖情况",
+        "覆盖限制",
         "关注项",
-        "建议操作",
+        "下一步",
         label,
         "2 类关注项，6 条原始观察",
         "不代表覆盖完整",
@@ -112,3 +112,12 @@ def test_summary_deduplicates_known_guidance_and_keeps_unknown_diagnostics(rende
     assert "Unrecognized failure" in html
     assert "查看诊断" in html
     assert 'id="report-details"' not in html
+
+
+def test_summary_explains_partial_zero_observations_before_details(render_summary):
+    html = render_summary(status="failed", finding_count=0, finding_group_count=0)
+    summary = html.split('id="result-summary"', 1)[1].split("</section>", 1)[0]
+    assert "主要发现" in summary
+    assert "不能据此判断是否存在问题" in summary
+    assert "覆盖限制" in summary
+    assert "下一步" in summary

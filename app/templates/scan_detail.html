@@ -25,27 +25,18 @@
           <div class="mt-3 h-2 overflow-hidden rounded-full bg-stone-200" role="progressbar" aria-label="执行进度" aria-valuenow="{{ scan.progress }}" aria-valuemin="0" aria-valuemax="100"><div class="h-full rounded-full bg-emerald-600" style="width: {{ scan.progress }}%"></div></div>
         </div>
         <div class="rounded-2xl bg-stone-50 p-5">
-          <h3 class="text-sm font-medium text-slate-600">覆盖情况</h3>
-          <p class="mt-2 font-medium leading-7" role="status">{{ coverage_summary(scan.status, scan.completeness, scan.mode) }}</p>
+          <h3 class="text-sm font-medium text-slate-600">覆盖限制</h3>
+          <p class="mt-2 font-medium leading-7" role="status">{{ result_summary.coverage }}</p>
           {% if scan.failures or context_diagnostics or scan.error_message %}<a class="mt-2 inline-block text-sm underline" href="#coverage-gaps">查看诊断与未覆盖部分</a>{% endif %}
         </div>
         <div class="rounded-2xl bg-stone-50 p-5">
-          <h3 class="text-sm font-medium text-slate-600">关注项</h3>
-          <dl class="mt-2"><dt class="sr-only">关注项计数</dt><dd>{{ finding_count_text }}</dd></dl>
-          <p class="mt-2 text-sm leading-6 text-slate-600">关注项是待复核的被动观察，不等同于已确认漏洞；没有关注项也不代表目标安全。</p>
+          <h3 class="text-sm font-medium text-slate-600">主要发现</h3>
+          <dl class="mt-2"><dt class="sr-only">关注项计数</dt><dd>{{ result_summary.findings }}</dd></dl>
           <p class="mt-2 text-sm text-slate-600">资产 {{ scan.asset_count }} · 证据 {{ scan.evidence_count }}</p>
         </div>
         <div class="rounded-2xl bg-stone-50 p-5">
-          <h3 class="text-sm font-medium text-slate-600">建议操作</h3>
-          {% if summary_hints %}
-            <ul class="mt-2 list-disc space-y-2 pl-5 text-sm leading-6">{% for hint in summary_hints %}<li>{{ hint }}</li>{% endfor %}</ul>
-          {% elif scan.status in ["queued", "running"] %}
-            <p class="mt-2 text-sm leading-6">等待任务结束后复核结果；当前观察和覆盖情况仍可能变化。</p>
-          {% elif scan.status in ["failed", "interrupted", "incomplete", "completed_with_warnings"] %}
-            <p class="mt-2 text-sm leading-6">查看诊断和执行阶段，确认失败或未覆盖原因后再决定是否重新扫描。</p>
-          {% else %}
-            <p class="mt-2 text-sm leading-6">结合覆盖说明与原始报告复核关注项及证据，再判断是否需要补充扫描。</p>
-          {% endif %}
+          <h3 class="text-sm font-medium text-slate-600">下一步</h3>
+          <ul class="mt-2 list-disc space-y-2 pl-5 text-sm leading-6">{% for hint in result_summary.next_steps %}<li>{{ hint }}</li>{% endfor %}</ul>
           {% if scan.can_reuse_configuration %}
             <a class="mt-3 inline-block rounded-2xl border border-black/15 px-4 py-2 text-sm" hx-boost="false" href="/scans/{{ scan.id }}/reuse">沿用配置重新扫描</a>
           {% elif scan.mode.value == "authenticated_coverage" %}

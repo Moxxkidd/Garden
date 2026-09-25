@@ -101,7 +101,11 @@ def test_coverage_terminal_guidance_preserves_roles_and_unknown(monkeypatch, cod
     if snippet:
         assert text.count(snippet) == 1
     else:
-        assert "下一步" not in text
+        assert "下一步" in text
+        if code:
+            assert "查看诊断和执行阶段" in text
+        else:
+            assert "先确认本次扫描范围" in text
 
 
 def _assessment_view(*, status="queued", stage="queued", progress=0):

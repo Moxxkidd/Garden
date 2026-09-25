@@ -3,6 +3,7 @@
 import json
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from app.cli.main import app
@@ -425,7 +426,15 @@ def test_doctor_browser_driver_failure_hides_raw_error(ready_doctor, monkeypatch
         ["coverage", "--help"],
     ],
 )
-def test_lazy_command_loading_preserves_public_command_paths(arguments):
-    result = runner.invoke(app, arguments)
+@pytest.mark.parametrize("color", [False, True])
+def test_lazy_command_loading_preserves_public_command_paths(arguments, color, monkeypatch):
+    import typer.rich_utils
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setattr(typer.rich_utils, "FORCE_TERMINAL", color)
+    result = runner.invoke(app, arguments, color=color)
     assert result.exit_code == 0, result.output
-    assert "Usage: garden " + " ".join(arguments[:-1]) in result.output
+    if color:
+        assert "\x1b[" in result.output
+    assert "Usage: garden " + " ".join(arguments[:-1]) in unstyle(result.output)
