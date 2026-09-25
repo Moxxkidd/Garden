@@ -13,6 +13,7 @@ from app.cli.coverage_gaps import print_coverage_gaps
 from app.cli.coverage_wizard import CoverageSetupWizard, PromptChoice
 from app.cli.local_api import LocalScanApi
 from app.cli.paths import GardenPaths
+from app.cli.result_summary import print_result_summary
 from app.cli.utils import console, handle_cli_error, render_key_value
 from app.cli.web_runtime import WebRuntimeError, WebRuntimeManager
 from app.core.errors import GardenError
@@ -21,8 +22,6 @@ from app.models.scan_run import TERMINAL_SCAN_RUN_STATUSES
 from app.schemas.assessment import AssessmentRunView, PassiveCoverageStartRequest
 from app.schemas.scan import ScanOptions
 from app.services.scan_result_presentation import (
-    coverage_summary,
-    diagnostic_hint,
     format_execution_progress,
     format_finding_count,
 )
@@ -211,6 +210,7 @@ def _wait_for_assessment(api: LocalScanApi, initial: AssessmentRunView) -> Asses
 
 
 def _print_result(result, differences) -> None:
+    print_result_summary(result)
     render_key_value(
         [
             ("认证覆盖", str(result.id)),
@@ -222,7 +222,6 @@ def _print_result(result, differences) -> None:
         ],
         title="Garden 认证覆盖结果",
     )
-    console.print(coverage_summary(result.status, result.completeness, result.mode), markup=False)
     print_coverage_gaps(result.coverage_gaps)
     console.print("三上下文：")
     for context in result.contexts:
@@ -237,19 +236,9 @@ def _print_result(result, differences) -> None:
         console.print("- 暂无差异")
     for classification, count in sorted(counts.items()):
         console.print(f"- {classification}: {count}", markup=False)
-    hints: dict[str, None] = {}
     for context in result.contexts:
         if context.error_code:
             console.print(f"- {context.kind.value}: {context.error_code}", markup=False)
-            if hint := diagnostic_hint("context", context.error_code):
-                hints[hint] = None
-    for failure in result.failures:
-        if hint := diagnostic_hint(failure.stage, failure.code):
-            hints[hint] = None
-    if hints:
-        console.print("下一步：")
-        for hint in hints:
-            console.print(f"- {hint}", markup=False)
 
 
 def _cancel_from_interrupt(api, assessment_id, manager) -> None:

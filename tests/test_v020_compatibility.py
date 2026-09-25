@@ -126,6 +126,7 @@ def test_report_section_names_and_order_are_unchanged(tmp_path) -> None:
         assets=[],
         evidence=[],
         findings=[],
+        contexts=[],
         stages=[],
     )
     report = "\n".join(

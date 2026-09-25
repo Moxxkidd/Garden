@@ -1,5 +1,12 @@
 """Side-effect-free result wording shared by terminal, Web, and reports."""
 
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.schemas.scan import ScanRunView
+
 _DIAGNOSTIC_HINTS = {
     ("context", "authentication_session_mismatch"): (
         "请检查凭据档案所属 Target 和 user/admin 角色，选择与当前目标匹配的档案后重新提交。"
@@ -65,3 +72,70 @@ def execution_summary(status: str) -> str:
         "failed": "任务执行失败",
         "interrupted": "任务已中断",
     }.get(status, "任务状态未知")
+
+
+@dataclass(frozen=True)
+class ResultSummary:
+    findings: str
+    coverage: str
+    next_steps: tuple[str, ...]
+
+
+def build_result_summary(
+    *,
+    status: str,
+    completeness: str | None,
+    mode: str,
+    raw_count: int,
+    group_count: int | None,
+    diagnostics: Iterable[tuple[str, str]] = (),
+) -> ResultSummary:
+    """Interpret known facts only; never turn missing coverage into a clean bill of health."""
+    count = format_finding_count(raw_count, group_count)
+    active = status in {"queued", "running"}
+    bounded_complete = status == "completed" and (
+        (mode == "quick" and completeness in {"legacy_single_context", "complete"})
+        or (mode == "authenticated_coverage" and completeness == "complete")
+    )
+    if active:
+        findings = f"暂定：{count}；尚未形成最终结果，观察仍可能变化。"
+    elif raw_count:
+        findings = f"{count}，待复核；被动观察不等同于已确认漏洞。"
+    elif bounded_complete:
+        findings = f"{count}；本次采集未记录关注项，不代表目标安全。"
+    else:
+        findings = f"{count}；当前没有记录到关注项，但不能据此判断是否存在问题。"
+
+    resolved_hints = [diagnostic_hint(stage, code) for stage, code in diagnostics]
+    hints = tuple(dict.fromkeys(hint for hint in resolved_hints if hint))
+    investigation = (
+        "查看诊断和执行阶段，确认失败、未覆盖或完整性未知的原因后，再决定是否新建扫描任务。"
+    )
+    if active:
+        steps = ("等待任务结束后复核结果；当前观察和覆盖情况仍可能变化。",)
+    elif hints:
+        steps = hints + ((investigation,) if None in resolved_hints else ())
+    elif None in resolved_hints:
+        steps = (investigation,)
+    elif completeness in {"missing_user_context", "missing_admin_context"}:
+        steps = (diagnostic_hint("context", "authentication_session_unavailable"),)
+    elif not bounded_complete:
+        steps = (investigation,)
+    elif raw_count:
+        steps = ("先阅读报告中的关注项及关联证据，逐项复核；再结合覆盖限制决定是否补充扫描。",)
+    else:
+        steps = ("先确认本次扫描范围是否满足目标；如需补充身份或范围，请新建扫描任务。",)
+    return ResultSummary(findings, coverage_summary(status, completeness, mode), steps)
+
+
+def summarize_scan_view(view: "ScanRunView") -> ResultSummary:
+    """Share the scan/assessment view adapter between Web and both CLI commands."""
+    return build_result_summary(
+        status=view.status,
+        completeness=view.completeness,
+        mode=view.mode,
+        raw_count=view.finding_count,
+        group_count=view.finding_group_count,
+        diagnostics=[("context", c.error_code) for c in view.contexts if c.error_code]
+        + [(f.stage, f.code) for f in view.failures],
+    )

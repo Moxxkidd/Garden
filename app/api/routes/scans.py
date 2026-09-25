@@ -17,7 +17,7 @@ from app.services.scan_result_presentation import (
     diagnostic_hint,
     execution_summary,
     format_execution_progress,
-    format_finding_count,
+    summarize_scan_view,
 )
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[2] / "templates"))
@@ -99,11 +99,6 @@ def scan_detail_page(request: Request, scan_run_id: int) -> HTMLResponse:
     report = None
     if scan.report_path:
         report = request.app.state.scan_service.read_report(scan_run_id)
-    hints = [
-        diagnostic_hint("context", context.error_code)
-        for context in scan.contexts
-        if context.error_code
-    ] + [diagnostic_hint(failure.stage, failure.code) for failure in scan.failures]
     return templates.TemplateResponse(
         request=request,
         name="scan_detail.html",
@@ -112,7 +107,7 @@ def scan_detail_page(request: Request, scan_run_id: int) -> HTMLResponse:
             "report": report,
             "page_title": f"Scan {scan.id}",
             "execution_text": execution_summary(scan.status),
-            "summary_hints": list(dict.fromkeys(hint for hint in hints if hint)),
+            "result_summary": summarize_scan_view(scan),
             "context_diagnostics": [
                 {
                     "kind": context.kind.value,
@@ -126,9 +121,6 @@ def scan_detail_page(request: Request, scan_run_id: int) -> HTMLResponse:
                 (failure.stage, failure.code): diagnostic_hint(failure.stage, failure.code)
                 for failure in scan.failures
             },
-            "finding_count_text": format_finding_count(
-                scan.finding_count, scan.finding_group_count
-            ),
         },
     )
 

@@ -19,6 +19,7 @@ from app.services.coverage_identity import redacted_observed_url
 from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_report_quality import project_finding_groups, report_version_values
 from app.services.scan_result_presentation import (
+    build_result_summary,
     coverage_summary,
     diagnostic_hint,
     format_execution_progress,
@@ -70,6 +71,28 @@ class ScanReportService:
         session.flush()
         return str(path)
 
+    def _result_summary_lines(self, run: ScanRun, status: str) -> list[str]:
+        summary = build_result_summary(
+            status=status,
+            completeness=run.completeness,
+            mode=run.mode,
+            raw_count=len(run.findings),
+            group_count=len(project_finding_groups(run.findings)),
+            diagnostics=[("context", c.error_code) for c in run.contexts if c.error_code]
+            + [(f.stage, f.code) for f in run.failures],
+        )
+        return [
+            "## 结果摘要",
+            "",
+            f"- 主要发现：{summary.findings}",
+            f"- 覆盖限制：{summary.coverage}",
+            "",
+            "### 下一步",
+            "",
+            *(f"- {step}" for step in summary.next_steps),
+            "",
+        ]
+
     def _render_authenticated(self, run: ScanRun, generated_at: datetime) -> list[str]:
         contexts = sorted(run.contexts, key=lambda item: item.id)
         differences = sorted(run.coverage_differences, key=lambda item: item.identity_key)
@@ -97,6 +120,7 @@ class ScanReportService:
         lines = [
             f"# Garden 认证覆盖报告 #{run.id}",
             "",
+            *self._result_summary_lines(run, summary_status),
             "## 执行摘要",
             "",
             f"- 任务状态：{summary_status}",
@@ -298,6 +322,7 @@ class ScanReportService:
         lines = [
             f"# Garden 资产报告 #{run.id}",
             "",
+            *self._result_summary_lines(run, summary_status),
             "## 执行摘要",
             "",
             f"- 任务状态：{summary_status}",

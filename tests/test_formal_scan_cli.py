@@ -49,7 +49,7 @@ def test_terminal_scan_shows_grouped_count(run_terminal_scan, raw, groups, text)
     result = run_terminal_scan(ScanRunView.model_validate(payload))
     assert result.exit_code == 0
     assert text in unstyle(result.stdout)
-    assert "下一步" not in unstyle(result.stdout)
+    assert "下一步" in unstyle(result.stdout)
 
 
 @pytest.mark.parametrize(
@@ -76,7 +76,7 @@ def test_terminal_diagnostic_hints_are_fixed_and_deduplicated(run_terminal_scan,
     assert result.exit_code == 0
     text = unstyle(result.stdout)
     assert code in text
-    hints = text.split("下一步", 1)[1].replace("\n", "")
+    hints = text.split("下一步", 1)[1].split("Garden 扫描结果", 1)[0].replace("\n", "")
     assert hints.count(snippet) == 1
     assert "TEST_SECRET" not in hints
 
@@ -96,7 +96,8 @@ def test_terminal_unknown_diagnostic_keeps_original_without_advice(run_terminal_
     result = run_terminal_scan(view)
     assert result.exit_code == 1
     assert "original diagnostic" in result.stdout
-    assert "下一步" not in result.stdout
+    assert "查看诊断和执行阶段" in result.stdout
+    assert "--retries" not in result.stdout
 
 
 def _view(*, status="queued", stage="queued", progress=0):
