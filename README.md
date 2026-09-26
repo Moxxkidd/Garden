@@ -190,6 +190,27 @@ curl -X POST http://127.0.0.1:8000/api/scans \
 - `POST /api/scans/{id}/cancel`：中断尚未结束的扫描并保留已写入结果
 - `GET /api/scans/{id}/report`：阅读或下载报告
 
+## v0.4.0：统一资产清单
+
+扫描结果页与 inventory 详情页提供“查看统一资产清单”，顶部导航也可进入 `/assets`。选择来源任务后，可以按页面、接口、静态资源、文件、身份和观察状态筛选，搜索脱敏 URL/标题/方法，排序、分页，并下载全部匹配记录的 JSON/CSV。
+
+```bash
+# N 为已存在的任务 ID；scan 同时包含匿名扫描与认证覆盖
+garden assets list --source scan --run-id N
+garden assets list --source scan --run-id N --kind endpoint --context user --json
+garden assets list --source inventory --run-id N --page-size 50
+garden assets export --source scan --run-id N --format json --output assets.json
+garden assets export --source inventory --run-id N --kind page --format csv --output pages.csv
+```
+
+API：`GET /api/assets?source=scan&run_id=N`；导出：`GET /api/assets/export?source=scan&run_id=N&format=json`。两者支持相同的 `kind`、`context`、`observation`、`q`、`sort`、`order` 参数；列表另支持 `page` 与 `page_size`（最多 200），导出不受分页影响。`observation` 为 `response_observed` 或 `unknown`；`sort` 为 `id`、`url`、`type` 或 `last_seen`，顺序为 `asc`/`desc`。JSON 使用 `schema_version: "1.0"`。
+
+计数基于实际记录：scan 为该任务的扫描资产数，inventory 为页面数加接口数；不跨身份或任务去重，不能解释为独立业务资产数量。相同脱敏 URL 的不同记录不会合并。运行中的计数可能变化；JSON 附来源任务、覆盖说明和计数说明。
+
+“已有响应”只表示记录了 HTTP 响应，401/403 也保留；缺少状态码时显示未知，不判为无效或安全。旧 inventory 缺少可靠完整性及逐项证据关联时保留未知。来源详情展示原记录 ID 和已关联的扫描请求/证据 ID；原始发现链未记录时不补造。身份标签不表示当前会话可用或实际角色已经验证。
+
+浏览、筛选与导出只读取数据库，不访问目标或会话材料。输出 URL 的查询值脱敏，不导出请求体、Cookie、凭据引用或秘密存储路径；CSV 对公式前缀转义。CLI 导出拒绝覆盖已有文件。现有 `garden inventory export` 保持原有格式；新清单请使用 `garden assets export`。
+
 ## 如何判断结果
 
 CLI、扫描详情页和 Markdown 报告使用相同计数口径，例如 **2 类关注项，6 条原始观察**。原始观察保留独立证据；按已有规则归并的类别用于阅读，不等同于确认漏洞数量。覆盖矩阵的分类计数单独展示。

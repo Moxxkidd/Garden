@@ -15,6 +15,7 @@
     {% if scan.rerun_of_run_id and scan.can_reuse_configuration %}
       <a class="inline-block rounded-2xl border border-black/15 px-4 py-2" hx-boost="false" href="/scans/{{ scan.id }}/comparison">与上次对比</a>
     {% endif %}
+    <a class="inline-block rounded-2xl bg-emerald-700 px-5 py-3 text-white" href="/assets?source=scan&amp;run_id={{ scan.id }}">查看统一资产清单</a>
     <section id="result-summary" aria-labelledby="result-summary-title" class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
       <h2 id="result-summary-title" class="text-xl font-semibold">结果摘要</h2>
       <div class="mt-5 grid gap-5 md:grid-cols-2">

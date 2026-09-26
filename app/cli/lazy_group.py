@@ -6,6 +6,7 @@ from typer.core import TyperGroup
 from typer.main import get_command, get_group
 
 _GROUPS = {
+    "assets": "assets",
     "target": "targets",
     "cred": "credentials",
     "job": "jobs",

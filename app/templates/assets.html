@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="space-y-6">
+  <div><p class="text-sm uppercase tracking-widest text-emerald-700">Asset inventory</p><h1 class="mt-2 text-3xl font-semibold">统一资产清单</h1><p class="mt-2 text-sm text-slate-600">查看已有采集记录；浏览与导出不会重新访问目标。</p></div>
+  {% if not result %}
+  <section class="rounded-3xl border border-black/10 bg-white p-6">
+    <h2 class="text-xl font-semibold">选择来源任务</h2>
+    <form action="/assets" method="get" class="mt-4 flex flex-wrap items-end gap-4">
+      <label>来源<select aria-label="来源" name="source" class="block rounded-xl border p-2"><option value="scan">扫描（含认证覆盖）</option><option value="inventory">Inventory</option></select></label>
+      <label>任务 ID<input name="run_id" type="number" min="1" required class="block w-32 rounded-xl border p-2"></label>
+      <button class="rounded-xl bg-emerald-700 px-5 py-2 text-white">查看清单</button>
+    </form>
+    <h3 class="mt-6 font-medium">最近任务（每类最多 20 项）</h3>
+    <ul class="mt-3 space-y-3">{% for choice in choices %}<li><a class="underline" href="/assets?source={{ choice.source }}&amp;run_id={{ choice.run_id }}">{{ choice.source }} #{{ choice.run_id }}</a> · {{ choice.status }}<p class="break-all text-sm text-slate-600">{{ choice.url }}</p></li>{% else %}<li>暂无采集任务。请先提交扫描或构建 inventory。</li>{% endfor %}</ul>
+  </section>
+  {% else %}
+  <section class="rounded-3xl border border-black/10 bg-white p-6">
+    <div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ result.scope.source }} #{{ result.scope.run_id }} · 匹配 {{ result.matched }} / 总记录 {{ result.total }}</h2><a href="{{ result.scope.source_url }}" class="underline">返回来源任务</a></div>
+    <p class="mt-3 break-all text-sm">{{ result.scope.entry_url }}</p>
+    <p class="mt-3 text-sm">{{ result.count_note }}</p>
+    <p class="mt-2 font-medium">{{ result.scope.coverage_note }}</p>
+    {% if result.scope.live %}<p class="mt-2 text-amber-800">任务仍在执行，记录及计数可能变化；筛选与导出反映各自读取时的结果。</p>{% endif %}
+    <p class="mt-2 text-sm text-slate-600">“已有响应”只代表记录了 HTTP 响应，401/403 也会保留；不代表资源有效或目标安全。身份标签不代表当前登录态有效。</p>
+    <div class="mt-4 flex flex-wrap gap-3 text-sm">{% for kind, count in result.counts_by_kind.items() %}<span class="rounded-full bg-stone-100 px-3 py-1">{{ kinds[kind] }} {{ count }}</span>{% endfor %}</div>
+    {% if result.scope.contexts %}<details class="mt-4 text-sm"><summary class="cursor-pointer">身份采集状态</summary><ul class="mt-2">{% for c in result.scope.contexts %}<li>{{ c.kind }} · 采集 {{ c.status }} · 完整性 {{ c.completeness or '未知' }}</li>{% endfor %}</ul></details>{% endif %}
+  </section>
+  <form action="/assets" method="get" class="grid gap-4 rounded-3xl border border-black/10 bg-white p-6 sm:grid-cols-2 lg:grid-cols-4">
+    <input type="hidden" name="source" value="{{ query.source }}"><input type="hidden" name="run_id" value="{{ query.run_id }}">
+    <label class="text-sm">搜索脱敏 URL / 标题 / 方法<input class="mt-1 block w-full rounded-xl border p-2" name="q" value="{{ query.q }}" maxlength="200"></label>
+    <label class="text-sm">类型<select aria-label="类型" class="mt-1 block w-full rounded-xl border p-2" name="kind"><option value="">全部类型</option>{% for key, label in kinds.items() %}<option value="{{ key }}" {% if query.kind == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="text-sm">身份<select aria-label="身份" class="mt-1 block w-full rounded-xl border p-2" name="context"><option value="">全部身份</option>{% for context in contexts %}<option value="{{ context }}" {% if query.context == context %}selected{% endif %}>{{ context }}</option>{% endfor %}</select></label>
+    <label class="text-sm">观察状态<select aria-label="观察状态" class="mt-1 block w-full rounded-xl border p-2" name="observation"><option value="">全部状态</option>{% for key, label in observations.items() %}<option value="{{ key }}" {% if query.observation == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="text-sm">排序<select aria-label="排序" class="mt-1 block w-full rounded-xl border p-2" name="sort">{% for key, label in [('id','记录 ID'),('url','URL'),('type','类型'),('last_seen','最近观察')] %}<option value="{{ key }}" {% if query.sort == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="text-sm">顺序<select aria-label="顺序" class="mt-1 block w-full rounded-xl border p-2" name="order"><option value="asc" {% if query.order == 'asc' %}selected{% endif %}>升序</option><option value="desc" {% if query.order == 'desc' %}selected{% endif %}>降序</option></select></label>
+    <label class="text-sm">每页记录<input class="mt-1 block w-full rounded-xl border p-2" name="page_size" type="number" min="1" max="200" value="{{ query.page_size }}"></label>
+    <div class="flex items-end gap-3"><button class="rounded-xl bg-emerald-700 px-5 py-2 text-white">应用筛选</button><a class="py-2 text-sm underline" href="/assets?source={{ query.source }}&amp;run_id={{ query.run_id }}">重置</a></div>
+  </form>
+  <section class="overflow-hidden rounded-3xl border border-black/10 bg-white">
+    <div class="flex flex-wrap gap-4 border-b p-5 text-sm"><strong>导出全部匹配记录（{{ result.matched }} 条）</strong><a href="{{ json_url }}" hx-boost="false" class="underline">下载 JSON</a><a href="{{ csv_url }}" hx-boost="false" class="underline">下载 CSV</a></div>
+    <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-stone-50"><tr>{% for label in ['资产 / 来源','类型 / 方法','身份','HTTP / 观察','最近观察','追溯'] %}<th class="p-4 whitespace-nowrap">{{ label }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for item in result.items %}<tr class="border-t align-top">
+        <td class="p-4"><p class="font-medium">{{ item.title or '标题未记录' }}</p><p class="mt-1 min-w-48 max-w-lg break-all">{{ item.url }}</p><p class="mt-1 text-xs text-slate-500">{{ item.asset_id }}</p></td>
+        <td class="p-4">{{ kinds[item.kind] }}<p class="mt-1">{{ item.method or '方法未知' }}</p><p class="mt-1 text-xs text-slate-500">{{ item.content_type or '内容类型未知' }}</p></td>
+        <td class="p-4">{{ item.context }}<p class="mt-1 text-xs">完整性：{{ item.context_completeness or '未知' }}</p></td>
+        <td class="p-4">{{ item.status_codes|join(', ') if item.status_codes else '未知' }}<p class="mt-1">{{ observations[item.observation] }}</p></td>
+        <td class="p-4 whitespace-nowrap">{{ item.last_seen.strftime('%Y-%m-%d %H:%M') if item.last_seen else '未知' }}<p class="mt-1 text-xs">UTC</p></td>
+        <td class="p-4"><details><summary class="cursor-pointer whitespace-nowrap">查看来源</summary><div class="mt-2 min-w-48 max-w-xs space-y-2"><p>{{ item.provenance_note }}</p><p>{{ item.record_type }} #{{ item.record_id }}</p><p>请求记录数：{{ item.request_count if item.request_count is not none else '未知' }}</p><p>请求 ID：{{ item.request_ids|join(', ') if item.request_ids else '未记录' }}</p><p>证据 ID：{{ item.evidence_ids|join(', ') if item.evidence_ids else '未记录' }}</p><a class="inline-block underline" href="{{ item.source_url }}">查看原任务与证据</a></div></details></td>
+      </tr>{% else %}<tr><td colspan="6" class="p-8 text-center">没有匹配记录；不代表目标没有资产。请检查筛选、页码与覆盖情况。</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <nav aria-label="资产分页" class="flex flex-wrap items-center justify-between gap-3 border-t p-5 text-sm"><span>第 {{ query.page }} / {{ pages }} 页 · 本页 {{ result.items|length }} 条</span><div class="flex gap-4">{% if previous_url %}<a class="underline" href="{{ previous_url }}">上一页</a>{% endif %}{% if next_url %}<a class="underline" href="{{ next_url }}">下一页</a>{% endif %}</div></nav>
+  </section>
+  {% endif %}
+</section>
+{% endblock %}

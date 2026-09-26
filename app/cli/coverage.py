@@ -133,6 +133,7 @@ def coverage(
         result = api.start_assessment(request)
         console.print(f"Web UI：{runtime.base_url}")
         console.print(f"认证覆盖状态：{runtime.base_url}/api/assessments/{result.id}")
+        console.print(f"资产清单：{runtime.base_url}/assets?source=scan&run_id={result.id}")
         console.print("模式：仅被动三上下文覆盖；不执行主动权限重放。")
         if detach:
             console.print(f"认证覆盖评估 {result.id} 已后台提交。")

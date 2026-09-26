@@ -100,6 +100,7 @@ def _wait_for_scan(api: LocalScanApi, initial: ScanRunView) -> ScanRunView:
 def _print_locations(base_url: str, scan_run_id: int) -> None:
     console.print(f"Web UI：{base_url}")
     console.print(f"扫描详情：{base_url}/scans/{scan_run_id}")
+    console.print(f"资产清单：{base_url}/assets?source=scan&run_id={scan_run_id}")
 
 
 def _print_result(result: ScanRunView) -> None:
