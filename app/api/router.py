@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.routes.assessments import router as assessments_router
+from app.api.routes.assets import router as assets_router
 from app.api.routes.credentials import router as credentials_router
 from app.api.routes.demo_auth import router as demo_auth_router
 from app.api.routes.evidence import router as evidence_router
@@ -17,6 +18,7 @@ from app.api.routes.sessions import router as sessions_router
 from app.api.routes.targets import router as targets_router
 
 api_router = APIRouter()
+api_router.include_router(assets_router)
 api_router.include_router(pages_router)
 api_router.include_router(scan_preview_router)
 api_router.include_router(scans_router)

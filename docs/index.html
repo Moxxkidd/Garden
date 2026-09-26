@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Garden — 一个 URL 到资产报告</title>
+<title>Garden — 扫描与统一资产清单</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231e5f48'/%3E%3Cpath d='M18 34c0-11 8-19 22-20-1 13-8 22-20 22m0 0c7 1 13 5 16 12M20 36v14' fill='none' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E"/>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -294,7 +294,7 @@ pre{
   <div class="orb orb-2"></div>
   <div class="orb orb-3"></div>
 <section class="hero">
-  <h1>Garden: 一个 URL 到<em>资产报告</em></h1>
+  <h1>Garden: 从扫描到<em>统一资产清单</em></h1>
   <p class="lead">提交一次已授权入口，自动完成预检、发现、采集、分析和证据报告；Web、API、CLI 共用同一核心服务。</p>
   <div class="btns">
     <button class="btn pri" onclick="showDocs('intro')">Read the docs</button>
@@ -322,6 +322,17 @@ pre{
     </div>
   </div>
 </section>
+
+<div class="extra" style="margin-bottom:48px">
+  <div class="tag">v0.4.0 · Unified assets</div>
+  <h2>匿名与登录后的采集结果，使用同一套清单</h2>
+  <p class="sub">从扫描结果或 inventory 任务进入资产表，按类型、身份、观察状态筛选，追溯来源并导出。</p>
+  <div class="card"><h3>可筛选、可分页、可交付</h3>
+    <p><code>garden assets list --source scan --run-id N</code> 查看已有记录；<code>garden assets export --source scan --run-id N --format json --output assets.json</code> 导出全部匹配记录，也支持 CSV 与 inventory 来源。</p>
+    <p>计数来自实际资产记录，不跨身份或任务归并。“已有响应”不代表资源有效或目标安全；缺失信息保持未知。来源详情保留记录 ID 和已有证据关联，常规输出对 URL 查询值脱敏。</p>
+    <p>清单查询与导出不会重新访问目标；不改变现有登录和采集流程。N 为已存在的任务 ID。</p>
+  </div>
+</div>
 
 <div class="extra" style="margin-bottom:48px">
   <div class="tag">Local diagnostics</div>
