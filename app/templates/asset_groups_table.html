@@ -1,0 +1,15 @@
+<div class="overflow-x-auto"><table class="w-full text-left text-sm">
+  <thead class="bg-stone-50"><tr>{% for label in ['归并资产','身份 / 响应','观察 / 变体','归并依据与来源'] %}<th class="p-4 whitespace-nowrap">{{ label }}</th>{% endfor %}</tr></thead>
+  <tbody>{% for item in result.items %}<tr class="border-t align-top">
+    <td class="p-4"><p class="font-medium">{{ kinds[item.kind] }} · {{ item.method or '方法未知' }}</p><p class="mt-1 min-w-48 max-w-md break-all">{{ item.url }}</p><p class="mt-1 text-xs text-slate-500 break-all">{{ item.asset_id }}</p></td>
+    <td class="p-4">{{ item.contexts|join(', ') }}<p class="mt-2">HTTP：{{ item.status_codes|join(', ') or '未知' }}</p></td>
+    <td class="p-4 whitespace-nowrap">{{ item.observation_count }} 条观察记录<p class="mt-2">变体数：{{ item.variant_count if item.variant_count is not none else '未知' }}</p><p class="mt-1 text-xs">保留 {{ item.variant_record_count }} 项变体记录</p></td>
+    <td class="p-4"><details><summary class="cursor-pointer whitespace-nowrap">展开归并详情</summary><div class="mt-3 min-w-64 max-w-xl space-y-3">
+      <p>规则 {{ item.rule_version }}：{{ item.grouping_reason }}</p><p>{{ item.limitations }}</p>
+      <h3 class="font-medium">请求变体</h3>
+      {% for variant in item.variants %}<div class="rounded border p-2"><p class="break-all">{{ variant.variant_id }}</p><p>{{ variant.contexts|join(', ') }} · {{ '已区分' if variant.identity_status == 'known' else '变体身份未知' }}</p><p>{{ variant.note }}</p>{% for response in variant.observations %}<p>请求 #{{ response.request_id }} · {{ response.context }} · HTTP {{ response.status_code if response.status_code is not none else '未知' }} · {{ response.content_type or '内容类型未知' }}</p>{% endfor %}<p>请求 ID：{{ variant.request_ids|join(', ') or '未记录' }}</p><p class="break-all">观察 ID：{{ variant.observation_ids|join(', ') }}</p></div>{% endfor %}
+      <h3 class="font-medium">原始观察与证据</h3>
+      {% for observed in item.observations %}<div class="rounded border p-2"><p>{{ observed.asset_id }}</p><p>{{ observed.context }} · 完整性 {{ observed.context_completeness or '未知' }} · HTTP {{ observed.status_codes|join(', ') or '未知' }}</p><p>{{ observed.title or '标题未记录' }}</p><p>请求 ID：{{ observed.request_ids|join(', ') if observed.request_ids else '未记录' }} · 证据 ID：{{ observed.evidence_ids|join(', ') if observed.evidence_ids else '未记录' }}</p><p>{{ observed.provenance_note }}</p><a class="underline" href="{{ observed.source_url }}">查看原任务与证据</a></div>{% endfor %}
+    </div></details></td>
+  </tr>{% else %}<tr><td colspan="4" class="p-8 text-center">没有匹配记录；不代表目标没有资产。</td></tr>{% endfor %}</tbody>
+</table></div>

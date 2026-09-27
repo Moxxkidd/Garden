@@ -184,7 +184,7 @@ def app():
 
 class FakeInventoryGateway:
     def collect(self, target, start_url, controls, session_type, session_payload):
-        origin = f"{httpx.URL(target.base_url).scheme}://{httpx.URL(target.base_url).netloc}"
+        origin = f"{httpx.URL(target.base_url).scheme}://{httpx.URL(target.base_url).netloc.decode('ascii')}"
         pages = [
             ObservedPage(
                 url=f"{origin}/demo/auth/ui/home",

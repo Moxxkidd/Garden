@@ -23,6 +23,7 @@ from app.models.inventory_parameter import InventoryParameter
 from app.models.inventory_run import InventoryRun
 from app.schemas.inventory import InventoryBuildControls, InventoryBuildSummary, InventoryCounts
 from app.schemas.job import ScanJobCreate
+from app.services.coverage_identity import redacted_observed_url
 from app.services.credentials import CredentialProfileService
 from app.services.inventory_annotations import AnnotationCandidate, InventoryAnnotationService
 from app.services.inventory_collection import InventoryCollectionService
@@ -300,17 +301,20 @@ class InventoryBuildService:
         observed_endpoint: ObservedEndpoint,
     ) -> InventoryEndpoint:
         normalized_path = observed_endpoint.path or "/"
+        normalized_url = self._normalize_endpoint_url(
+            observed_endpoint.request_url or observed_endpoint.url
+        )
         statement = select(InventoryEndpoint).where(
             InventoryEndpoint.inventory_run_id == inventory_run.id,
             InventoryEndpoint.method == observed_endpoint.method,
-            InventoryEndpoint.path == normalized_path,
+            InventoryEndpoint.url == normalized_url,
         )
         stored_endpoint = session.scalar(statement)
         if stored_endpoint is None:
             stored_endpoint = InventoryEndpoint(
                 inventory_run_id=inventory_run.id,
                 method=observed_endpoint.method,
-                url=self._normalize_endpoint_url(observed_endpoint.url),
+                url=normalized_url,
                 path=normalized_path,
                 first_seen_at=observed_endpoint.observed_at,
                 last_seen_at=observed_endpoint.observed_at,
@@ -414,6 +418,4 @@ class InventoryBuildService:
         return urlunparse(normalized)
 
     def _normalize_endpoint_url(self, value: str) -> str:
-        parsed = urlparse(value)
-        normalized = parsed._replace(query="", fragment="")
-        return urlunparse(normalized)
+        return redacted_observed_url(value)

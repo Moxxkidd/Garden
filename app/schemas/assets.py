@@ -13,6 +13,7 @@ Observation = Literal["response_observed", "unknown"]
 class AssetQuery(BaseModel):
     source: AssetSource
     run_id: int = Field(gt=0)
+    view: Literal["records", "grouped"] = "records"
     kind: AssetKind | None = None
     context: str | None = Field(default=None, max_length=120)
     observation: Observation | None = None
@@ -67,6 +68,46 @@ class AssetRecord(BaseModel):
     source_url: str
 
 
+class AssetRequestObservation(BaseModel):
+    request_id: int
+    source_observation_id: str
+    context: str
+    status_code: int | None = None
+    content_type: str | None = None
+
+
+class AssetVariant(BaseModel):
+    variant_id: str
+    identity_status: Literal["known", "unknown"]
+    observations: list[AssetRequestObservation] = Field(default_factory=list)
+    request_ids: list[int]
+    observation_ids: list[str]
+    contexts: list[str]
+    note: str
+
+
+class AssetGroup(BaseModel):
+    asset_id: str
+    rule_version: str
+    kind: AssetKind
+    url: str
+    site: str | None
+    method: str | None
+    title: str | None
+    last_seen: datetime | None
+    contexts: list[str]
+    status_codes: list[int]
+    observation_count: int
+    variant_count: int | None
+    variant_record_count: int
+    variants: list[AssetVariant]
+    observations: list[AssetRecord]
+    evidence_ids: list[int]
+    request_ids: list[int]
+    grouping_reason: str
+    limitations: str
+
+
 class AssetPage(BaseModel):
     schema_version: str = "1.0"
     scope: AssetScope
@@ -75,5 +116,8 @@ class AssetPage(BaseModel):
     counts_by_kind: dict[str, int]
     page: int
     page_size: int
-    items: list[AssetRecord]
+    items: list[AssetRecord | AssetGroup]
+    view: Literal["records", "grouped"] = "records"
+    rule_version: str | None = None
+    matched_observation_count: int | None = None
     count_note: str = "按已有资产记录计数；未跨身份或跨任务归并，不代表独立业务资产数。"

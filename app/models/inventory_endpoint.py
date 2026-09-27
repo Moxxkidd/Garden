@@ -16,8 +16,8 @@ class InventoryEndpoint(Base):
         UniqueConstraint(
             "inventory_run_id",
             "method",
-            "path",
-            name="uq_inventory_endpoints_run_method_path",
+            "url",
+            name="uq_inventory_endpoints_run_method_url",
         ),
     )
 

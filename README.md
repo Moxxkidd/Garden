@@ -211,6 +211,29 @@ API：`GET /api/assets?source=scan&run_id=N`；导出：`GET /api/assets/export?
 
 浏览、筛选与导出只读取数据库，不访问目标或会话材料。输出 URL 的查询值脱敏，不导出请求体、Cookie、凭据引用或秘密存储路径；CSV 对公式前缀转义。CLI 导出拒绝覆盖已有文件。现有 `garden inventory export` 保持原有格式；新清单请使用 `garden assets export`。
 
+## v0.4.1：可信归并
+
+在资产清单的“清单视图”中选择“归并资产”，或使用 `view=grouped` / `--view grouped`。默认仍是 v0.4.0 的原始记录视图。
+
+```bash
+garden assets list --source scan --run-id N --view grouped
+garden assets list --source scan --run-id N --view grouped --context user --json
+garden assets export --source scan --run-id N --view grouped --format json --output groups.json
+garden assets export --source inventory --run-id N --view grouped --format csv --output groups.csv
+```
+
+- **归并资产**是同一任务内的路由族：规则 `route-v1` 包含站点（协议、主机、端口）、方法、原始资源类型、精确路径和查询参数名（保留重复次数）。不同站点、GET/POST、末尾斜杠和 `%2F` 不会混为一项。默认端口、主机大小写沿用 URL 规范化。不能据此声称业务等价或资产有效。
+- **请求变体**：v0.4.1 新捕获请求采用 `v2` 私有指纹，按同一采集身份下的方法、完整 URL、请求体和请求头区分。参数值不同但响应相同也会保留。响应状态或稳定内容不同的请求记录分别保存，并可从变体追溯请求 ID；完全相同的捕获仍会去重。
+- **观察记录**：保留原始资产记录、身份、覆盖状态及证据关联；组详情另外展示新请求的响应状态与内容类型。同一组同时观察到 200/403 时，摘要保留两者。观察记录数指已持久化的资产记录数，不是所有网络请求次数。
+- 新 inventory 接口从已捕获请求 URL 保留参数名及重复次数，隐藏精确值；旧记录不会被猜测性回填。
+- **历史限制**：未保存版本化指纹的记录（含 quick scan 与 legacy inventory）不能还原精确请求变体数，显示未知，并保留可追溯的记录。已被旧采集器丢弃的参数差异不能从脱敏 URL 还原。未知不等于零，也不等于没有差异。
+
+API 示例：`GET /api/assets?source=scan&run_id=N&view=grouped`。归并 JSON 使用 schema `1.1`，包含 `rule_version`、`observations`、`variants` 和 `matched_observation_count`；CSV 的嵌套字段保存为 JSON 单元格。导出包含全部匹配组及其观察，不受分页影响。筛选先作用于原始观察，组内只包含匹配观察；身份筛选不会伪造其他身份的缺席。
+
+归并 ID 仅在来源任务和规则版本范围内使用，不是跨任务项目资产库主键。普通清单、JSON/CSV 不输出请求指纹、参数精确值、请求体或受保护材料路径，也不会读取受保护材料。
+
+**升级**：本版新增数据库迁移 `0005`，修正扫描资产的方法唯一约束及 inventory 接口的站点隔离，保留旧 ID、请求和证据关联。已有安装按原有流程执行 `garden db upgrade`，可先用只读 `garden doctor` 检查版本。若已写入旧约束无法表示的多方法/跨站点记录，降级会明确拒绝，不删除记录来凑旧格式。
+
 ## 如何判断结果
 
 CLI、扫描详情页和 Markdown 报告使用相同计数口径，例如 **2 类关注项，6 条原始观察**。原始观察保留独立证据；按已有规则归并的类别用于阅读，不等同于确认漏洞数量。覆盖矩阵的分类计数单独展示。

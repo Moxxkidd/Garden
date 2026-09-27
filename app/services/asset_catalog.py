@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.errors import ResourceNotFoundError
 from app.models.inventory_run import InventoryRun
-from app.models.scan_run import ScanEvidence, ScanRun
+from app.models.scan_request import ScanRequest
+from app.models.scan_run import ScanAsset, ScanEvidence, ScanRun
 from app.redaction.service import RedactionService
 from app.schemas.assets import AssetContext, AssetPage, AssetQuery, AssetRecord, AssetScope
 from app.services.coverage_identity import redacted_observed_url
@@ -87,8 +88,43 @@ class AssetCatalogService:
             and (not search or search in f"{r.url} {r.title or ''} {r.method or ''}".casefold())
         ]
 
+        total = len(rows)
+        matched_observation_count = len(filtered)
+        if query.view == "grouped":
+            from app.services.asset_grouping import group_records
+
+            captures = defaultdict(list)
+            if query.source == "scan":
+                snapshots = {}
+                for asset in session.scalars(
+                    select(ScanAsset).where(ScanAsset.scan_run_id == query.run_id)
+                ):
+                    attrs = asset.attributes if isinstance(asset.attributes, dict) else {}
+                    metadata = attrs.get("catalog_request_observations")
+                    snapshots[asset.id] = metadata if isinstance(metadata, dict) else {}
+                for request in session.scalars(
+                    select(ScanRequest).where(ScanRequest.scan_run_id == query.run_id)
+                ):
+                    if request.asset_id is not None:
+                        captures[request.asset_id].append(
+                            {
+                                "id": request.id,
+                                "context_id": request.source_context_id,
+                                "fingerprint": request.fingerprint,
+                                "response": snapshots.get(request.asset_id, {}).get(
+                                    str(request.id), {}
+                                ),
+                            }
+                        )
+            all_groups = group_records(rows, captures)
+            total = len(all_groups)
+            filtered = group_records(filtered, captures)
+            counts = {kind: sum(r.kind == kind for r in all_groups) for kind in KINDS}
+
         def key(row):
-            stable_id = (row.record_type, row.record_id)
+            stable_id = (
+                (row.record_type, row.record_id) if query.view == "records" else row.asset_id
+            )
             if query.sort == "url":
                 return row.url, stable_id
             if query.sort == "type":
@@ -100,12 +136,26 @@ class AssetCatalogService:
         filtered.sort(key=key, reverse=query.order == "desc")
         return AssetPage(
             scope=scope,
-            total=len(rows),
+            total=total,
             matched=len(filtered),
             counts_by_kind=counts,
             page=query.page,
             page_size=query.page_size,
             items=filtered,
+            view=query.view,
+            rule_version="route-v1" if query.view == "grouped" else None,
+            matched_observation_count=matched_observation_count,
+            **(
+                {
+                    "schema_version": "1.1",
+                    "count_note": (
+                        "按路由族归并，不代表独立业务资产数；筛选先作用于观察记录，"
+                        "组内仅展示匹配的观察。变体数量未知时不推断为零。"
+                    ),
+                }
+                if query.view == "grouped"
+                else {}
+            ),
         )
 
     def _scan(self, session: Session, run_id: int) -> tuple[AssetScope, list[AssetRecord]]:

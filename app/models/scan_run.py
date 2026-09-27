@@ -129,7 +129,8 @@ class ScanAsset(Base):
             "context_id",
             "asset_type",
             "url",
-            name="uq_scan_assets_run_context_type_url",
+            "method",
+            name="uq_scan_assets_run_context_type_url_method",
         ),
         UniqueConstraint("scan_run_id", "id", name="uq_scan_assets_run_id_id"),
         ForeignKeyConstraint(

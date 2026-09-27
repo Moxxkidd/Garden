@@ -31,6 +31,7 @@ def _query(**values):
 def list_assets(
     source: str = typer.Option(..., help="scan 或 inventory"),
     run_id: int = typer.Option(..., min=1),
+    view: str = typer.Option("records", help="records 原始记录，grouped 可信归并"),
     kind: str | None = typer.Option(None),
     context: str | None = typer.Option(None),
     observation: str | None = typer.Option(None),
@@ -45,6 +46,7 @@ def list_assets(
         query = _query(
             source=source,
             run_id=run_id,
+            view=view,
             kind=kind,
             context=context,
             observation=observation,
@@ -58,6 +60,9 @@ def list_assets(
             result = AssetCatalogService().list(session, query)
         if as_json:
             typer.echo(result.model_dump_json(indent=2))
+            return
+        if view == "grouped":
+            _print_groups(result, page)
             return
         console.print(
             f"统一资产清单 · {source} #{run_id} · 匹配 {result.matched} / 总记录 {result.total}",
@@ -99,6 +104,7 @@ def export_asset_list(
     run_id: int = typer.Option(..., min=1),
     output: Annotated[Path, typer.Option()] = ...,
     format: str = typer.Option("json"),
+    view: str = typer.Option("records", help="records 原始记录，grouped 可信归并"),
     kind: str | None = typer.Option(None),
     context: str | None = typer.Option(None),
     observation: str | None = typer.Option(None),
@@ -112,6 +118,7 @@ def export_asset_list(
         query = _query(
             source=source,
             run_id=run_id,
+            view=view,
             kind=kind,
             context=context,
             observation=observation,
@@ -130,3 +137,40 @@ def export_asset_list(
         handle_cli_error(InputValidationError("无法写入输出文件，请检查目录和权限。"))
     except GardenError as error:
         handle_cli_error(error)
+
+
+def _print_groups(result, page):
+    console.print(
+        f"归并资产 · 匹配 {result.matched} / 总归并资产 {result.total} "
+        f"· 匹配观察记录 {result.matched_observation_count}",
+        markup=False,
+    )
+    console.print(result.count_note, markup=False)
+    console.print(result.scope.coverage_note, markup=False)
+    if result.scope.live:
+        console.print("任务仍在执行，记录及计数可能变化。")
+    table = Table("资产 ID", "方法 / URL", "身份", "观察记录", "变体数", "HTTP")
+    for row in result.items:
+        table.add_row(
+            *(
+                Text(str(v))
+                for v in [
+                    row.asset_id,
+                    f"{row.method or '未知'} {row.url}",
+                    ", ".join(row.contexts),
+                    row.observation_count,
+                    row.variant_count if row.variant_count is not None else "未知",
+                    ", ".join(map(str, row.status_codes)) or "未知",
+                ]
+            )
+        )
+    console.print(table)
+    console.print(
+        f"规则 {result.rule_version} · 第 {page} 页 · 本页 {len(result.items)} 项；"
+        "使用 --json 查看变体和来源观察，export 导出全部匹配结果。",
+        markup=False,
+    )
+    console.print(
+        "旧采集已丢失的参数或响应无法还原；变体按身份、方法、完整 URL、请求体与请求头区分。",
+        markup=False,
+    )
