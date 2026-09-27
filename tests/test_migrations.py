@@ -86,7 +86,7 @@ def test_stamp_existing_database_preserves_rows(tmp_path):
 
     with engine.connect() as connection:
         assert connection.scalar(text("select count(*) from targets")) == 1
-        assert connection.scalar(text("select version_num from alembic_version")) == "0004"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0005"
 
 
 def test_legacy_scan_assets_are_backfilled_into_anonymous_context(tmp_path):
@@ -180,7 +180,7 @@ def test_unified_assessment_migration_round_trip(tmp_path):
 
     upgrade_database(url)
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0004"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0005"
 
 
 def test_application_requires_explicit_stamp_for_unversioned_legacy_database(tmp_path, monkeypatch):
@@ -234,7 +234,7 @@ def test_application_auto_migrates_fresh_database_in_development(tmp_path, monke
         assert client.get("/healthz").status_code == 200
 
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0004"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0005"
 
 
 def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
@@ -247,7 +247,7 @@ def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
     current_result = runner.invoke(cli_app, ["db", "current"])
 
     assert upgrade_result.exit_code == 0
-    assert "0004" in current_result.stdout
+    assert "0005" in current_result.stdout
 
 
 def test_database_cli_stamp_existing_preserves_legacy_rows(tmp_path, monkeypatch):
@@ -314,6 +314,7 @@ def test_built_wheel_installs_with_loadable_migration_assets(tmp_path):
         "app/db/migration_assets/migrations/versions/0002_unified_assessment.py",
         "app/db/migration_assets/migrations/versions/0003_scan_rerun_link.py",
         "app/db/migration_assets/migrations/versions/0004_coverage_gap_details.py",
+        "app/db/migration_assets/migrations/versions/0005_asset_method_identity.py",
     }
     assert expected_paths <= packaged_paths
 
@@ -443,3 +444,86 @@ def test_coverage_gap_migration_preserves_legacy_warning_and_round_trips(tmp_pat
             connection.scalar(text("SELECT message FROM scan_failures WHERE id=1"))
             == "legacy warning"
         )
+
+
+def test_asset_identity_migration_keeps_ids_requests_and_evidence_and_guards_downgrade(tmp_path):
+    from datetime import datetime, timezone
+
+    from app.models.scan_context import ScanContext
+    from app.models.scan_request import ScanRequest
+    from app.models.scan_run import ScanAsset, ScanEvidence, ScanRun
+
+    url = f"sqlite+pysqlite:///{tmp_path / 'asset-method.db'}"
+    upgrade_database(url, "0004")
+    engine = create_engine(url)
+    with Session(engine) as session:
+        run = ScanRun(
+            input_url="https://site.test/", normalized_url="https://site.test/", status="completed"
+        )
+        session.add(run)
+        session.flush()
+        context = ScanContext(scan_run_id=run.id, kind="anonymous")
+        session.add(context)
+        session.flush()
+        asset = ScanAsset(
+            scan_run_id=run.id,
+            context_id=context.id,
+            asset_type="endpoint",
+            url="https://site.test/api",
+            method="GET",
+            status_code=200,
+            discovered_at=datetime.now(timezone.utc),
+        )
+        session.add(asset)
+        session.flush()
+        session.add(
+            ScanRequest.from_capture(
+                scan_run_id=run.id,
+                source_context_id=context.id,
+                asset_id=asset.id,
+                method="GET",
+                raw_url=asset.url,
+                header_names=[],
+                fingerprint="legacy",
+                protected_storage_ref="protected-ref",
+            )
+        )
+        session.add(
+            ScanEvidence(
+                scan_run_id=run.id,
+                asset_id=asset.id,
+                evidence_type="http",
+                title="legacy",
+                source_url=asset.url,
+                summary="retained",
+                data={},
+                collected_at=datetime.now(timezone.utc),
+            )
+        )
+        session.commit()
+        ids = (run.id, context.id, asset.id)
+    upgrade_database(url)
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT asset_id FROM scan_requests")) == ids[2]
+        assert connection.scalar(text("SELECT asset_id FROM scan_evidence")) == ids[2]
+        assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
+    downgrade_database(url, "0004")
+    upgrade_database(url)
+    with Session(engine) as session:
+        session.add(
+            ScanAsset(
+                scan_run_id=ids[0],
+                context_id=ids[1],
+                asset_type="endpoint",
+                url="https://site.test/api",
+                method="POST",
+                status_code=403,
+                discovered_at=datetime.now(timezone.utc),
+            )
+        )
+        session.commit()
+    with pytest.raises(RuntimeError, match="Cannot downgrade"):
+        downgrade_database(url, "0004")
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT count(*) FROM scan_assets")) == 2
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0005"

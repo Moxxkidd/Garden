@@ -33,10 +33,13 @@ def export_assets(
         return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     if export_format != "csv":
         raise ValueError("Unsupported asset export format")
-    from app.schemas.assets import AssetRecord
+    from app.schemas.assets import AssetGroup, AssetRecord
 
     output = io.StringIO(newline="")
-    writer = csv.DictWriter(output, fieldnames=list(AssetRecord.model_fields))
+    writer = csv.DictWriter(
+        output,
+        fieldnames=list((AssetGroup if query.view == "grouped" else AssetRecord).model_fields),
+    )
     writer.writeheader()
     for item in payload["items"]:
         writer.writerow({k: _csv_cell(v) for k, v in item.items()})

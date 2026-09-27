@@ -324,6 +324,16 @@ pre{
 </section>
 
 <div class="extra" style="margin-bottom:48px">
+  <div class="tag">v0.4.1 · Trusted grouping</div>
+  <h2>资产归并后，参数变体和身份观察仍可追溯</h2>
+  <p class="sub">在资产清单切换“归并资产”，查看同一路由下保留的原始观察、请求变体及证据入口。</p>
+  <div class="card"><h3>归并有依据，差异不丢失</h3>
+    <p><code>garden assets list --source scan --run-id N --view grouped</code> 使用版本化规则，隔离站点、方法、类型和精确路径；JSON/CSV 导出保留全部匹配观察。</p>
+    <p>新捕获请求区分参数值、请求体和请求头差异，并保留响应状态。历史数据无法还原精确变体数时显示未知。路由归并不代表业务等价，也不是跨任务资产库。</p>
+  </div>
+</div>
+
+<div class="extra" style="margin-bottom:48px">
   <div class="tag">v0.4.0 · Unified assets</div>
   <h2>匿名与登录后的采集结果，使用同一套清单</h2>
   <p class="sub">从扫描结果或 inventory 任务进入资产表，按类型、身份、观察状态筛选，追溯来源并导出。</p>

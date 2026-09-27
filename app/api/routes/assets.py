@@ -38,6 +38,7 @@ def parse_asset_query(**values) -> AssetQuery:
 def asset_query(
     source: str,
     run_id: int = Query(gt=0),
+    view: str = "records",
     kind: str | None = None,
     context: str | None = None,
     observation: str | None = None,
@@ -50,6 +51,7 @@ def asset_query(
     return parse_asset_query(
         source=source,
         run_id=run_id,
+        view=view,
         kind=kind,
         context=context,
         observation=observation,

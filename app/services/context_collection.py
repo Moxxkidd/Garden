@@ -270,12 +270,14 @@ class ContextCollectionService:
         asset_by_identity: dict[str, ScanAsset] = {}
         for resource in resources:
             asset = self._persist_resource(session, run, context, resource)
-            asset_by_identity[asset.identity_key or ""] = asset
+            key = f"{asset.method}:{asset.url}"
+            if key not in asset_by_identity or asset.asset_type == "endpoint":
+                asset_by_identity[key] = asset
         session.flush()
 
         seen_request_fingerprints: set[str] = set()
         for observed in requests:
-            identity_key = canonical_asset_identity(observed.method, observed.url)
+            identity_key = f"{observed.method.upper()}:{redacted_observed_url(observed.url)}"
             asset = asset_by_identity.get(identity_key)
             if asset is None:
                 asset = self._persist_resource(
@@ -315,18 +317,28 @@ class ContextCollectionService:
                     "response_text": observed.response_text,
                 },
             )
-            session.add(
-                ScanRequest.from_capture(
-                    scan_run_id=run.id,
-                    source_context_id=context.id,
-                    asset_id=asset.id,
-                    method=observed.method,
-                    raw_url=observed.url,
-                    header_names=list(observed.headers),
-                    fingerprint=fingerprint,
-                    protected_storage_ref=storage_ref,
-                )
+            stored_request = ScanRequest.from_capture(
+                scan_run_id=run.id,
+                source_context_id=context.id,
+                asset_id=asset.id,
+                method=observed.method,
+                raw_url=observed.url,
+                header_names=list(observed.headers),
+                fingerprint=fingerprint,
+                protected_storage_ref=storage_ref,
             )
+            session.add(stored_request)
+            session.flush()
+            # Safe response metadata stays tied to the exact captured request, not the
+            # last response on the route-level ScanAsset. Full material stays protected.
+            snapshots = dict(asset.attributes.get("catalog_request_observations") or {})
+            snapshots[str(stored_request.id)] = {
+                "status_code": observed.status_code,
+                "content_type": self.redaction_service.redact_text(
+                    observed.response_headers.get("content-type", ""), limit=200
+                ),
+            }
+            asset.attributes["catalog_request_observations"] = snapshots
 
         session.flush()
         assets = list(
@@ -372,6 +384,8 @@ class ContextCollectionService:
                 ScanAsset.scan_run_id == run.id,
                 ScanAsset.context_id == context.id,
                 ScanAsset.identity_key == identity_key,
+                ScanAsset.url == redacted_observed_url(resource.url),
+                ScanAsset.asset_type == resource.asset_type,
             )
         )
         attributes = dict(resource.attributes)
@@ -412,19 +426,24 @@ class ContextCollectionService:
 
     def _request_fingerprint(self, observed: ObservedRequest) -> str:
         content_type = observed.response_headers.get("content-type")
-        payload = {
+        request_material = {
             "method": observed.method.upper(),
-            "identity": canonical_asset_identity(observed.method, observed.url),
-            "body_hash": hashlib.sha256(observed.body or b"").hexdigest(),
-            "response_status": observed.status_code,
-            "response_signature": stable_response_signature(
-                observed.response_text,
-                content_type,
-            ),
+            "url": observed.url,
+            "body": None if observed.body is None else observed.body.hex(),
+            "headers": sorted((k.lower(), v) for k, v in observed.headers.items()),
         }
-        return hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
+        response_material = {
+            "status": observed.status_code,
+            "signature": stable_response_signature(observed.response_text, content_type),
+        }
+
+        def digest(value):
+            return hashlib.sha256(
+                json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()[:40]
+
+        # Private fingerprints are never part of the public asset catalog.
+        return f"v2:{digest(request_material)}:{digest(response_material)}"
 
 
 def _origin(url: str) -> tuple[str, str, int]:

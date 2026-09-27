@@ -885,6 +885,7 @@ class ScanPipeline:
                 ScanAsset.scan_run_id == run.id,
                 ScanAsset.context_id == context.id,
                 ScanAsset.identity_key == identity_key,
+                ScanAsset.url == redacted_observed_url(result.final_url),
             )
         )
         now = datetime.now(timezone.utc)
