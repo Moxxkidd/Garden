@@ -13,10 +13,22 @@ Observation = Literal["response_observed", "unknown"]
 class AssetQuery(BaseModel):
     source: AssetSource
     run_id: int = Field(gt=0)
-    view: Literal["records", "grouped"] = "records"
+    view: Literal["records", "grouped", "candidates"] = "records"
     kind: AssetKind | None = None
     context: str | None = Field(default=None, max_length=120)
     observation: Observation | None = None
+    validity: (
+        Literal[
+            "login_page",
+            "suspected_login_fallback",
+            "suspected_soft_404",
+            "uniform_response",
+            "uniform_error_response",
+            "redirect_alias",
+            "none",
+        ]
+        | None
+    ) = None
     q: str = Field(default="", max_length=200)
     sort: Literal["id", "url", "type", "last_seen"] = "id"
     order: Literal["asc", "desc"] = "asc"
@@ -43,8 +55,27 @@ class AssetScope(BaseModel):
     live: bool = False
 
 
+class ValidityFlag(BaseModel):
+    code: str
+    label: str
+    reason: str
+    related_asset_ids: list[str] = Field(default_factory=list)
+    request_ids: list[int] = Field(default_factory=list)
+
+
+class AssetValidity(BaseModel):
+    assessment: Literal["assessed", "insufficient_evidence"] = "insufficient_evidence"
+    verification: Literal["response_observed", "candidate", "unknown"] = "unknown"
+    business_validity: Literal["unconfirmed"] = "unconfirmed"
+    access: Literal["restricted", "unknown"] = "unknown"
+    flags: list[ValidityFlag] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
+    note: str = "被动迹象，不是业务有效性结论；未命中迹象不代表有效或安全。"
+
+
 class AssetRecord(BaseModel):
     asset_id: str
+    validity: AssetValidity = Field(default_factory=AssetValidity)
     record_id: int
     record_type: str
     kind: AssetKind
@@ -87,6 +118,7 @@ class AssetVariant(BaseModel):
 
 
 class AssetGroup(BaseModel):
+    validity_flags: list[ValidityFlag] = Field(default_factory=list)
     asset_id: str
     rule_version: str
     kind: AssetKind
@@ -109,7 +141,10 @@ class AssetGroup(BaseModel):
 
 
 class AssetPage(BaseModel):
-    schema_version: str = "1.0"
+    schema_version: str = "1.2"
+    validity_rule_version: str = "passive-v1"
+    validity_counts: dict[str, int] = Field(default_factory=dict)
+    candidate_count: int | None = None
     scope: AssetScope
     total: int
     matched: int
@@ -117,7 +152,7 @@ class AssetPage(BaseModel):
     page: int
     page_size: int
     items: list[AssetRecord | AssetGroup]
-    view: Literal["records", "grouped"] = "records"
+    view: Literal["records", "grouped", "candidates"] = "records"
     rule_version: str | None = None
     matched_observation_count: int | None = None
     count_note: str = "按已有资产记录计数；未跨身份或跨任务归并，不代表独立业务资产数。"

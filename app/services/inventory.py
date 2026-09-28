@@ -23,6 +23,7 @@ from app.models.inventory_parameter import InventoryParameter
 from app.models.inventory_run import InventoryRun
 from app.schemas.inventory import InventoryBuildControls, InventoryBuildSummary, InventoryCounts
 from app.schemas.job import ScanJobCreate
+from app.services.asset_validity import capture_traits
 from app.services.coverage_identity import redacted_observed_url
 from app.services.credentials import CredentialProfileService
 from app.services.inventory_annotations import AnnotationCandidate, InventoryAnnotationService
@@ -262,6 +263,12 @@ class InventoryBuildService:
         inventory_run: InventoryRun,
         observed_page: ObservedPage,
     ) -> InventoryPage:
+        traits = capture_traits(
+            observed_page.response_text,
+            observed_page.content_type,
+            complete=observed_page.response_text is not None,
+        )
+        traits["status_code"] = observed_page.status_code
         normalized_url = self._normalize_page_url(observed_page.url)
         statement = select(InventoryPage).where(
             InventoryPage.inventory_run_id == inventory_run.id,
@@ -280,10 +287,12 @@ class InventoryBuildService:
                 first_visited_at=observed_page.visited_at,
                 last_visited_at=observed_page.visited_at,
                 visit_count=1,
+                response_traits=traits,
             )
             session.add(stored_page)
             session.flush()
             return stored_page
+        stored_page.response_traits = traits
         stored_page.last_visited_at = observed_page.visited_at
         stored_page.visit_count += 1
         stored_page.title = observed_page.title or stored_page.title
@@ -300,6 +309,12 @@ class InventoryBuildService:
         inventory_run: InventoryRun,
         observed_endpoint: ObservedEndpoint,
     ) -> InventoryEndpoint:
+        traits = capture_traits(
+            observed_endpoint.response_text,
+            observed_endpoint.content_type,
+            complete=observed_endpoint.response_text is not None,
+        )
+        traits["status_code"] = observed_endpoint.status_code
         normalized_path = observed_endpoint.path or "/"
         normalized_url = self._normalize_endpoint_url(
             observed_endpoint.request_url or observed_endpoint.url
@@ -325,10 +340,12 @@ class InventoryBuildService:
                 set_cookie_names=observed_endpoint.set_cookie_names,
                 cookie_issue_flags=observed_endpoint.cookie_issue_flags,
                 status_codes_observed=[observed_endpoint.status_code],
+                response_traits=traits,
             )
             session.add(stored_endpoint)
             session.flush()
             return stored_endpoint
+        stored_endpoint.response_traits = traits
         stored_endpoint.last_seen_at = observed_endpoint.observed_at
         stored_endpoint.request_count += 1
         stored_endpoint.cache_control = (

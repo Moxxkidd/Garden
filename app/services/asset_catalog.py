@@ -14,7 +14,14 @@ from app.models.inventory_run import InventoryRun
 from app.models.scan_request import ScanRequest
 from app.models.scan_run import ScanAsset, ScanEvidence, ScanRun
 from app.redaction.service import RedactionService
-from app.schemas.assets import AssetContext, AssetPage, AssetQuery, AssetRecord, AssetScope
+from app.schemas.assets import (
+    AssetContext,
+    AssetPage,
+    AssetQuery,
+    AssetRecord,
+    AssetScope,
+    AssetValidity,
+)
 from app.services.coverage_identity import redacted_observed_url
 from app.services.scan_result_presentation import coverage_summary
 
@@ -77,6 +84,29 @@ class AssetCatalogService:
             if query.source == "scan"
             else self._inventory(session, query.run_id)
         )
+        candidate_count = None
+        if query.source == "scan":
+            metadata = session.get(ScanRun, query.run_id).asset_metadata
+            if (
+                isinstance(metadata, dict)
+                and metadata.get("version") == 1
+                and isinstance(metadata.get("candidates"), list)
+            ):
+                candidate_count = len(metadata["candidates"])
+        validity_counts = {
+            state: sum(r.validity.verification == state for r in rows)
+            for state in ["response_observed", "candidate", "unknown"]
+        }
+        from app.services.asset_validity import LABELS
+
+        validity_counts.update(
+            {
+                code: sum(any(f.code == code for f in r.validity.flags) for r in rows)
+                for code in LABELS
+            }
+        )
+        if query.view == "candidates":
+            rows = self._candidates(session, query, scope)
         counts = {kind: sum(r.kind == kind for r in rows) for kind in KINDS}
         search = query.q.strip().casefold()
         filtered = [
@@ -85,6 +115,14 @@ class AssetCatalogService:
             if (query.kind is None or r.kind == query.kind)
             and (query.context is None or r.context == query.context)
             and (query.observation is None or r.observation == query.observation)
+            and (
+                query.validity is None
+                or (
+                    not r.validity.flags
+                    if query.validity == "none"
+                    else any(f.code == query.validity for f in r.validity.flags)
+                )
+            )
             and (not search or search in f"{r.url} {r.title or ''} {r.method or ''}".casefold())
         ]
 
@@ -123,7 +161,7 @@ class AssetCatalogService:
 
         def key(row):
             stable_id = (
-                (row.record_type, row.record_id) if query.view == "records" else row.asset_id
+                (row.record_type, row.record_id) if query.view != "grouped" else row.asset_id
             )
             if query.sort == "url":
                 return row.url, stable_id
@@ -136,6 +174,8 @@ class AssetCatalogService:
         filtered.sort(key=key, reverse=query.order == "desc")
         return AssetPage(
             scope=scope,
+            candidate_count=candidate_count,
+            validity_counts=validity_counts,
             total=total,
             matched=len(filtered),
             counts_by_kind=counts,
@@ -147,14 +187,23 @@ class AssetCatalogService:
             matched_observation_count=matched_observation_count,
             **(
                 {
-                    "schema_version": "1.1",
+                    "schema_version": "1.2",
                     "count_note": (
                         "按路由族归并，不代表独立业务资产数；筛选先作用于观察记录，"
                         "组内仅展示匹配的观察。变体数量未知时不推断为零。"
                     ),
                 }
                 if query.view == "grouped"
-                else {}
+                else (
+                    {
+                        "count_note": (
+                            "仅列出已持久化且尚未请求的候选，不计入已有响应。"
+                            "候选总量未提供时不表示没有候选。"
+                        )
+                    }
+                    if query.view == "candidates"
+                    else {}
+                )
             ),
         )
 
@@ -232,7 +281,48 @@ class AssetCatalogService:
                     ),
                 )
             )
-        return scope, rows
+        from app.services.asset_validity import annotate_validity
+
+        signals = {}
+        for asset in run.assets:
+            attrs = asset.attributes if isinstance(asset.attributes, dict) else {}
+            values = [
+                {
+                    "traits": attrs.get("validity_traits"),
+                    "status_codes": _codes([asset.status_code]),
+                    "redirects": attrs.get("catalog_redirects", []),
+                }
+            ]
+            snapshots = attrs.get("catalog_request_observations")
+            if isinstance(snapshots, dict):
+                for request_id, snapshot in snapshots.items():
+                    if (
+                        isinstance(snapshot, dict)
+                        and str(request_id).isdigit()
+                        and int(request_id) in request_ids[asset.id]
+                    ):
+                        values.append(
+                            {
+                                "traits": snapshot.get("validity_traits"),
+                                "status_codes": _codes([snapshot.get("status_code")]),
+                                "request_ids": [int(request_id)],
+                            }
+                        )
+            signals[f"scan:{run_id}:asset:{asset.id}"] = values
+        for asset_id, evidence_data in session.execute(
+            select(ScanEvidence.asset_id, ScanEvidence.data).where(
+                ScanEvidence.scan_run_id == run_id
+            )
+        ):
+            if isinstance(evidence_data, dict):
+                signals.setdefault(f"scan:{run_id}:asset:{asset_id}", []).append(
+                    {
+                        "traits": evidence_data.get("validity_traits"),
+                        "status_codes": _codes([evidence_data.get("status_code")]),
+                        "redirects": evidence_data.get("catalog_redirects", []),
+                    }
+                )
+        return scope, annotate_validity(rows, signals)
 
     def _inventory(self, session: Session, run_id: int) -> tuple[AssetScope, list[AssetRecord]]:
         run = session.scalar(
@@ -291,4 +381,54 @@ class AssetCatalogService:
                         provenance_note="来自已有 inventory 记录；未记录逐项证据关联和原始发现链。",
                     )
                 )
-        return scope, rows
+        from app.services.asset_validity import annotate_validity
+
+        signals = {}
+        for kind, records in [("page", run.pages), ("endpoint", run.endpoints)]:
+            for record in records:
+                traits = record.response_traits if isinstance(record.response_traits, dict) else {}
+                signals[f"inventory:{run_id}:{kind}:{record.id}"] = [
+                    {"traits": traits, "status_codes": _codes([traits.get("status_code")])}
+                ]
+        return scope, annotate_validity(rows, signals)
+
+    def _candidates(self, session, query, scope):
+        if query.source != "scan":
+            return []
+        run = session.get(ScanRun, query.run_id)
+        metadata = run.asset_metadata
+        if not isinstance(metadata, dict) or metadata.get("version") != 1:
+            return []
+        candidates = metadata.get("candidates")
+        if not isinstance(candidates, list):
+            return []
+        rows = []
+        for index, candidate in enumerate(candidates, 1):
+            if not isinstance(candidate, dict):
+                continue
+            url = safe_url(candidate.get("url"))
+            rows.append(
+                AssetRecord(
+                    asset_id=f"scan:{query.run_id}:candidate:{index}",
+                    record_id=index,
+                    record_type="candidate",
+                    kind=_KIND_MAP.get(candidate.get("asset_type"), "other"),
+                    original_type=safe_text(candidate.get("asset_type")) or "unknown",
+                    url=url,
+                    site=_site(url),
+                    method=None,
+                    status_codes=[],
+                    observation="unknown",
+                    context="anonymous",
+                    validity=AssetValidity(verification="candidate"),
+                    discovery_url=safe_url(candidate.get("source_url"))
+                    if candidate.get("source_url")
+                    else None,
+                    provenance_note=(
+                        "来自本次 quick scan 已发现但未请求的队列；"
+                        "受预算或深度限制，未确认资源存在。发现页面未知时仅关联来源任务。"
+                    ),
+                    source_url=scope.source_url,
+                )
+            )
+        return rows

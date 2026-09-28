@@ -85,6 +85,7 @@ def group_records(rows: list[AssetRecord], requests: dict[int, list[dict]]) -> l
         times = [r.last_seen for r in observations if r.last_seen]
         result.append(
             AssetGroup(
+                validity_flags=[flag for row in observations for flag in row.validity.flags],
                 asset_id=identifier,
                 rule_version=RULE_VERSION,
                 kind=first.kind,

@@ -34,6 +34,7 @@ from app.schemas.scan import (
     ScanRunStatus,
     ScanStageName,
 )
+from app.services.asset_validity import capture_traits
 from app.services.context_collection import (
     ContextCollectionService,
     ContextCollectionSummary,
@@ -767,6 +768,14 @@ class ScanPipeline:
             self._check_deadline(deadline)
 
         uncovered = [item for url, item in candidates.items() if url not in requested]
+        run.asset_metadata = {
+            "version": 1,
+            "candidates": [
+                {"url": redacted_observed_url(item.url), "asset_type": item.asset_type}
+                for item in uncovered
+            ],
+        }
+        session.flush([run])
         coverage_details = capture_budget_gaps(
             uncovered, page_queue, resource_queue, depth_limited, options
         )
@@ -908,7 +917,24 @@ class ScanPipeline:
         ]
         security_signals = self._resource_security_signals(asset_type, result.body_text)
         collection_bucket = "page" if asset_type_hint in {None, "page"} else "resource"
+        validity_traits = capture_traits(
+            result.body_text,
+            result.content_type,
+            complete=result.body_is_text and not result.body_truncated,
+        )
+        aliases = (
+            [
+                {
+                    "requested_url": redacted_observed_url(result.requested_url),
+                    "final_url": redacted_observed_url(result.final_url),
+                }
+            ]
+            if result.redirects
+            else []
+        )
         attributes = {
+            "validity_traits": validity_traits,
+            "catalog_redirects": aliases,
             "content_type": result.content_type,
             "body_size_bytes": result.body_size_bytes,
             "body_is_text": result.body_is_text,
@@ -980,6 +1006,9 @@ class ScanPipeline:
                     "headers": headers,
                     "preview": preview,
                     "resource_summary": resource_summary,
+                    "validity_traits": validity_traits,
+                    "status_code": result.status_code,
+                    "catalog_redirects": aliases,
                     "collection_bucket": collection_bucket,
                 },
                 collected_at=now,

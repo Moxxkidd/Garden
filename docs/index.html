@@ -303,6 +303,8 @@ pre{
 </section>
 </div>
 
+
+
 <section class="feat">
   <div class="grid">
     <div class="item">
@@ -322,6 +324,17 @@ pre{
     </div>
   </div>
 </section>
+
+<div class="extra" id="asset-validity" style="margin-bottom:48px;scroll-margin-top:80px">
+  <div class="tag">v0.4.2 · 有效性线索</div>
+  <h2>分清已观察响应、未请求候选与待确认资产</h2>
+  <p class="sub">清单标注疑似登录回退、软 404、统一响应和重定向别名，可筛选、展开原因，并随 JSON/CSV 导出。</p>
+  <div class="card"><h3>保留证据，也保留不确定性</h3>
+    <p>候选视图单独展示 quick scan 保存的未请求队列，不混入资产记录总数。历史任务或未提供队列时显示未知；切换视图不改变任务已有响应计数。</p>
+    <p>规则只分析已有采集结果，不增加探测。同站点、同身份且完整的响应才参与内容对比。HTTP 200 或未命中线索不代表已确认业务资产，所有业务有效性结论保持待确认。</p>
+    <p>Web、CLI 和导出采用相同规则 passive-v1；升级数据库至迁移 0006 后使用新增元数据。</p>
+  </div>
+</div>
 
 <div class="extra" style="margin-bottom:48px">
   <div class="tag">v0.4.1 · Trusted grouping</div>

@@ -203,13 +203,32 @@ garden assets export --source scan --run-id N --format json --output assets.json
 garden assets export --source inventory --run-id N --kind page --format csv --output pages.csv
 ```
 
-API：`GET /api/assets?source=scan&run_id=N`；导出：`GET /api/assets/export?source=scan&run_id=N&format=json`。两者支持相同的 `kind`、`context`、`observation`、`q`、`sort`、`order` 参数；列表另支持 `page` 与 `page_size`（最多 200），导出不受分页影响。`observation` 为 `response_observed` 或 `unknown`；`sort` 为 `id`、`url`、`type` 或 `last_seen`，顺序为 `asc`/`desc`。JSON 使用 `schema_version: "1.0"`。
+API：`GET /api/assets?source=scan&run_id=N`；导出：`GET /api/assets/export?source=scan&run_id=N&format=json`。两者支持相同的 `kind`、`context`、`observation`、`q`、`sort`、`order` 参数；列表另支持 `page` 与 `page_size`（最多 200），导出不受分页影响。`observation` 为 `response_observed` 或 `unknown`；`sort` 为 `id`、`url`、`type` 或 `last_seen`，顺序为 `asc`/`desc`。JSON 当前使用 `schema_version: "1.2"`，新增字段保持兼容。
 
 计数基于实际记录：scan 为该任务的扫描资产数，inventory 为页面数加接口数；不跨身份或任务去重，不能解释为独立业务资产数量。相同脱敏 URL 的不同记录不会合并。运行中的计数可能变化；JSON 附来源任务、覆盖说明和计数说明。
 
 “已有响应”只表示记录了 HTTP 响应，401/403 也保留；缺少状态码时显示未知，不判为无效或安全。旧 inventory 缺少可靠完整性及逐项证据关联时保留未知。来源详情展示原记录 ID 和已关联的扫描请求/证据 ID；原始发现链未记录时不补造。身份标签不表示当前会话可用或实际角色已经验证。
 
 浏览、筛选与导出只读取数据库，不访问目标或会话材料。输出 URL 的查询值脱敏，不导出请求体、Cookie、凭据引用或秘密存储路径；CSV 对公式前缀转义。CLI 导出拒绝覆盖已有文件。现有 `garden inventory export` 保持原有格式；新清单请使用 `garden assets export`。
+
+## v0.4.2：有效性线索与候选分离
+
+资产清单新增“有效性线索”筛选与说明：疑似登录页面、登录页回退、软 404、统一响应、统一错误响应和已观察重定向别名。每项保留原因、相关观察与已有请求 ID；原始记录和归并组都能查看。CLI、Web、JSON/CSV 使用同一投影，JSON schema 为 `1.2`，有效性规则为 `passive-v1`。
+
+```bash
+garden assets list --source scan --run-id 1 --validity suspected_soft_404
+garden assets list --source scan --run-id 1 --view candidates
+garden assets export --source scan --run-id 1 --view candidates --format json --output candidates.json
+```
+
+API 支持 `view=records|grouped|candidates` 和 `validity=login_page|suspected_login_fallback|suspected_soft_404|uniform_response|uniform_error_response|redirect_alias|none`。`none` 仅表示未命中线索，不代表有效。
+
+- **候选（未请求）**：单独展示 quick scan 正常完成时保存的未请求队列，不计入原始记录或归并资产总量。历史任务、异常中止和 inventory 未提供候选总量时显示“未提供”，不是零。
+- **任务已有响应记录**：基于整个来源任务计算，不随视图或筛选改变；401/403 仍属于已有响应，并额外标注受限。`candidate_count` 单独表达已知候选总量，`validity_counts` 表达原始记录的任务级统计。
+- **线索不是确认**：所有记录的 `business_validity` 均保持 `unconfirmed`。HTTP 200、未命中线索或扫描结束，都不能证明业务资产有效或覆盖完整。
+- **被动分析**：只使用现有采集结果，不增加探测请求、不读取受保护材料。响应对比仅限同站点和同采集身份；截断正文或仅有预览时不生成内容对比特征。登录回退、软 404 与统一响应属于启发式线索，可能误报；材料不足时明确显示“判断材料不足”。
+
+**升级**：执行 `garden db upgrade` 应用新增迁移 `0006`，为扫描候选和 inventory 响应特征增加可空 JSON 字段。旧记录保留未知值，不回填猜测结论。降级到 `0005` 会移除这些新增元数据字段，应先备份数据库。
 
 ## v0.4.1：可信归并
 
@@ -228,7 +247,7 @@ garden assets export --source inventory --run-id N --view grouped --format csv -
 - 新 inventory 接口从已捕获请求 URL 保留参数名及重复次数，隐藏精确值；旧记录不会被猜测性回填。
 - **历史限制**：未保存版本化指纹的记录（含 quick scan 与 legacy inventory）不能还原精确请求变体数，显示未知，并保留可追溯的记录。已被旧采集器丢弃的参数差异不能从脱敏 URL 还原。未知不等于零，也不等于没有差异。
 
-API 示例：`GET /api/assets?source=scan&run_id=N&view=grouped`。归并 JSON 使用 schema `1.1`，包含 `rule_version`、`observations`、`variants` 和 `matched_observation_count`；CSV 的嵌套字段保存为 JSON 单元格。导出包含全部匹配组及其观察，不受分页影响。筛选先作用于原始观察，组内只包含匹配观察；身份筛选不会伪造其他身份的缺席。
+API 示例：`GET /api/assets?source=scan&run_id=N&view=grouped`。归并 JSON 当前使用 schema `1.2`，包含 `rule_version`、`observations`、`variants` 和 `matched_observation_count`；CSV 的嵌套字段保存为 JSON 单元格。导出包含全部匹配组及其观察，不受分页影响。筛选先作用于原始观察，组内只包含匹配观察；身份筛选不会伪造其他身份的缺席。
 
 归并 ID 仅在来源任务和规则版本范围内使用，不是跨任务项目资产库主键。普通清单、JSON/CSV 不输出请求指纹、参数精确值、请求体或受保护材料路径，也不会读取受保护材料。
 

@@ -9,14 +9,14 @@ from app.schemas.scan import ScanOptions
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_v041_release_metadata_and_cli_version_are_aligned() -> None:
+def test_v042_release_metadata_and_cli_version_are_aligned() -> None:
     pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
-    assert 'version = "0.4.1"' in pyproject
-    assert Settings().project_version == "0.4.1"
+    assert 'version = "0.4.2"' in pyproject
+    assert Settings().project_version == "0.4.2"
     result = CliRunner().invoke(app, ["version"])
     assert result.exit_code == 0
-    assert result.stdout.strip() == "Garden 0.4.1"
+    assert result.stdout.strip() == "Garden 0.4.2"
 
 
 def test_v030_preserves_the_quick_scan_network_identity() -> None:

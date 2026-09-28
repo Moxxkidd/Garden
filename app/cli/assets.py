@@ -31,7 +31,12 @@ def _query(**values):
 def list_assets(
     source: str = typer.Option(..., help="scan 或 inventory"),
     run_id: int = typer.Option(..., min=1),
-    view: str = typer.Option("records", help="records 原始记录，grouped 可信归并"),
+    view: str = typer.Option(
+        "records", help="records 原始记录，grouped 可信归并，candidates 未请求候选"
+    ),
+    validity: str | None = typer.Option(
+        None, help="按被动有效性迹象筛选；none 表示未命中迹象，不代表有效。"
+    ),
     kind: str | None = typer.Option(None),
     context: str | None = typer.Option(None),
     observation: str | None = typer.Option(None),
@@ -47,6 +52,7 @@ def list_assets(
             source=source,
             run_id=run_id,
             view=view,
+            validity=validity,
             kind=kind,
             context=context,
             observation=observation,
@@ -72,7 +78,13 @@ def list_assets(
         console.print(result.scope.coverage_note, markup=False)
         if result.scope.live:
             console.print("任务仍在执行，记录及计数可能变化。")
-        table = Table("资产 ID", "类型", "方法", "URL", "身份", "响应状态", "观察")
+        candidate_count = result.candidate_count
+        console.print(
+            f"候选总量：{candidate_count if candidate_count is not None else '未提供'}；"
+            "已有响应不等于已确认业务资产。",
+            markup=False,
+        )
+        table = Table("资产 ID", "类型", "方法", "URL", "身份", "响应状态", "观察", "有效性迹象")
         for row in result.items:
             table.add_row(
                 *(
@@ -84,7 +96,15 @@ def list_assets(
                         row.url,
                         row.context,
                         ", ".join(map(str, row.status_codes)) or "未知",
-                        OBSERVATIONS[row.observation],
+                        "候选（未请求）"
+                        if row.validity.verification == "candidate"
+                        else OBSERVATIONS[row.observation],
+                        ", ".join(f.label for f in row.validity.flags)
+                        or (
+                            "判断材料不足 / 未确认"
+                            if row.validity.assessment == "insufficient_evidence"
+                            else "未命中迹象 / 未确认"
+                        ),
                     ]
                 )
             )
@@ -104,7 +124,12 @@ def export_asset_list(
     run_id: int = typer.Option(..., min=1),
     output: Annotated[Path, typer.Option()] = ...,
     format: str = typer.Option("json"),
-    view: str = typer.Option("records", help="records 原始记录，grouped 可信归并"),
+    view: str = typer.Option(
+        "records", help="records 原始记录，grouped 可信归并，candidates 未请求候选"
+    ),
+    validity: str | None = typer.Option(
+        None, help="按被动有效性迹象筛选；none 表示未命中迹象，不代表有效。"
+    ),
     kind: str | None = typer.Option(None),
     context: str | None = typer.Option(None),
     observation: str | None = typer.Option(None),
@@ -119,6 +144,7 @@ def export_asset_list(
             source=source,
             run_id=run_id,
             view=view,
+            validity=validity,
             kind=kind,
             context=context,
             observation=observation,
@@ -149,7 +175,7 @@ def _print_groups(result, page):
     console.print(result.scope.coverage_note, markup=False)
     if result.scope.live:
         console.print("任务仍在执行，记录及计数可能变化。")
-    table = Table("资产 ID", "方法 / URL", "身份", "观察记录", "变体数", "HTTP")
+    table = Table("资产 ID", "方法 / URL", "身份", "观察记录", "变体数", "HTTP", "有效性迹象")
     for row in result.items:
         table.add_row(
             *(
@@ -161,6 +187,7 @@ def _print_groups(result, page):
                     row.observation_count,
                     row.variant_count if row.variant_count is not None else "未知",
                     ", ".join(map(str, row.status_codes)) or "未知",
+                    ", ".join(sorted({f.label for f in row.validity_flags})) or "未命中 / 未确认",
                 ]
             )
         )
