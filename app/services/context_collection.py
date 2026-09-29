@@ -19,6 +19,7 @@ from app.models.scan_run import ScanAsset, ScanRun
 from app.redaction.service import RedactionService
 from app.schemas.inventory import InventoryBuildControls
 from app.schemas.scan import ScanOptions
+from app.services.asset_validity import capture_traits
 from app.services.coverage_identity import (
     canonical_asset_identity,
     redacted_observed_url,
@@ -38,6 +39,7 @@ class ObservedRequest:
     status_code: int
     response_headers: dict[str, str]
     response_text: str
+    response_complete: bool = True
 
 
 @dataclass(frozen=True)
@@ -128,6 +130,15 @@ class DefaultContextCollectionGateway:
                         "body_size_bytes": result.body_size_bytes,
                         "depth": depth,
                         "redirect_count": len(result.redirects),
+                        "validity_complete": not result.body_truncated,
+                        "catalog_redirects": [
+                            {
+                                "requested_url": redacted_observed_url(result.requested_url),
+                                "final_url": redacted_observed_url(result.final_url),
+                            }
+                        ]
+                        if result.redirects
+                        else [],
                         "response_text": result.body_text if result.body_is_text else "",
                     },
                 )
@@ -141,6 +152,7 @@ class DefaultContextCollectionGateway:
                     status_code=result.status_code,
                     response_headers=result.headers,
                     response_text=result.body_text if result.body_is_text else "",
+                    response_complete=result.body_is_text and not result.body_truncated,
                 )
             )
             if depth < options.max_depth:
@@ -184,6 +196,7 @@ class DefaultContextCollectionGateway:
                     "content_type": page.content_type or "text/html",
                     "cache_control": page.cache_control,
                     "depth": page.depth,
+                    "validity_complete": page.response_text is not None,
                     "response_text": (
                         page.response_text
                         if page.response_text is not None
@@ -212,6 +225,7 @@ class DefaultContextCollectionGateway:
                         "content_type": endpoint.content_type,
                         "cache_control": endpoint.cache_control,
                         "parameter_names": endpoint.parameters,
+                        "validity_complete": endpoint.response_text is not None,
                         "response_text": response_text,
                     },
                 )
@@ -230,6 +244,7 @@ class DefaultContextCollectionGateway:
                     status_code=endpoint.status_code,
                     response_headers=response_headers,
                     response_text=response_text,
+                    response_complete=endpoint.response_text is not None,
                 )
             )
         return resources, requests
@@ -293,6 +308,7 @@ class ContextCollectionService:
                         attributes={
                             "content_type": observed.response_headers.get("content-type"),
                             "response_text": observed.response_text,
+                            "validity_complete": observed.response_complete,
                         },
                     ),
                 )
@@ -334,6 +350,11 @@ class ContextCollectionService:
             snapshots = dict(asset.attributes.get("catalog_request_observations") or {})
             snapshots[str(stored_request.id)] = {
                 "status_code": observed.status_code,
+                "validity_traits": capture_traits(
+                    observed.response_text,
+                    observed.response_headers.get("content-type"),
+                    complete=observed.response_complete,
+                ),
                 "content_type": self.redaction_service.redact_text(
                     observed.response_headers.get("content-type", ""), limit=200
                 ),
@@ -391,12 +412,17 @@ class ContextCollectionService:
         attributes = dict(resource.attributes)
         response_text = attributes.pop("response_text", None)
         content_type = attributes.get("content_type")
+        attributes["validity_traits"] = capture_traits(
+            response_text, content_type, complete=attributes.pop("validity_complete", True)
+        )
         if isinstance(response_text, str):
             attributes["content_signature"] = stable_response_signature(
                 response_text,
                 content_type if isinstance(content_type, str) else None,
             )
+        traits = attributes.pop("validity_traits")
         redacted_attributes = self.redaction_service.redact_mapping(attributes)
+        redacted_attributes["validity_traits"] = traits
         if asset is None:
             asset = ScanAsset(
                 scan_run_id=run.id,

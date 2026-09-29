@@ -25,7 +25,7 @@ _HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
 
 
 def parse_asset_query(**values) -> AssetQuery:
-    for name in ("kind", "context", "observation"):
+    for name in ("kind", "context", "observation", "validity"):
         if values.get(name) == "":
             values[name] = None
     try:
@@ -39,6 +39,7 @@ def asset_query(
     source: str,
     run_id: int = Query(gt=0),
     view: str = "records",
+    validity: str | None = None,
     kind: str | None = None,
     context: str | None = None,
     observation: str | None = None,
@@ -52,6 +53,7 @@ def asset_query(
         source=source,
         run_id=run_id,
         view=view,
+        validity=validity,
         kind=kind,
         context=context,
         observation=observation,
@@ -127,6 +129,8 @@ def assets_page(request: Request):
         | {"anonymous", "user", "admin", "unknown"}
         | ({query.context} if query.context else set())
     )
+    from app.services.asset_validity import LABELS
+
     return templates.TemplateResponse(
         request=request,
         name="assets.html",
@@ -134,6 +138,7 @@ def assets_page(request: Request):
             "page_title": "统一资产清单",
             "result": result,
             "query": query,
+            "validity_labels": LABELS,
             "kinds": KINDS,
             "observations": OBSERVATIONS,
             "contexts": contexts,

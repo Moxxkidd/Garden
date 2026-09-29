@@ -121,3 +121,51 @@ def test_grouped_view_preserves_filters_details_and_downloads(
             assert parse_qs(urlsplit(page.url).query)["view"] == ["grouped"]
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize("javascript_enabled", [False, True])
+def test_candidate_view_keeps_task_counts_and_downloads(
+    app, asset_scan, tmp_path, javascript_enabled
+):
+    from app.db.bootstrap import session_scope
+    from app.models.scan_run import ScanRun
+
+    with session_scope() as session:
+        session.get(ScanRun, asset_scan[0]).asset_metadata = {
+            "version": 1,
+            "candidates": [{"url": "https://site.test/later?token=SECRET", "asset_type": "page"}],
+        }
+    with _serve(app) as origin, sync_playwright() as playwright:
+        browser = playwright.chromium.launch(channel="chromium")
+        try:
+            page = browser.new_page(
+                java_script_enabled=javascript_enabled, viewport={"width": 390, "height": 844}
+            )
+            page.route(
+                "**/*",
+                lambda route: (
+                    route.continue_()
+                    if route.request.url.startswith(origin + "/")
+                    else route.abort()
+                ),
+            )
+            page.goto(f"{origin}/assets?source=scan&run_id={asset_scan[0]}")
+            page.get_by_label("清单视图", exact=True).select_option("candidates")
+            page.get_by_role("button", name="应用筛选", exact=True).click()
+            expect(page.get_by_text("任务已有响应记录 4", exact=False)).to_be_visible()
+            expect(
+                page.get_by_role("table").get_by_text("候选（未请求）", exact=True)
+            ).to_be_visible()
+            page.reload()
+            expect(page.get_by_label("清单视图", exact=True)).to_have_value("candidates")
+            with page.expect_download() as event:
+                page.get_by_role("link", name="下载 JSON", exact=True).click()
+            path = tmp_path / "candidates.json"
+            event.value.save_as(path)
+            data = json.loads(path.read_text())
+            assert data["candidate_count"] == 1
+            assert data["validity_counts"]["response_observed"] == 4
+            assert data["items"][0]["validity"]["verification"] == "candidate"
+            assert "SECRET" not in path.read_text()
+        finally:
+            browser.close()

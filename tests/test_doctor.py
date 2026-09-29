@@ -52,7 +52,7 @@ def test_doctor_reads_revision_without_repair_or_sidecar_files(tmp_path, monkeyp
     result = runner.invoke(app, ["doctor", "--json"])
     check = next(c for c in json.loads(result.stdout)["checks"] if c["id"] == "database")
     assert check["status"] == "action_required"
-    assert "0003" in check["message"] and "0005" in check["message"]
+    assert "0003" in check["message"] and "0006" in check["message"]
     assert database.read_bytes() == before
     assert set(tmp_path.iterdir()) == files_before
 
@@ -112,7 +112,7 @@ def test_doctor_skips_remote_or_unsupported_database_without_leaking_values(monk
     )
 
 
-@pytest.mark.parametrize("revision, status", [("0005", "ok"), ("FUTURE_SECRET", "unknown")])
+@pytest.mark.parametrize("revision, status", [("0006", "ok"), ("FUTURE_SECRET", "unknown")])
 def test_doctor_distinguishes_current_and_unknown_database_revision(
     tmp_path, monkeypatch, revision, status
 ):
@@ -266,7 +266,7 @@ def ready_doctor(tmp_path, monkeypatch):
     database = home / "garden.db"
     with sqlite3.connect(database) as connection:
         connection.execute("CREATE TABLE alembic_version (version_num TEXT)")
-        connection.execute("INSERT INTO alembic_version VALUES ('0005')")
+        connection.execute("INSERT INTO alembic_version VALUES ('0006')")
     chromium = tmp_path / "chromium"
     chromium.write_text("fixture executable")
     chromium.chmod(0o700)

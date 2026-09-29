@@ -1,0 +1,4 @@
+{% for flag in validity.flags %}<details class="mb-2"><summary class="cursor-pointer font-medium text-amber-800">{{ flag.label }}</summary><p class="mt-1">{{ flag.reason }}</p>{% if flag.related_asset_ids %}<p class="mt-1 break-all text-xs">相关观察（最多 20 条）：{{ flag.related_asset_ids|join(', ') }}</p>{% endif %}{% if flag.request_ids %}<p class="mt-1 text-xs">请求 ID：{{ flag.request_ids|join(', ') }}</p>{% endif %}</details>{% else %}<p>{{ '判断材料不足 / 未确认' if validity.assessment == 'insufficient_evidence' else '未命中迹象 / 未确认' }}</p>{% endfor %}
+{% if validity.access == 'restricted' %}<p class="mt-2">已观察受限响应（401/403）</p>{% endif %}
+{% if validity.aliases %}<details class="mt-2"><summary class="cursor-pointer">重定向入口</summary>{% for alias in validity.aliases %}<p class="mt-1 break-all">{{ alias }}</p>{% endfor %}</details>{% endif %}
+<p class="mt-2 text-xs text-slate-500">{{ validity.note }}</p>
