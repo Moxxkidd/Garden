@@ -13,6 +13,7 @@ from app.db.bootstrap import session_scope
 from app.schemas.assets import AssetQuery
 from app.services.asset_catalog import KINDS, OBSERVATIONS, AssetCatalogService
 from app.services.asset_export import export_assets
+from app.services.discovery import SOURCE_KINDS
 
 app = typer.Typer(help="查看和导出统一资产清单（只读取已有采集记录）。")
 
@@ -37,6 +38,7 @@ def list_assets(
     validity: str | None = typer.Option(
         None, help="按被动有效性迹象筛选；none 表示未命中迹象，不代表有效。"
     ),
+    source_kind: str | None = typer.Option(None, help="按发现来源筛选"),
     kind: str | None = typer.Option(None),
     context: str | None = typer.Option(None),
     observation: str | None = typer.Option(None),
@@ -54,6 +56,7 @@ def list_assets(
             view=view,
             validity=validity,
             kind=kind,
+            source_kind=source_kind,
             context=context,
             observation=observation,
             q=q,
@@ -84,7 +87,9 @@ def list_assets(
             "已有响应不等于已确认业务资产。",
             markup=False,
         )
-        table = Table("资产 ID", "类型", "方法", "URL", "身份", "响应状态", "观察", "有效性迹象")
+        table = Table(
+            "资产 ID", "类型", "方法", "URL", "身份", "响应状态", "观察", "有效性迹象", "发现来源"
+        )
         for row in result.items:
             table.add_row(
                 *(
@@ -105,6 +110,13 @@ def list_assets(
                             if row.validity.assessment == "insufficient_evidence"
                             else "未命中迹象 / 未确认"
                         ),
+                        ", ".join(
+                            dict.fromkeys(
+                                SOURCE_KINDS.get(item["kind"], "来源未知")
+                                for item in (row.discovery or {}).get("sources", [])
+                            )
+                        )
+                        or "来源未知",
                     ]
                 )
             )
@@ -130,6 +142,7 @@ def export_asset_list(
     validity: str | None = typer.Option(
         None, help="按被动有效性迹象筛选；none 表示未命中迹象，不代表有效。"
     ),
+    source_kind: str | None = typer.Option(None, help="按发现来源筛选"),
     kind: str | None = typer.Option(None),
     context: str | None = typer.Option(None),
     observation: str | None = typer.Option(None),
@@ -146,6 +159,7 @@ def export_asset_list(
             view=view,
             validity=validity,
             kind=kind,
+            source_kind=source_kind,
             context=context,
             observation=observation,
             q=q,

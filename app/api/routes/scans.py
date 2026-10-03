@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Form, Query, Request, Response, status
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
@@ -12,6 +13,7 @@ from app.core.errors import ConflictError, GardenError, ResourceNotFoundError
 from app.schemas.scan import ScanOptions, ScanRunView, ScanStartRequest
 from app.schemas.scan_comparison import ScanComparison
 from app.services.coverage_gaps import COVERAGE_GAP_NOTE
+from app.services.discovery import SOURCE_KINDS
 from app.services.scan_result_presentation import (
     coverage_summary,
     diagnostic_hint,
@@ -21,6 +23,8 @@ from app.services.scan_result_presentation import (
 )
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[2] / "templates"))
+
+templates.env.globals["source_kinds"] = SOURCE_KINDS
 templates.env.globals.update(
     coverage_gap_note=COVERAGE_GAP_NOTE,
     coverage_summary=coverage_summary,
@@ -81,10 +85,32 @@ def start_scan_page(
     max_pages: int = Form(default=50, ge=1, le=500),
     max_resources: int = Form(default=200, ge=0, le=2000),
     max_depth: int = Form(default=2, ge=0, le=5),
+    collection_mode: Literal["http", "browser"] = Form(default="http"),
+    sitemap_enabled: bool = Form(default=False),
+    sitemap_url: str = Form(default=""),
+    js_enabled: bool = Form(default=False),
+    max_candidates: int = Form(default=2000, ge=1, le=10000),
+    max_sitemap_documents: int = Form(default=10, ge=1, le=50),
+    max_sitemap_depth: int = Form(default=2, ge=0, le=5),
+    max_browser_requests: int = Form(default=300, ge=1, le=2000),
+    render_wait_ms: int = Form(default=1000, ge=0, le=5000),
+    seed_format: Literal["urls", "openapi"] = Form(default="urls"),
+    seed_input: str = Form(default="", max_length=1024 * 1024),
 ) -> RedirectResponse:
     scan = request.app.state.scan_service.start_scan(
         url,
         ScanOptions(
+            collection_mode=collection_mode,
+            sitemap_enabled=sitemap_enabled,
+            sitemap_url=sitemap_url,
+            js_enabled=js_enabled,
+            max_candidates=max_candidates,
+            max_sitemap_documents=max_sitemap_documents,
+            max_sitemap_depth=max_sitemap_depth,
+            max_browser_requests=max_browser_requests,
+            render_wait_ms=render_wait_ms,
+            seed_format=seed_format,
+            seed_input=seed_input,
             max_pages=max_pages,
             max_resources=max_resources,
             max_depth=max_depth,

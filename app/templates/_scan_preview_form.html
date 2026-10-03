@@ -33,5 +33,16 @@
       </div>
     </div>
   </details>
+  <details class="rounded-2xl border border-black/10 p-4"><summary class="cursor-pointer font-medium">发现选项</summary>
+    {% if values.get('seed_ref') %}<input type="hidden" name="seed_ref" value="{{values.seed_ref}}"><p class="mt-2 text-sm">导入输入已临时保留，不在页面回显；历史任务输入需重新提供。</p>{% endif %}
+    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+    {% for key,label,choices in [('collection_mode','采集方式',[('http','HTTP'),('browser','匿名浏览器')]),('sitemap_enabled','站点地图',[('false','关闭'),('true','开启')]),('js_enabled','JS 线索',[('false','关闭'),('true','开启')]),('seed_format','导入格式',[('urls','URL 列表'),('openapi','OpenAPI 3 JSON')])] %}
+    <label class="text-sm">{{label}}<select name="{{key}}" aria-label="{{label}}" class="block w-full rounded-xl border p-2">{% for code,text in choices %}<option value="{{code}}" {% if values.get(key,'')|lower == code %}selected{% endif %}>{{text}}</option>{% endfor %}</select></label>{% endfor %}
+    {% for key,label,default,maximum in [('max_candidates','候选上限',2000,10000),('max_sitemap_documents','地图文件上限',10,50),('max_sitemap_depth','地图递归深度',2,5),('max_browser_requests','浏览器请求上限',300,2000),('render_wait_ms','渲染等待毫秒',1000,5000)] %}
+    <label class="text-sm">{{label}}<input type="number" name="{{key}}" min="{{0 if key in ['max_sitemap_depth','render_wait_ms'] else 1}}" max="{{maximum}}" value="{{values.get(key) if values.get(key) not in [none, ''] else default}}" class="block w-full rounded-xl border p-2"></label>{% endfor %}
+    <label class="text-sm sm:col-span-2">地图地址（留空使用 /sitemap.xml）<input name="sitemap_url" type="url" class="block w-full rounded-xl border p-2"></label>
+    <label class="text-sm sm:col-span-2">种子文本（最多 1 MiB）<textarea name="seed_input" rows="4" maxlength="1048576" class="block w-full rounded-xl border p-2"></textarea></label>
+    </div><p class="mt-3 text-sm">匿名浏览器只允许 GET/HEAD，不点击按钮、不提交表单。JS/OpenAPI 声明仅作为候选。来源统计不是站点发现率。</p>
+  </details>
   <button class="rounded-2xl bg-slate-900 px-6 py-3 font-medium text-white" type="submit">预览扫描</button>
 </form>

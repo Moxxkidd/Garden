@@ -14,6 +14,24 @@ class AssetQuery(BaseModel):
     source: AssetSource
     run_id: int = Field(gt=0)
     view: Literal["records", "grouped", "candidates"] = "records"
+    source_kind: (
+        Literal[
+            "entry",
+            "html_link",
+            "iframe",
+            "resource",
+            "form_action",
+            "sitemap",
+            "browser_navigation",
+            "browser_request",
+            "hash_route",
+            "js_literal",
+            "url_import",
+            "openapi_import",
+            "unknown",
+        ]
+        | None
+    ) = None
     kind: AssetKind | None = None
     context: str | None = Field(default=None, max_length=120)
     observation: Observation | None = None
@@ -74,6 +92,9 @@ class AssetValidity(BaseModel):
 
 
 class AssetRecord(BaseModel):
+    discovery: dict | None = None
+    candidate_reason: str | None = None
+    route_url: str | None = None
     asset_id: str
     validity: AssetValidity = Field(default_factory=AssetValidity)
     record_id: int
@@ -141,7 +162,7 @@ class AssetGroup(BaseModel):
 
 
 class AssetPage(BaseModel):
-    schema_version: str = "1.2"
+    schema_version: str = "1.3"
     validity_rule_version: str = "passive-v1"
     validity_counts: dict[str, int] = Field(default_factory=dict)
     candidate_count: int | None = None

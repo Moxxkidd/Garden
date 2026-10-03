@@ -22,6 +22,7 @@ class InventoryEndpoint(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    discovery_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     response_traits: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     inventory_run_id: Mapped[int] = mapped_column(ForeignKey("inventory_runs.id"), index=True)
     method: Mapped[str] = mapped_column(String(16), index=True)

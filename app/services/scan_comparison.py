@@ -155,7 +155,9 @@ def _options(run):
     if any(key not in run.options or run.options[key] is None for key in ScanOptions.model_fields):
         return None
     try:
-        return ScanOptions.model_validate(run.options).model_dump()
+        options = ScanOptions.model_validate(run.options).model_dump()
+        options["_discovery_input_digest"] = run.options.get("_discovery_input_digest")
+        return options
     except ValidationError:
         return None
 

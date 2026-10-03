@@ -43,6 +43,7 @@ class ObservedEndpoint:
     request_headers: dict[str, str] = field(default_factory=dict)
     request_body: bytes | None = None
     response_headers: dict[str, str] = field(default_factory=dict)
+    discovery_metadata: dict | None = None
 
 
 @dataclass
@@ -57,6 +58,7 @@ class ObservedPage:
     content_type: str | None = None
     response_text: str | None = None
     text_preview: str | None = None
+    discovery_metadata: dict | None = None
 
 
 @dataclass
@@ -129,6 +131,7 @@ class SyncPlaywrightInventoryGateway:
         queued: deque[tuple[str, int]] = deque([(self._normalize_page_url(start_url), 0)])
         seen_page_urls: set[str] = set()
         queued_urls = {self._normalize_page_url(start_url)}
+        discovery_parents = {self._normalize_page_url(start_url): None}
         request_counter = 0
         origin = self._origin(target.base_url)
 
@@ -192,6 +195,10 @@ class SyncPlaywrightInventoryGateway:
                             request_headers=dict(request.headers),
                             request_body=request_body,
                             response_headers=response_headers,
+                            discovery_metadata={
+                                "version": 1,
+                                "sources": [{"kind": "browser_request", "url": None}],
+                            },
                         )
                     )
 
@@ -253,6 +260,15 @@ class SyncPlaywrightInventoryGateway:
                             ),
                             response_text=self._extract_navigation_response_text(response),
                             text_preview=self._extract_page_preview(page),
+                            discovery_metadata={
+                                "version": 1,
+                                "sources": [
+                                    {
+                                        "kind": "browser_navigation",
+                                        "url": discovery_parents.get(current_url),
+                                    }
+                                ],
+                            },
                         )
                     )
                     if depth >= controls.max_depth:
@@ -262,6 +278,7 @@ class SyncPlaywrightInventoryGateway:
                             continue
                         if len(seen_page_urls) + len(queued_urls) >= controls.max_pages + 1:
                             break
+                        discovery_parents[discovered_url] = final_url
                         queued.append((discovered_url, depth + 1))
                         queued_urls.add(discovered_url)
 

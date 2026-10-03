@@ -25,6 +25,8 @@ def route_key(row: AssetRecord) -> str:
             parsed.path or "/",
             sorted(name for name, _ in parse_qsl(parsed.query, keep_blank_values=True)),
         ]
+        if row.route_url:
+            material.append(["hash-v1", urlsplit(row.route_url).fragment])
         return json.dumps(material, ensure_ascii=False, separators=(",", ":"))
     except ValueError:
         return "isolated:" + row.asset_id
@@ -87,9 +89,9 @@ def group_records(rows: list[AssetRecord], requests: dict[int, list[dict]]) -> l
             AssetGroup(
                 validity_flags=[flag for row in observations for flag in row.validity.flags],
                 asset_id=identifier,
-                rule_version=RULE_VERSION,
+                rule_version="hash-v1" if first.route_url else RULE_VERSION,
                 kind=first.kind,
-                url=first.url,
+                url=first.route_url or first.url,
                 method=first.method,
                 site=first.site,
                 title=first.title,

@@ -5,6 +5,7 @@ _COVERAGE_WARNING_KEYS = frozenset(
         ("collect", "coverage_limit_reached"),
         ("collect", "cross_origin_redirect_blocked"),
         ("collect", "overall_timeout"),
+        ("collect", "discovery_incomplete"),
     }
 )
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,6 +36,17 @@ class ScanStageName(str, Enum):
 class ScanOptions(BaseModel):
     """Bounded user controls; infrastructure defaults are injected by the service."""
 
+    collection_mode: Literal["http", "browser"] = "http"
+    sitemap_enabled: bool = False
+    sitemap_url: str = Field(default="", max_length=2000)
+    js_enabled: bool = False
+    max_candidates: int = Field(default=2000, ge=1, le=10000)
+    max_sitemap_documents: int = Field(default=10, ge=1, le=50)
+    max_sitemap_depth: int = Field(default=2, ge=0, le=5)
+    max_browser_requests: int = Field(default=300, ge=1, le=2000)
+    render_wait_ms: int = Field(default=1000, ge=0, le=5000)
+    seed_format: Literal["urls", "openapi"] = "urls"
+    seed_input: str = Field(default="", max_length=1024 * 1024, repr=False)
     max_pages: int = Field(default=50, ge=1, le=500)
     max_resources: int = Field(default=200, ge=0, le=2000)
     max_depth: int = Field(default=2, ge=0, le=5)
@@ -55,6 +67,13 @@ class DiscoveredAsset(BaseModel):
 
     url: str
     asset_type: str
+    method: str | None = "GET"
+    source_kind: str = "unknown"
+    source_url: str | None = None
+    source_index: int | None = None
+    skipped_reason: str | None = None
+    auto_visit: bool = True
+    route_url: str | None = None
 
 
 class ScanStageView(BaseModel):
@@ -129,9 +148,12 @@ class ScanRunView(BaseModel):
     finding_group_count: int | None = Field(default=None, ge=0)
     completeness: str | None = None
     coverage_gaps: list[CoverageGapView] | None = None
+    discovery_summary: dict | None = None
 
 
 class FetchResult(BaseModel):
+    method: str = "GET"
+    route_url: str | None = None
     requested_url: str
     final_url: str
     status_code: int

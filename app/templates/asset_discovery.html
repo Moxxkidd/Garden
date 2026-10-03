@@ -1,0 +1,3 @@
+{% if item.route_url %}<p class="break-all">路由视图：{{ item.route_url }}</p>{% endif %}
+{% if item.candidate_reason %}<p>未请求原因：{{ {'declaration_only':'仅声明，未自动访问','outside_scope':'范围外','max_pages':'页面预算','max_resources':'资源预算','max_depth':'深度预算','request_failed':'请求未取得响应','pending':'等待采集'}.get(item.candidate_reason, item.candidate_reason) }}</p>{% endif %}
+{% if item.discovery %}{% for source in item.discovery.sources %}<p class="break-all">{{ source_kinds.get(source.kind, '来源未知') }}{% if source.url %}：{{source.url}}{% endif %}{% if source.index %} · 条目 {{source.index}}{% endif %}</p>{% endfor %}{% if item.discovery.truncated %}<p>来源列表已截断，最多展示 20 条。</p>{% endif %}{% else %}<p>发现来源未记录。</p>{% endif %}

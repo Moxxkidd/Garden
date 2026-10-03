@@ -2,6 +2,7 @@
 {% from "_macros.html" import status_badge %}
 
 {% block content %}
+{% if scan.discovery_summary %}<section class="mb-6 rounded-2xl border bg-white p-5"><h2 class="text-xl font-semibold">发现来源收益</h2><p>按首次入队来源归因；不是站点发现率。发现处理{{ '已结束' if scan.discovery_summary.complete else '不完整' }}。</p><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th>来源</th><th>发现</th><th>新候选</th><th>重复</th><th>请求尝试</th><th>响应观察</th><th>跳过</th></tr></thead><tbody>{% for kind, counts in scan.discovery_summary.stats.items() %}<tr><td>{{source_kinds.get(kind,'来源未知')}}</td>{% for key in ['discovered','new_candidates','duplicate_candidates','request_attempts','response_observed','skipped'] %}<td>{{counts.get(key,0)}}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div></section>{% endif %}
   <section class="space-y-6">
     <div class="flex items-end justify-between gap-4">
       <div>

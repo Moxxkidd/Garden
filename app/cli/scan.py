@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Annotated
 
 import typer
+from pydantic import ValidationError
 
 from app.cli.coverage_gaps import print_coverage_gaps
 from app.cli.local_api import LocalScanApi
@@ -33,6 +35,19 @@ def scan(
     request_timeout_seconds: Annotated[float | None, typer.Option("--request-timeout")] = None,
     overall_timeout_seconds: Annotated[float | None, typer.Option("--overall-timeout")] = None,
     retry_attempts: Annotated[int | None, typer.Option("--retries")] = None,
+    collection_mode: Annotated[str, typer.Option("--collection-mode")] = "http",
+    sitemap_enabled: Annotated[bool, typer.Option("--sitemap/--no-sitemap")] = False,
+    sitemap_url: Annotated[str, typer.Option("--sitemap-url")] = "",
+    js_enabled: Annotated[bool, typer.Option("--js/--no-js")] = False,
+    max_candidates: Annotated[int, typer.Option("--max-candidates")] = 2000,
+    max_sitemap_documents: Annotated[int, typer.Option("--max-sitemap-documents")] = 10,
+    max_sitemap_depth: Annotated[int, typer.Option("--max-sitemap-depth")] = 2,
+    max_browser_requests: Annotated[int, typer.Option("--max-browser-requests")] = 300,
+    render_wait_ms: Annotated[int, typer.Option("--render-wait-ms")] = 1000,
+    seed_format: Annotated[str, typer.Option("--seed-format")] = "urls",
+    seed_file: Annotated[
+        str | None, typer.Option("--seed-file", help="显式读取 UTF-8 种子文件（最多 1 MiB）。")
+    ] = None,
     detach: Annotated[bool, typer.Option("--detach", help="提交后立即返回。")] = False,
     ui_port: Annotated[int | None, typer.Option("--ui-port", min=1, max=65535)] = None,
 ) -> None:
@@ -44,6 +59,17 @@ def scan(
     try:
         url = _resolve_url(entry_url, legacy_url)
         options = ScanOptions(
+            collection_mode=collection_mode,
+            sitemap_enabled=sitemap_enabled,
+            sitemap_url=sitemap_url,
+            js_enabled=js_enabled,
+            max_candidates=max_candidates,
+            max_sitemap_documents=max_sitemap_documents,
+            max_sitemap_depth=max_sitemap_depth,
+            max_browser_requests=max_browser_requests,
+            render_wait_ms=render_wait_ms,
+            seed_format=seed_format,
+            seed_input=_read_seed_file(seed_file),
             max_pages=max_pages,
             max_resources=max_resources,
             max_depth=max_depth,
@@ -69,8 +95,23 @@ def scan(
         if api is not None and result is not None and manager is not None:
             _cancel_from_interrupt(api, result.id, manager)
         raise typer.Exit(code=130) from None
+    except ValidationError:
+        handle_cli_error(InputValidationError("扫描选项无效，请检查模式、格式和预算范围。"))
     except (GardenError, WebRuntimeError) as error:
         handle_cli_error(error)
+
+
+def _read_seed_file(path: str | None) -> str:
+    if path is None:
+        return ""
+    try:
+        with Path(path).open("rb") as stream:
+            content = stream.read(1024 * 1024 + 1)
+        if len(content) > 1024 * 1024:
+            raise InputValidationError("种子文件超过 1 MiB 上限。")
+        return content.decode("utf-8-sig")
+    except (OSError, UnicodeError):
+        raise InputValidationError("无法读取种子文件，请检查文件权限和 UTF-8 格式。") from None
 
 
 def _resolve_url(entry_url: str | None, legacy_url: str | None) -> str:
@@ -118,6 +159,16 @@ def _print_result(result: ScanRunView) -> None:
         ],
         title="Garden 扫描结果",
     )
+    if result.discovery_summary:
+        from app.services.discovery import SOURCE_KINDS
+
+        console.print("发现来源收益（不是站点发现率）：")
+        for kind, counts in (result.discovery_summary.get("stats") or {}).items():
+            console.print(
+                f"{SOURCE_KINDS.get(kind, '来源未知')}：新候选 {counts.get('new_candidates', 0)}，"
+                f"响应观察 {counts.get('response_observed', 0)}，"
+                f"重复 {counts.get('duplicate_candidates', 0)}"
+            )
     print_coverage_gaps(result.coverage_gaps)
     coverage_warnings = [
         failure for failure in result.failures if is_coverage_warning(failure.stage, failure.code)

@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
-from app.core.errors import GardenError, ResourceNotFoundError
+from app.core.errors import GardenError, InputValidationError, ResourceNotFoundError
 from app.db.bootstrap import session_scope
 from app.schemas.assessment import AssessmentStartRequest
 from app.schemas.scan import ScanOptions
@@ -23,6 +23,48 @@ templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[2] / 
 # Process-local, fixed-size key: restart or another worker requires a fresh preview.
 _SIGNING_KEY = secrets.token_bytes(32)
 _PREVIEW_TTL_SECONDS = 600
+_PRIVATE_INPUTS = {}
+_OPTIONAL_DISCOVERY_FIELDS = set(ScanOptions.model_fields) - {
+    "max_pages",
+    "max_resources",
+    "max_depth",
+    "request_timeout_seconds",
+    "overall_timeout_seconds",
+    "retry_attempts",
+    "max_redirects",
+    "user_agent",
+}
+
+
+def _form_values(form):
+    values = {
+        key: str(form.get(key, ""))
+        for key in ("url", "rerun_of_run_id", "seed_ref", *ScanOptions.model_fields)
+    }
+    now = time.time()
+    for key, (created, _) in list(_PRIVATE_INPUTS.items()):
+        if now - created > 900:
+            del _PRIVATE_INPUTS[key]
+    raw = {key: values.pop(key, "") for key in ("seed_input", "sitemap_url")}
+    if any(len(v.encode("utf-8")) > 1024 * 1024 for v in raw.values()):
+        raise InputValidationError("导入文本超过 1 MiB。")
+    if any(raw.values()):
+        ref = secrets.token_urlsafe(32)
+        previous = _PRIVATE_INPUTS.get(values.get("seed_ref"), (0, {}))[1]
+        raw = {key: value or previous.get(key, "") for key, value in raw.items()}
+        if len(_PRIVATE_INPUTS) >= 128:
+            del _PRIVATE_INPUTS[next(iter(_PRIVATE_INPUTS))]
+        _PRIVATE_INPUTS[ref] = (now, raw)
+        values["seed_ref"] = ref
+    elif values.get("seed_ref") and values["seed_ref"] not in _PRIVATE_INPUTS:
+        raise InputValidationError("导入预览已过期，请重新提供输入。")
+    values.update(seed_input="", sitemap_url="")
+    return values
+
+
+def _private_options(values):
+    raw = _PRIVATE_INPUTS.get(values.get("seed_ref"), (0, {}))[1]
+    return {**{k: values[k] for k in ScanOptions.model_fields if values.get(k, "") != ""}, **raw}
 
 
 def _signature(timestamp, values, preview, settings):
@@ -74,15 +116,16 @@ def _missing_reuse_values(values):
     return {
         key: "历史配置中的此项缺失或已被清空，请明确填写。"
         for key in ScanOptions.model_fields
-        if values.get(key, "") == ""
+        if key not in _OPTIONAL_DISCOVERY_FIELDS and values.get(key, "") == ""
     }
 
 
 async def _submit(request, *, confirm=False):
     form = await request.form()
-    values = {
-        key: str(form.get(key, "")) for key in ("url", "rerun_of_run_id", *ScanOptions.model_fields)
-    }
+    try:
+        values = _form_values(form)
+    except InputValidationError as error:
+        return _render(request, {}, errors={"seed_input": str(error)}, status_code=409)
     if values.get("rerun_of_run_id"):
         missing = _missing_reuse_values(values)
         if missing:
@@ -92,7 +135,7 @@ async def _submit(request, *, confirm=False):
         payload = AssessmentStartRequest(
             url=values["url"],
             rerun_of_run_id=rerun_id,
-            options={k: values[k] for k in ScanOptions.model_fields if values[k] != ""},
+            options=_private_options(values),
         )
     except ValidationError as exc:
         errors = {
@@ -123,11 +166,13 @@ async def _submit(request, *, confirm=False):
                 errors={"preview_token": "预览已过期或参数、配置发生变化，请重新预览。"},
                 status_code=409,
             )
-        payload.options = preview.effective_options
+        from app.services.scan_options import resolve_scan_options
+
+        payload.options = resolve_scan_options(payload.options, settings)
         scan = (
             service.start_assessment(payload)
             if payload.rerun_of_run_id is not None
-            else service.start_scan(payload.url, preview.effective_options)
+            else service.start_scan(payload.url, payload.options)
         )
         return RedirectResponse(url=f"/scans/{scan.id}", status_code=303)
     return _render(request, values, preview=preview)
@@ -146,9 +191,10 @@ async def confirm_scan(request: Request):
 @router.post("/scans/edit", include_in_schema=False)
 async def edit_scan(request: Request):
     form = await request.form()
-    values = {
-        key: str(form.get(key, "")) for key in ("url", "rerun_of_run_id", *ScanOptions.model_fields)
-    }
+    try:
+        values = _form_values(form)
+    except InputValidationError as error:
+        return _render(request, {}, errors={"seed_input": str(error)}, status_code=409)
     return _render(request, values)
 
 

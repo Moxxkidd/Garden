@@ -337,7 +337,18 @@ def test_noninteractive_coverage_forwards_bounded_options_and_source_run(
     assert result.exit_code == 0
     request = captured["request"]
     assert request.source_run_id == 7
-    assert request.options.model_dump() == {
+    assert request.options.model_dump(
+        include=[
+            "max_depth",
+            "max_pages",
+            "max_redirects",
+            "max_resources",
+            "overall_timeout_seconds",
+            "request_timeout_seconds",
+            "retry_attempts",
+            "user_agent",
+        ]
+    ) == {
         "max_pages": 9,
         "max_resources": 17,
         "max_depth": 3,

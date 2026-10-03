@@ -63,6 +63,43 @@ class ScanReportService:
             if run.mode == AssessmentMode.AUTHENTICATED_COVERAGE.value
             else self._render(run, generated_at)
         )
+        metadata = run.asset_metadata
+        if isinstance(metadata, dict) and metadata.get("version") == 2:
+            from app.services.discovery import SOURCE_KINDS
+
+            lines.extend(
+                [
+                    "",
+                    "## 发现来源收益",
+                    "",
+                    "各来源按首次入队归因；候选不等于已有响应，不代表站点发现率。",
+                    "",
+                    "| 来源 | 发现 | 新候选 | 重复 | 请求尝试 | 响应观察 | 跳过 |",
+                    "|---|---:|---:|---:|---:|---:|---:|",
+                ]
+            )
+            for kind, counts in metadata.get("stats", {}).items():
+                cells = [
+                    str(int(counts.get(k, 0)))
+                    for k in [
+                        "discovered",
+                        "new_candidates",
+                        "duplicate_candidates",
+                        "request_attempts",
+                        "response_observed",
+                        "skipped",
+                    ]
+                ]
+                lines.append(
+                    "| " + SOURCE_KINDS.get(kind, "来源未知") + " | " + " | ".join(cells) + " |"
+                )
+            lines.extend(
+                [
+                    "",
+                    "发现来源处理："
+                    + ("已结束" if metadata.get("complete") else "不完整，存在未处理内容"),
+                ]
+            )
         self.output_root.mkdir(parents=True, exist_ok=True)
         path = self.output_root / f"scan-{run.id}.md"
         path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
@@ -343,7 +380,7 @@ class ScanReportService:
             f"- 最大深度：{run.options.get('max_depth', '-')}",
             f"- 单请求超时：{run.options.get('request_timeout_seconds', '-')} 秒",
             f"- 整体超时：{run.options.get('overall_timeout_seconds', '-')} 秒",
-            "- 请求方法：仅被动 GET；不执行利用、写入或破坏性操作",
+            "- 请求方法：HTTP 采集仅 GET；匿名浏览器仅 GET/HEAD，不自动提交表单或执行导入操作",
             "- 边界：仅跟随同源页面；每次连接和重定向均重新执行地址策略校验",
             "",
             "## 发现的资产",

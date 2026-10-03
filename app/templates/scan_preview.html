@@ -17,10 +17,12 @@
     <p>配置检查：{{ '匹配' if preview.can_submit else '需修正' }}。登录身份：不使用（仅匿名）。覆盖状态：尚未产生。</p>
     <p class="text-sm text-slate-600">{{ preview.budget_note }}</p>
     <dl class="grid grid-cols-2 gap-3 rounded-2xl bg-stone-50 p-4 text-sm">
-      {% for key, label in [('max_pages', '页面上限'), ('max_resources', '静态资源上限'), ('max_depth', '深度上限'), ('request_timeout_seconds', '单次请求超时（秒）'), ('overall_timeout_seconds', '整体超时（秒）'), ('retry_attempts', '重试次数'), ('max_redirects', '重定向上限'), ('user_agent', 'User-Agent')] %}
+      {% for key, label in [('max_pages', '页面上限'), ('max_resources', '静态资源上限'), ('max_depth', '深度上限'), ('request_timeout_seconds', '单次请求超时（秒）'), ('overall_timeout_seconds', '整体超时（秒）'), ('retry_attempts', '重试次数'), ('max_redirects', '重定向上限'), ('user_agent', 'User-Agent'), ('collection_mode','采集方式'), ('sitemap_enabled','站点地图'), ('js_enabled','JS 线索'), ('max_candidates','候选上限'), ('max_sitemap_documents','地图文件上限'), ('max_sitemap_depth','地图深度'), ('max_browser_requests','浏览器请求上限'), ('render_wait_ms','渲染等待毫秒'), ('seed_format','导入格式')] %}
       <dt>{{ label }}</dt><dd class="break-all font-medium">{{ preview.effective_options | attr(key) }}</dd>
       {% endfor %}
     </dl>
+    {% if values.get('seed_ref') %}<p>导入或地图输入已临时保留，不在页面回显；15 分钟后需重新提供。</p>{% endif %}
+    <p class="text-sm">匿名浏览器仅自动发送 GET/HEAD；表单、JS 和 OpenAPI 声明不会自动执行。</p>
     <ul class="space-y-2 text-sm text-slate-600">{% for issue in preview.issues %}<li>{{ issue.message }}</li>{% endfor %}</ul>
   </div>
   {% endif %}

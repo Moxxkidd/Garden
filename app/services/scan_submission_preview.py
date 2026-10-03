@@ -67,6 +67,21 @@ def _inspect(session, request: AssessmentStartRequest, settings: Settings) -> Sc
             "invalid_url", "url", "请输入有效 HTTP(S) 地址和端口，且不要在 URL 中嵌入用户名或密码。"
         )
 
+    if options.seed_input:
+        from app.services.discovery_sources import parse_seed_input
+
+        try:
+            parse_seed_input(options.seed_input, options.seed_format, base_url=normalized)
+        except (GardenError, ValueError):
+            error("seed_input_invalid", "seed_input", "导入格式、条目或大小无效，请检查输入。")
+    if request.mode.value != "quick" and (
+        options.collection_mode != "http"
+        or options.sitemap_enabled
+        or options.js_enabled
+        or options.seed_input
+    ):
+        error("discovery_mode_invalid", "mode", "增强发现选项目前仅适用于匿名 quick 扫描。")
+
     if request.active_checks_enabled:
         error("active_mode_not_supported", "mode", "此预览仅支持普通扫描与被动认证覆盖。")
 
@@ -223,7 +238,14 @@ def _inspect(session, request: AssessmentStartRequest, settings: Settings) -> Sc
         origin_display=origin_display,
         contexts=contexts,
         issues=issues,
-        effective_options=options,
+        effective_options=options.model_copy(
+            update={
+                "seed_input": "",
+                "sitemap_url": redacted_observed_url(options.sitemap_url)
+                if options.sitemap_url
+                else "",
+            }
+        ),
         can_submit=not any(issue.severity == "error" for issue in issues),
         budget_note=(
             "页面与静态资源上限为采集预算，不是保证采集量。"

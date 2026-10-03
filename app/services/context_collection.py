@@ -156,7 +156,13 @@ class DefaultContextCollectionGateway:
                 )
             )
             if depth < options.max_depth:
-                queue.extend((candidate, depth + 1) for candidate in result.discovered_urls)
+                if not result.discovered_assets:
+                    queue.extend((url, depth + 1) for url in result.discovered_urls)
+                queue.extend(
+                    (candidate.url, depth + 1)
+                    for candidate in result.discovered_assets
+                    if candidate.auto_visit and not candidate.route_url
+                )
         return resources, requests
 
     def _collect_authenticated(
@@ -193,6 +199,7 @@ class DefaultContextCollectionGateway:
                 status_code=page.status_code,
                 title=page.title,
                 attributes={
+                    "discovery": page.discovery_metadata,
                     "content_type": page.content_type or "text/html",
                     "cache_control": page.cache_control,
                     "depth": page.depth,
@@ -222,6 +229,7 @@ class DefaultContextCollectionGateway:
                     status_code=endpoint.status_code,
                     title=None,
                     attributes={
+                        "discovery": endpoint.discovery_metadata,
                         "content_type": endpoint.content_type,
                         "cache_control": endpoint.cache_control,
                         "parameter_names": endpoint.parameters,

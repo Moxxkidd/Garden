@@ -368,7 +368,9 @@ def test_real_pipeline_redacted_asset_urls_do_not_merge_different_query_values(t
         old, new = session.get(ScanRun, before.id), session.get(ScanRun, after.id)
         assert old.assets[0].url == new.assets[0].url
         assert old.findings[0].dedup_key == new.findings[0].dedup_key
-        assert old.evidence[0].source_url != new.evidence[0].source_url
+        assert old.evidence[0].source_url == new.evidence[0].source_url
+        assert "alpha-private" not in old.evidence[0].source_url
+        assert "beta-private" not in new.evidence[0].source_url
     result = service.compare_with_source(after.id)
     assert result.counts == {"new": 0, "persistent": 0, "not_observed": 0, "unknown": 4}
     assert "alpha-private" not in result.model_dump_json()

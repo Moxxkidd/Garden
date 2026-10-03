@@ -134,6 +134,17 @@ class ScanApplicationService:
     def start_assessment(self, request: AssessmentStartRequest) -> AssessmentRunView:
         resolved = self._resolve_options(request.options)
         normalized = self.pipeline.policy.normalize_url(request.url)
+        from app.services.discovery_sources import parse_seed_input
+
+        if resolved.seed_input:
+            parse_seed_input(resolved.seed_input, resolved.seed_format, base_url=normalized)
+        if request.mode != AssessmentMode.QUICK and (
+            resolved.collection_mode != "http"
+            or resolved.sitemap_enabled
+            or resolved.js_enabled
+            or resolved.seed_input
+        ):
+            raise InputValidationError("增强发现选项目前仅适用于匿名 quick 扫描。")
         with self._start_lock, session_scope() as session:
             target_id = self._resolve_target_id(session, request)
             self._validate_source_run(session, request, target_id)
@@ -161,7 +172,14 @@ class ScanApplicationService:
                 status=ScanRunStatus.QUEUED.value,
                 current_stage="queued",
                 progress=0,
-                options=resolved.model_dump(),
+                options={
+                    **resolved.model_dump(exclude={"seed_input", "sitemap_url"}),
+                    "seed_input": "",
+                    "sitemap_url": "",
+                    "_discovery_input_digest": hashlib.sha256(
+                        json.dumps([resolved.seed_input, resolved.sitemap_url]).encode()
+                    ).hexdigest(),
+                },
                 active_checks_enabled=request.active_checks_enabled,
                 authorization_confirmed_at=(
                     datetime.now(timezone.utc) if request.authorization_confirmed else None
@@ -184,6 +202,14 @@ class ScanApplicationService:
                 if existing is not None:
                     return self._assessment_view(existing)
                 raise
+            if resolved.seed_input or resolved.sitemap_url:
+                from app.services.session_storage import SessionStorageService
+
+                run.discovery_input_ref = SessionStorageService().write_request_payload(
+                    run.id,
+                    0,
+                    {"seed_input": resolved.seed_input, "sitemap_url": resolved.sitemap_url},
+                )
             session.add_all(self._assessment_contexts(session, run, request))
             create_assessment_stages(session, run)
             session.commit()
@@ -274,7 +300,26 @@ class ScanApplicationService:
                 "id": run.id,
                 "url": run.input_url,
                 "target_id": run.target_id,
-                "options": {key: run.options.get(key) for key in ScanOptions.model_fields},
+                "options": {
+                    key: run.options.get(
+                        key,
+                        field.default
+                        if key
+                        not in {
+                            "max_pages",
+                            "max_resources",
+                            "max_depth",
+                            "request_timeout_seconds",
+                            "overall_timeout_seconds",
+                            "retry_attempts",
+                            "max_redirects",
+                            "user_agent",
+                        }
+                        else None,
+                    )
+                    for key, field in ScanOptions.model_fields.items()
+                    if key not in {"seed_input", "sitemap_url"}
+                },
             }
 
     def get_scan(self, scan_run_id: int) -> ScanRunView:
@@ -456,6 +501,14 @@ class ScanApplicationService:
             "progress": run.progress,
             "completeness": run.completeness,
             "coverage_gaps": explain_coverage_gaps(run),
+            "discovery_summary": (
+                {
+                    key: run.asset_metadata.get(key)
+                    for key in ["version", "complete", "truncated", "stats"]
+                }
+                if isinstance(run.asset_metadata, dict) and run.asset_metadata.get("version") == 2
+                else None
+            ),
             "retry_count": run.retry_count,
             "report_path": run.report_path,
             "error_code": run.error_code,
