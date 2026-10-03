@@ -36,6 +36,7 @@ class JobStatus(str, Enum):
 class AssessmentMode(str, Enum):
     QUICK = "quick"
     AUTHENTICATED_COVERAGE = "authenticated_coverage"
+    IDENTITY_COLLECTION = "identity_collection"
 
 
 class ContextKind(str, Enum):

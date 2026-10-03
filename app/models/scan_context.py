@@ -5,13 +5,16 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,10 +26,18 @@ class ScanContext(TimestampMixin, Base):
     __tablename__ = "scan_contexts"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('anonymous', 'user', 'admin')",
+            "kind IN ('anonymous', 'user', 'admin', 'identity')",
             name="ck_scan_contexts_kind",
         ),
-        UniqueConstraint("scan_run_id", "kind", name="uq_scan_contexts_run_kind"),
+        UniqueConstraint("scan_run_id", "context_key", name="uq_scan_contexts_run_key"),
+        Index(
+            "uq_scan_contexts_legacy_kind",
+            "scan_run_id",
+            "kind",
+            unique=True,
+            sqlite_where=text("kind != 'identity'"),
+            postgresql_where=text("kind != 'identity'"),
+        ),
         UniqueConstraint("scan_run_id", "id", name="uq_scan_contexts_run_id_id"),
         UniqueConstraint(
             "temporary_secret_ref",
@@ -37,6 +48,14 @@ class ScanContext(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     scan_run_id: Mapped[int] = mapped_column(ForeignKey("scan_runs.id"), index=True)
     kind: Mapped[str] = mapped_column(String(32), index=True)
+    context_key: Mapped[str] = mapped_column(
+        String(120), default=lambda ctx: ctx.get_current_parameters()["kind"]
+    )
+    identity_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    health_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    health_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     credential_profile_id: Mapped[int | None] = mapped_column(
         ForeignKey("credential_profiles.id"), nullable=True, index=True
     )

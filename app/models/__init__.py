@@ -7,11 +7,13 @@ from app.models.credential_profile import CredentialProfile
 from app.models.evidence import Evidence
 from app.models.finding import Finding
 from app.models.finding_retest import FindingRetestRun
+from app.models.identity_checkpoint import IdentityCheckpoint
 from app.models.inventory_annotation import InventoryAnnotation
 from app.models.inventory_endpoint import InventoryEndpoint
 from app.models.inventory_page import InventoryPage
 from app.models.inventory_parameter import InventoryParameter
 from app.models.inventory_run import InventoryRun
+from app.models.login_attempt import LoginAttempt
 from app.models.replay_execution import ReplayExecution
 from app.models.scan_context import ScanContext
 from app.models.scan_job import ScanJob
@@ -27,6 +29,8 @@ from app.models.scan_run import (
 from app.models.target import Target
 
 __all__ = [
+    "IdentityCheckpoint",
+    "LoginAttempt",
     "AuditEvent",
     "AuthSession",
     "CoverageDifference",
