@@ -615,6 +615,7 @@ class ScanPipeline:
         result = self.gateway.fetch(
             run.normalized_url,
             options,
+            expected_origin=self._origin(run.normalized_url),
             before_request=lambda: self._guard_network_request(session, run.id, deadline),
         )
         self._check_interrupted(session, run.id)
@@ -631,6 +632,12 @@ class ScanPipeline:
         options: ScanOptions,
         deadline: float,
     ):
+        if options.collection_mode == "browser":
+            from app.services.discovery_scan import ScanDiscovery
+
+            return ScanDiscovery(
+                self, session, run, options, deadline, run.normalized_url
+            ).browser_collect()
         discovery_summary = "Entry URL was not fully fetched before the deadline."
         try:
             entry, discovery_summary = self._discover(session, run, options, deadline)
@@ -652,6 +659,17 @@ class ScanPipeline:
         options: ScanOptions,
         deadline: float,
     ):
+        from app.services.discovery_scan import ScanDiscovery
+
+        discovery_state = ScanDiscovery(self, session, run, options, deadline, entry.final_url)
+        discovery_state.ledger.add(
+            DiscoveredAsset(url=entry.final_url, asset_type="page", source_kind="entry")
+        )
+        for _ in range(entry.attempts):
+            discovery_state.ledger.attempted(entry.final_url)
+        discovery_state.ledger.observed(
+            entry.final_url, aliases=[entry.requested_url, *entry.redirects]
+        )
         page_queue: list[tuple[DiscoveredAsset, int]] = []
         resource_queue: list[tuple[DiscoveredAsset, int]] = []
         seen = {entry.final_url, run.normalized_url}
@@ -667,27 +685,49 @@ class ScanPipeline:
         skipped_external: set[str] = set()
         depth_limited: list[DiscoveredAsset] = []
 
+        queued = set(seen)
+
         def enqueue(discovery: DiscoveredAsset, depth: int) -> None:
+            accepted = discovery_state.ledger.add(discovery)
+            if not accepted:
+                return
             if self._origin(discovery.url) != origin:
                 skipped_external.add(discovery.url)
                 return
             candidates.setdefault(discovery.url, discovery)
-            if discovery.url in seen:
+            if discovery.url in queued:
                 return
+            queued.add(discovery.url)
             if depth > options.max_depth:
                 depth_limited.append(discovery)
+                key = discovery_state.ledger.key(
+                    discovery.url, discovery.method, discovery.route_url
+                )
+                discovery_state.ledger.items[key]["reason"] = "max_depth"
                 return
             target = page_queue if discovery.asset_type == "page" else resource_queue
             target.append((discovery, depth))
 
         for discovery in self._discoveries(entry):
             enqueue(discovery, 1)
+        for discovery in discovery_state.extra_sources():
+            enqueue(discovery, 1)
+        discovery_state.save()
+        session.commit()
+
+        active_url = entry.final_url
+
+        def attempt(target):
+            requested.add(target)
+            discovery_state.ledger.attempted(active_url)
+            discovery_state.save()
 
         while page_queue and page_requests < options.max_pages:
             self._check_interrupted(session, run.id)
             self._check_deadline(deadline)
             discovery, depth = page_queue.pop(0)
             url = discovery.url
+            active_url = url
             if url in seen:
                 continue
             seen.add(url)
@@ -698,7 +738,7 @@ class ScanPipeline:
                     url,
                     options,
                     expected_origin=origin,
-                    on_request_attempt=requested.add,
+                    on_request_attempt=attempt,
                     before_request=lambda: self._guard_network_request(session, run.id, deadline),
                 )
                 self._check_interrupted(session, run.id)
@@ -714,15 +754,24 @@ class ScanPipeline:
                     retryable=retryable,
                     attempt=attempts,
                 )
+                discovery_state.save()
                 session.commit()
                 self._check_deadline(deadline)
                 continue
             self._persist_fetch(
                 session, run, result, depth=depth, asset_type_hint=discovery.asset_type
             )
+            discovery_state.ledger.observed(
+                url, response_url=result.final_url, aliases=result.redirects
+            )
+            seen.update([result.final_url, *result.redirects])
+            requested.update([result.final_url, *result.redirects])
             page_count += 1
             for child in self._discoveries(result):
                 enqueue(child, depth + 1)
+            for child in discovery_state.script_sources(result):
+                enqueue(child, depth + 1)
+            discovery_state.save()
             session.commit()
             self._check_deadline(deadline)
 
@@ -731,6 +780,7 @@ class ScanPipeline:
             self._check_deadline(deadline)
             discovery, depth = resource_queue.pop(0)
             url = discovery.url
+            active_url = url
             if url in seen:
                 continue
             seen.add(url)
@@ -741,7 +791,7 @@ class ScanPipeline:
                     url,
                     options,
                     expected_origin=origin,
-                    on_request_attempt=requested.add,
+                    on_request_attempt=attempt,
                     before_request=lambda: self._guard_network_request(session, run.id, deadline),
                 )
                 self._check_interrupted(session, run.id)
@@ -757,25 +807,32 @@ class ScanPipeline:
                     retryable=retryable,
                     attempt=attempts,
                 )
+                discovery_state.save()
                 session.commit()
                 self._check_deadline(deadline)
                 continue
             self._persist_fetch(
                 session, run, result, depth=depth, asset_type_hint=discovery.asset_type
             )
+            discovery_state.ledger.observed(
+                url, response_url=result.final_url, aliases=result.redirects
+            )
+            seen.update([result.final_url, *result.redirects])
+            requested.update([result.final_url, *result.redirects])
             resource_count += 1
+            for child in discovery_state.script_sources(result):
+                enqueue(child, depth + 1)
+            discovery_state.save()
             session.commit()
             self._check_deadline(deadline)
 
         uncovered = [item for url, item in candidates.items() if url not in requested]
-        run.asset_metadata = {
-            "version": 1,
-            "candidates": [
-                {"url": redacted_observed_url(item.url), "asset_type": item.asset_type}
-                for item in uncovered
-            ],
-        }
-        session.flush([run])
+        for item in discovery_state.ledger.items.values():
+            if item["reason"] == "pending":
+                item["reason"] = "max_pages" if item["asset_type"] == "page" else "max_resources"
+        if discovery_state.ledger.truncated:
+            discovery_state.warning("候选数量上限")
+        discovery_state.save(complete=True)
         coverage_details = capture_budget_gaps(
             uncovered, page_queue, resource_queue, depth_limited, options
         )
@@ -888,12 +945,13 @@ class ScanPipeline:
         )
         if context is None:
             raise RuntimeError("Missing persisted anonymous quick-scan context.")
-        identity_key = canonical_asset_identity("GET", result.final_url)
+        identity_key = canonical_asset_identity(result.method, result.final_url)
         asset = session.scalar(
             select(ScanAsset).where(
                 ScanAsset.scan_run_id == run.id,
                 ScanAsset.context_id == context.id,
                 ScanAsset.identity_key == identity_key,
+                ScanAsset.method == result.method,
                 ScanAsset.url == redacted_observed_url(result.final_url),
             )
         )
@@ -956,7 +1014,7 @@ class ScanPipeline:
                 identity_key=identity_key,
                 asset_type=asset_type,
                 url=redacted_observed_url(result.final_url),
-                method="GET",
+                method=result.method,
                 status_code=result.status_code,
                 title=result.title,
                 attributes=attributes,
@@ -964,10 +1022,14 @@ class ScanPipeline:
             )
             session.add(asset)
             session.flush()
+        else:
+            asset.status_code = result.status_code
+            asset.attributes = {**(asset.attributes or {}), **attributes}
         headers = self.redaction_service.redact_http_headers(result.headers)
         resource_summary = None
         if asset_type in {"stylesheet", "script", "image", "document"}:
             resource_summary = {
+                "version_hint_schema": 2,
                 "size_bytes": result.body_size_bytes,
                 "sha256": result.body_sha256,
                 "truncated": result.body_truncated,
@@ -996,8 +1058,11 @@ class ScanPipeline:
                 scan_run_id=run.id,
                 asset_id=asset.id,
                 evidence_type="http_response",
-                title=f"GET {result.final_url} -> HTTP {result.status_code}",
-                source_url=result.final_url,
+                title=(
+                    f"{result.method} {redacted_observed_url(result.final_url)}"
+                    f" -> HTTP {result.status_code}"
+                ),
+                source_url=redacted_observed_url(result.final_url),
                 summary=(
                     f"HTTP {result.status_code}; content-type={result.content_type or '-'}; "
                     f"elapsed={result.elapsed_ms}ms; attempts={result.attempts}."

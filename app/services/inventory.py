@@ -263,6 +263,9 @@ class InventoryBuildService:
         inventory_run: InventoryRun,
         observed_page: ObservedPage,
     ) -> InventoryPage:
+        from app.services.asset_catalog import safe_discovery
+
+        discovery = safe_discovery(observed_page.discovery_metadata)
         traits = capture_traits(
             observed_page.response_text,
             observed_page.content_type,
@@ -288,11 +291,13 @@ class InventoryBuildService:
                 last_visited_at=observed_page.visited_at,
                 visit_count=1,
                 response_traits=traits,
+                discovery_metadata=discovery,
             )
             session.add(stored_page)
             session.flush()
             return stored_page
         stored_page.response_traits = traits
+        stored_page.discovery_metadata = discovery or stored_page.discovery_metadata
         stored_page.last_visited_at = observed_page.visited_at
         stored_page.visit_count += 1
         stored_page.title = observed_page.title or stored_page.title
@@ -309,6 +314,9 @@ class InventoryBuildService:
         inventory_run: InventoryRun,
         observed_endpoint: ObservedEndpoint,
     ) -> InventoryEndpoint:
+        from app.services.asset_catalog import safe_discovery
+
+        discovery = safe_discovery(observed_endpoint.discovery_metadata)
         traits = capture_traits(
             observed_endpoint.response_text,
             observed_endpoint.content_type,
@@ -341,11 +349,13 @@ class InventoryBuildService:
                 cookie_issue_flags=observed_endpoint.cookie_issue_flags,
                 status_codes_observed=[observed_endpoint.status_code],
                 response_traits=traits,
+                discovery_metadata=discovery,
             )
             session.add(stored_endpoint)
             session.flush()
             return stored_endpoint
         stored_endpoint.response_traits = traits
+        stored_endpoint.discovery_metadata = discovery or stored_endpoint.discovery_metadata
         stored_endpoint.last_seen_at = observed_endpoint.observed_at
         stored_endpoint.request_count += 1
         stored_endpoint.cache_control = (

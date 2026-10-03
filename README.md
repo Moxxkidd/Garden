@@ -203,13 +203,53 @@ garden assets export --source scan --run-id N --format json --output assets.json
 garden assets export --source inventory --run-id N --kind page --format csv --output pages.csv
 ```
 
-API：`GET /api/assets?source=scan&run_id=N`；导出：`GET /api/assets/export?source=scan&run_id=N&format=json`。两者支持相同的 `kind`、`context`、`observation`、`q`、`sort`、`order` 参数；列表另支持 `page` 与 `page_size`（最多 200），导出不受分页影响。`observation` 为 `response_observed` 或 `unknown`；`sort` 为 `id`、`url`、`type` 或 `last_seen`，顺序为 `asc`/`desc`。JSON 当前使用 `schema_version: "1.2"`，新增字段保持兼容。
+API：`GET /api/assets?source=scan&run_id=N`；导出：`GET /api/assets/export?source=scan&run_id=N&format=json`。两者支持相同的 `kind`、`context`、`observation`、`q`、`sort`、`order` 参数；列表另支持 `page` 与 `page_size`（最多 200），导出不受分页影响。`observation` 为 `response_observed` 或 `unknown`；`sort` 为 `id`、`url`、`type` 或 `last_seen`，顺序为 `asc`/`desc`。JSON 当前使用 `schema_version: "1.3"`，新增字段保持兼容。
 
 计数基于实际记录：scan 为该任务的扫描资产数，inventory 为页面数加接口数；不跨身份或任务去重，不能解释为独立业务资产数量。相同脱敏 URL 的不同记录不会合并。运行中的计数可能变化；JSON 附来源任务、覆盖说明和计数说明。
 
 “已有响应”只表示记录了 HTTP 响应，401/403 也保留；缺少状态码时显示未知，不判为无效或安全。旧 inventory 缺少可靠完整性及逐项证据关联时保留未知。来源详情展示原记录 ID 和已关联的扫描请求/证据 ID；原始发现链未记录时不补造。身份标签不表示当前会话可用或实际角色已经验证。
 
 浏览、筛选与导出只读取数据库，不访问目标或会话材料。输出 URL 的查询值脱敏，不导出请求体、Cookie、凭据引用或秘密存储路径；CSV 对公式前缀转义。CLI 导出拒绝覆盖已有文件。现有 `garden inventory export` 保持原有格式；新清单请使用 `garden assets export`。
+
+## v0.5.0：多来源发现，汇入同一资产清单
+
+默认继续使用 HTTP 采集；Web 提交页的「发现选项」和 CLI/API 可以显式开启更多来源。
+
+| 模块 | 作用与边界 |
+| --- | --- |
+| HTML 发现 | 解析链接、内嵌页面、资源引用和表单 action；表单仅作为候选，不提交。 |
+| Sitemap | 开启后读取同源 `/sitemap.xml` 或指定地址，支持有界索引递归；跨站索引不访问。 |
+| 匿名浏览器 | 执行页面脚本，记录动态请求并发现渲染后的链接；仅允许 GET/HEAD，不加载身份、不点击按钮、不提交表单。 |
+| Hash 路由 | 区分 `#/users` 等前端路由视图，保留脱敏路由；视图本身不伪造 HTTP 状态码，使用 `hash-v1` 归并。 |
+| JS 线索 | 从已取得的脚本文本提取静态 fetch/XHR/axios 地址；复杂表达式不猜测，线索仅列为候选。 |
+| 清单导入 | 接受 UTF-8 URL 列表或 OpenAPI 3 JSON；URL 按同源及预算规则访问，OpenAPI 操作仅作为候选。 |
+
+```bash
+# HTTP + 地图 + 已采集脚本中的静态线索
+garden scan https://authorized.example --sitemap --js
+
+# 显式使用匿名浏览器，限制页面、资源和请求预算
+garden scan https://authorized.example --collection-mode browser \
+  --max-pages 20 --max-resources 80 --max-browser-requests 150 --render-wait-ms 1000
+
+# 导入文件；原文不进入公开输出
+garden scan https://authorized.example --seed-file urls.txt --seed-format urls
+garden scan https://authorized.example --seed-file openapi.json --seed-format openapi
+
+# 按来源查看已有响应或未请求候选
+garden assets list --source scan --run-id N --source-kind url_import
+garden assets list --source scan --run-id N --view candidates --source-kind openapi_import
+```
+
+资产页可按「发现来源」筛选，记录详情、JSON/CSV 保留来源链和候选原因。CLI、详情页和 Markdown 报告展示发现数、新候选、重复、请求尝试、响应观察与跳过数；请求归因于首次入队来源，统计不是站点发现率，也不能证明发现了全部资产。任务执行结束与覆盖完整性仍分别展示。来源列表最多保留 20 条，截断后的精确总量为未知。
+
+候选默认上限 2000，最大 10000；地图默认最多 10 份、递归深度 2；浏览器默认最多 300 次请求、每页等待 1000 毫秒。输入最多 1 MiB、1000 个条目；只支持 URL 文本和 OpenAPI 3 JSON，不支持 YAML、外部 `$ref`、压缩地图或 JS 执行求值。预算耗尽和来源读取失败会保留已知结果及不完整说明。新的浏览器、地图、JS 和导入选项当前用于匿名扫描；已有认证采集流程继续保留。
+
+导入原文和地图地址保存在受保护存储，公开结果隐藏查询参数值。预览临时保留输入 15 分钟，返回修改无需回填原文；沿用历史任务配置时需重新提供输入。浏览器会执行站点自身脚本，请只扫描你已获授权的目标。
+
+本地验收示例：入口包含一个 `/next` 链接和一个 POST `/submit` 表单，再导入一个带查询参数的 `/seed` URL。真实浏览器提交后得到 **3 条已有响应、1 条未请求表单候选**；按 `url_import` 筛选与导出均为 **1 条记录**。报告、清单及预览均不包含导入的查询值。1280px 桌面与 390px 窄屏、启用与禁用 JavaScript 的提交流程均有回归测试。
+
+**升级**：执行 `garden db upgrade` 应用迁移 `0007`，新增可空的私有输入引用和 inventory 来源字段；历史记录来源保持未知。当前资产导出 schema 为 `1.3`，保留原有字段。降级会移除新增元数据，应先备份数据库。
 
 ## v0.4.2：有效性线索与候选分离
 
@@ -247,7 +287,7 @@ garden assets export --source inventory --run-id N --view grouped --format csv -
 - 新 inventory 接口从已捕获请求 URL 保留参数名及重复次数，隐藏精确值；旧记录不会被猜测性回填。
 - **历史限制**：未保存版本化指纹的记录（含 quick scan 与 legacy inventory）不能还原精确请求变体数，显示未知，并保留可追溯的记录。已被旧采集器丢弃的参数差异不能从脱敏 URL 还原。未知不等于零，也不等于没有差异。
 
-API 示例：`GET /api/assets?source=scan&run_id=N&view=grouped`。归并 JSON 当前使用 schema `1.2`，包含 `rule_version`、`observations`、`variants` 和 `matched_observation_count`；CSV 的嵌套字段保存为 JSON 单元格。导出包含全部匹配组及其观察，不受分页影响。筛选先作用于原始观察，组内只包含匹配观察；身份筛选不会伪造其他身份的缺席。
+API 示例：`GET /api/assets?source=scan&run_id=N&view=grouped`。归并 JSON 当前使用 schema `1.3`，包含 `rule_version`、`observations`、`variants` 和 `matched_observation_count`；CSV 的嵌套字段保存为 JSON 单元格。导出包含全部匹配组及其观察，不受分页影响。筛选先作用于原始观察，组内只包含匹配观察；身份筛选不会伪造其他身份的缺席。
 
 归并 ID 仅在来源任务和规则版本范围内使用，不是跨任务项目资产库主键。普通清单、JSON/CSV 不输出请求指纹、参数精确值、请求体或受保护材料路径，也不会读取受保护材料。
 

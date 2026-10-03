@@ -17,15 +17,18 @@ from app.models.scan_run import ScanRun
 from app.schemas.assets import AssetPage, AssetQuery
 from app.services.asset_catalog import KINDS, OBSERVATIONS, AssetCatalogService, safe_url
 from app.services.asset_export import export_assets
+from app.services.discovery import SOURCE_KINDS
 
 router = APIRouter(tags=["assets"])
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[2] / "templates"))
+
+templates.env.globals["source_kinds"] = SOURCE_KINDS
 service = AssetCatalogService()
 _HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
 
 
 def parse_asset_query(**values) -> AssetQuery:
-    for name in ("kind", "context", "observation", "validity"):
+    for name in ("kind", "context", "observation", "validity", "source_kind"):
         if values.get(name) == "":
             values[name] = None
     try:
@@ -40,6 +43,7 @@ def asset_query(
     run_id: int = Query(gt=0),
     view: str = "records",
     validity: str | None = None,
+    source_kind: str | None = None,
     kind: str | None = None,
     context: str | None = None,
     observation: str | None = None,
@@ -54,6 +58,7 @@ def asset_query(
         run_id=run_id,
         view=view,
         validity=validity,
+        source_kind=source_kind,
         kind=kind,
         context=context,
         observation=observation,

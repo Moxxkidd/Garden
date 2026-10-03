@@ -54,6 +54,7 @@ class ScanRun(TimestampMixin, Base):
     current_stage: Mapped[str] = mapped_column(String(40), index=True, default="queued")
     progress: Mapped[int] = mapped_column(Integer, default=0)
     options: Mapped[dict[str, object]] = mapped_column(MutableDict.as_mutable(JSON), default=dict)
+    discovery_input_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     asset_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     active_checks_enabled: Mapped[bool] = mapped_column(Boolean, default=False)

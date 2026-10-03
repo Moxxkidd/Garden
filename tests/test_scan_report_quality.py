@@ -164,3 +164,19 @@ def test_report_version_values_ignores_malformed_optional_metadata() -> None:
         )
         == []
     )
+
+
+def test_validated_query_version_survives_url_redaction():
+    summary = {
+        "version_hint_schema": 2,
+        "version_hint_details": [
+            {"value": "1.2.3", "source": "query", "detail": "v"},
+            {"value": "9.9.9", "source": "query", "detail": "token"},
+        ],
+    }
+    assert report_version_values(
+        "https://example.test/app.js?v=[REDACTED]&token=[REDACTED]", summary
+    ) == ["1.2.3"]
+    assert report_version_values("https://example.test/app.js", summary) == []
+    summary.pop("version_hint_schema")
+    assert report_version_values("https://example.test/app.js?v=[REDACTED]", summary) == []

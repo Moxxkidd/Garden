@@ -599,7 +599,7 @@ def test_version_hints_require_context_and_include_version_query(tmp_path) -> No
         evidence = session.scalar(
             select(ScanEvidence).where(
                 ScanEvidence.scan_run_id == scan.id,
-                ScanEvidence.source_url.like("%/style.css?v=1.0.0"),
+                ScanEvidence.source_url.like("%/style.css?v=[REDACTED]"),
             )
         )
         resource_summary = evidence.data["resource_summary"]
@@ -701,7 +701,7 @@ def test_njau_style_report_keeps_104_raw_findings_and_trusted_versions(tmp_path,
         for item in resource_evidence
         if item.data.get("resource_summary")
     }
-    assert details["http://127.0.0.1/style.css?v=1.0.0"] == [
+    assert details["http://127.0.0.1/style.css?v=[REDACTED]"] == [
         {"value": "1.0.0", "source": "query", "detail": "v"},
         {"value": "2.4.1", "source": "body_marker", "detail": "version"},
     ]

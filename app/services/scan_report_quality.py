@@ -146,6 +146,12 @@ def report_version_values(
                 and bool(detail)
                 and (
                     (source == "body_marker" and detail in _TRUSTED_BODY_DETAILS)
+                    or (
+                        resource_summary.get("version_hint_schema") == 2
+                        and source == "query"
+                        and detail in _VERSION_QUERY_KEYS
+                        and "[REDACTED]" in parse_qs(urlparse(source_url).query).get(detail, [])
+                    )
                     or (value, source, detail) in url_provenance
                 )
                 and value not in values

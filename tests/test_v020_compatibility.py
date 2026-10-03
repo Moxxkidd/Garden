@@ -30,7 +30,18 @@ def test_cli_scan_flags_and_defaults_are_unchanged() -> None:
         "--ui-port",
     ):
         assert flag in help_output
-    assert ScanOptions().model_dump() == {
+    assert ScanOptions().model_dump(
+        include=[
+            "max_depth",
+            "max_pages",
+            "max_redirects",
+            "max_resources",
+            "overall_timeout_seconds",
+            "request_timeout_seconds",
+            "retry_attempts",
+            "user_agent",
+        ]
+    ) == {
         "max_pages": 50,
         "max_resources": 200,
         "max_depth": 2,
@@ -75,6 +86,7 @@ def test_scan_api_schema_preserves_old_fields_and_adds_optional_presentation_fie
         "finding_group_count",
         "completeness",
         "coverage_gaps",
+        "discovery_summary",
     }
     assert ScanRunView.model_fields["coverage_gaps"].default is None
     assert not ScanRunView.model_fields["coverage_gaps"].is_required()

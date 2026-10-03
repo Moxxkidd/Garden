@@ -29,6 +29,7 @@
   </section>
   <form action="/assets" method="get" class="grid gap-4 rounded-3xl border border-black/10 bg-white p-6 sm:grid-cols-2 lg:grid-cols-4">
     <input type="hidden" name="source" value="{{ query.source }}"><input type="hidden" name="run_id" value="{{ query.run_id }}">
+    <label class="text-sm">发现来源<select aria-label="发现来源" name="source_kind" class="mt-1 block w-full rounded-xl border p-2"><option value="">全部来源</option>{% for code,label in source_kinds.items() %}<option value="{{code}}" {% if query.source_kind == code %}selected{% endif %}>{{label}}</option>{% endfor %}</select></label>
     <label class="text-sm">清单视图<select aria-label="清单视图" name="view" class="mt-1 block w-full rounded-xl border p-2"><option value="records" {% if query.view == 'records' %}selected{% endif %}>原始记录</option><option value="grouped" {% if query.view == 'grouped' %}selected{% endif %}>归并资产</option><option value="candidates" {% if query.view == 'candidates' %}selected{% endif %}>候选（未请求）</option></select></label>
     <label class="text-sm">搜索脱敏 URL / 标题 / 方法<input class="mt-1 block w-full rounded-xl border p-2" name="q" value="{{ query.q }}" maxlength="200"></label>
     <label class="text-sm">类型<select aria-label="类型" class="mt-1 block w-full rounded-xl border p-2" name="kind"><option value="">全部类型</option>{% for key, label in kinds.items() %}<option value="{{ key }}" {% if query.kind == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
@@ -54,7 +55,7 @@
         <td class="p-4">{{ item.status_codes|join(', ') if item.status_codes else '未知' }}<p class="mt-1">{{ '候选（未请求）' if item.validity.verification == 'candidate' else observations[item.observation] }}</p></td>
         <td class="p-4"><div class="min-w-48 max-w-md">{% with validity=item.validity %}{% include 'asset_validity.html' %}{% endwith %}</div></td>
         <td class="p-4 whitespace-nowrap">{{ item.last_seen.strftime('%Y-%m-%d %H:%M') if item.last_seen else '未知' }}<p class="mt-1 text-xs">UTC</p></td>
-        <td class="p-4"><details><summary class="cursor-pointer whitespace-nowrap">查看来源</summary><div class="mt-2 min-w-48 max-w-xs space-y-2"><p>{{ item.provenance_note }}</p><p>{{ item.record_type }} #{{ item.record_id }}</p><p>请求记录数：{{ item.request_count if item.request_count is not none else '未知' }}</p><p>请求 ID：{{ item.request_ids|join(', ') if item.request_ids else '未记录' }}</p><p>证据 ID：{{ item.evidence_ids|join(', ') if item.evidence_ids else '未记录' }}</p><a class="inline-block underline" href="{{ item.source_url }}">查看原任务与证据</a></div></details></td>
+        <td class="p-4"><details><summary class="cursor-pointer whitespace-nowrap">查看来源</summary><div class="mt-2 min-w-48 max-w-xs space-y-2"><p>{{ item.provenance_note }}</p>{% include "asset_discovery.html" %}<p>{{ item.record_type }} #{{ item.record_id }}</p><p>请求记录数：{{ item.request_count if item.request_count is not none else '未知' }}</p><p>请求 ID：{{ item.request_ids|join(', ') if item.request_ids else '未记录' }}</p><p>证据 ID：{{ item.evidence_ids|join(', ') if item.evidence_ids else '未记录' }}</p><a class="inline-block underline" href="{{ item.source_url }}">查看原任务与证据</a></div></details></td>
       </tr>{% else %}<tr><td colspan="7" class="p-8 text-center">没有匹配记录；不代表目标没有资产。请检查筛选、页码与覆盖情况。</td></tr>{% endfor %}</tbody>
     </table></div>
     {% endif %}

@@ -23,6 +23,7 @@ from app.schemas.assets import (
     AssetValidity,
 )
 from app.services.coverage_identity import redacted_observed_url
+from app.services.discovery import SOURCE_KINDS, safe_route
 from app.services.scan_result_presentation import coverage_summary
 
 KINDS = {"page": "页面", "endpoint": "接口", "static": "静态资源", "file": "文件", "other": "其他"}
@@ -70,6 +71,35 @@ def _site(url: str) -> str | None:
     return f"{parsed.scheme}://{parsed.netloc}" if parsed.netloc else None
 
 
+def safe_discovery(value):
+    if not isinstance(value, dict) or value.get("version") != 1:
+        return None
+    sources = value.get("sources", [])
+    if not isinstance(sources, list):
+        return None
+    cleaned = [
+        {
+            "kind": source.get("kind") if source.get("kind") in SOURCE_KINDS else "unknown",
+            "url": safe_url(source.get("url")) if source.get("url") else None,
+            "index": source.get("index") if type(source.get("index")) is int else None,
+        }
+        for source in sources[:20]
+        if isinstance(source, dict)
+    ]
+    return {
+        "version": 1,
+        "sources": cleaned,
+        "source_count": (
+            None
+            if value.get("truncated") or value.get("sources_truncated") or len(sources) > 20
+            else value.get("source_count", len(cleaned))
+        ),
+        "truncated": bool(
+            value.get("truncated") or value.get("sources_truncated") or len(sources) > 20
+        ),
+    }
+
+
 class AssetCatalogService:
     """One source run per query; no network, mutation or protected-payload reads."""
 
@@ -89,7 +119,7 @@ class AssetCatalogService:
             metadata = session.get(ScanRun, query.run_id).asset_metadata
             if (
                 isinstance(metadata, dict)
-                and metadata.get("version") == 1
+                and metadata.get("version") in {1, 2}
                 and isinstance(metadata.get("candidates"), list)
             ):
                 candidate_count = len(metadata["candidates"])
@@ -113,6 +143,16 @@ class AssetCatalogService:
             r
             for r in rows
             if (query.kind is None or r.kind == query.kind)
+            and (
+                query.source_kind is None
+                or (
+                    any(
+                        source.get("kind") == query.source_kind
+                        for source in (r.discovery or {}).get("sources", [])
+                    )
+                    or (query.source_kind == "unknown" and not r.discovery)
+                )
+            )
             and (query.context is None or r.context == query.context)
             and (query.observation is None or r.observation == query.observation)
             and (
@@ -256,6 +296,8 @@ class AssetCatalogService:
             requests = sorted(request_ids[asset.id])
             rows.append(
                 AssetRecord(
+                    discovery=safe_discovery(attrs.get("discovery")),
+                    route_url=safe_route(attrs.get("route_url")),
                     asset_id=f"scan:{run_id}:asset:{asset.id}",
                     record_id=asset.id,
                     record_type="scan_asset",
@@ -359,6 +401,7 @@ class AssetCatalogService:
                 )
                 rows.append(
                     AssetRecord(
+                        discovery=safe_discovery(record.discovery_metadata),
                         asset_id=f"inventory:{run_id}:{kind}:{record.id}",
                         record_id=record.id,
                         record_type=f"inventory_{kind}",
@@ -397,7 +440,7 @@ class AssetCatalogService:
             return []
         run = session.get(ScanRun, query.run_id)
         metadata = run.asset_metadata
-        if not isinstance(metadata, dict) or metadata.get("version") != 1:
+        if not isinstance(metadata, dict) or metadata.get("version") not in {1, 2}:
             return []
         candidates = metadata.get("candidates")
         if not isinstance(candidates, list):
@@ -416,7 +459,10 @@ class AssetCatalogService:
                     original_type=safe_text(candidate.get("asset_type")) or "unknown",
                     url=url,
                     site=_site(url),
-                    method=None,
+                    method=safe_text(candidate.get("method")),
+                    discovery=safe_discovery({"version": 1, **candidate}),
+                    route_url=safe_route(candidate.get("route_url")),
+                    candidate_reason=safe_text(candidate.get("reason")),
                     status_codes=[],
                     observation="unknown",
                     context="anonymous",

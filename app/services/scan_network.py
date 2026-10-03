@@ -392,31 +392,10 @@ class HttpScanGateway:
     ) -> tuple[str | None, list[DiscoveredAsset]]:
         if "html" not in (content_type or "").lower():
             return None, []
-        parser = _HTMLMetadataParser()
-        try:
-            parser.feed(text)
-        except Exception:
-            return None, []
-        title = " ".join(part for part in parser.title_parts if part).strip() or None
-        normalized: list[DiscoveredAsset] = []
-        seen: set[str] = set()
-        for candidate, hinted_type in parser.links:
-            joined = urljoin(base_url, candidate)
-            parsed = urlparse(joined)
-            if parsed.scheme not in {"http", "https"}:
-                continue
-            value = urlunparse(
-                (parsed.scheme, parsed.netloc, parsed.path or "/", "", parsed.query, "")
-            )
-            if value not in seen:
-                seen.add(value)
-                normalized.append(
-                    DiscoveredAsset(
-                        url=value,
-                        asset_type=classify_asset_type(value, hint=hinted_type),
-                    )
-                )
-        return title, normalized
+        from app.services.discovery_html import parse_html
+
+        title, items = parse_html(base_url, text, limit=10001)
+        return title, [DiscoveredAsset.model_validate(item) for item in items]
 
     def _normalize_headers(self, headers: httpx.Headers) -> dict[str, str]:
         normalized: dict[str, str] = {}
