@@ -39,6 +39,8 @@ class BrowserDiscovery:
         response_candidates=None,
         before_send=None,
         on_checkpoint=None,
+        allowed_urls=None,
+        recovery_work=None,
     ) -> dict:
         from playwright.sync_api import Error as PlaywrightError
         from playwright.sync_api import sync_playwright
@@ -48,8 +50,9 @@ class BrowserDiscovery:
         attempts = resources = candidate_count = document_requests = 0
         stopped: str | None = None
         errors: list[Exception] = []
-        queue = deque([(self._route_url(start_url), 0)])
-        queued = {queue[0][0]}
+        queue = deque([(self._route_url(start_url), 0, "GET")])
+        queued = {(queue[0][0], "GET")}
+        document_method = "GET"
         route_window: str | None = None
         pages = 0
         request_routes: dict[object, str | None] = {}
@@ -79,7 +82,9 @@ class BrowserDiscovery:
                 self.guard.ensure_allowed(base, normalized)
             except (TargetPolicyError, InputValidationError, ValueError):
                 return
-            if normalized in queued:
+            if allowed_urls is not None and normalized not in allowed_urls:
+                return
+            if (normalized, "GET") in queued:
                 return
             if depth > options.max_depth:
                 stopped = stopped or "max_depth"
@@ -87,11 +92,17 @@ class BrowserDiscovery:
             if len(queued) >= options.max_candidates:
                 stopped = stopped or "max_candidates"
                 return
-            queued.add(normalized)
-            queue.append((normalized, depth))
+            queued.add((normalized, "GET"))
+            queue.append((normalized, depth, "GET"))
 
         for seed in seed_urls or []:
             enqueue(seed, 0)
+
+        if recovery_work:
+            queue = deque(
+                (self._route_url(item["url"]), 0, item["method"]) for item in recovery_work
+            )
+            queued = {(url, method) for url, _, method in queue}
 
         with sync_playwright() as playwright:
             try:
@@ -132,6 +143,8 @@ class BrowserDiscovery:
                     request = event["request"]
                     url, method = request["url"], request["method"].upper()
                     kind = event.get("resourceType", "")
+                    if recovery_work and kind == "Document" and route_window:
+                        method = document_method
                     previous = event.get("redirectedRequestId")
                     redirects = redirect_depths.get(previous, 0) + 1 if previous else 0
                     redirect_depths[event["requestId"]] = redirects
@@ -140,7 +153,11 @@ class BrowserDiscovery:
                     try:
                         check()
                         self.guard.ensure_allowed(base, url)
-                        if redirects > options.max_redirects:
+                        if allowed_urls is not None and self.policy.normalize_url(url) not in {
+                            self.policy.normalize_url(x) for x in allowed_urls
+                        }:
+                            allowed, reason = False, "outside_recovery_scope"
+                        elif redirects > options.max_redirects:
                             allowed, reason = False, "max_redirects"
                             stopped = stopped or reason
                         elif method not in {"GET", "HEAD"}:
@@ -186,7 +203,10 @@ class BrowserDiscovery:
                                 document_requests += 1
                             if kind != "Document":
                                 resources += 1
-                            cdp.send("Fetch.continueRequest", {"requestId": event["requestId"]})
+                            cdp.send(
+                                "Fetch.continueRequest",
+                                {"requestId": event["requestId"], "method": method},
+                            )
                         else:
                             cdp.send(
                                 "Fetch.failRequest",
@@ -256,7 +276,11 @@ class BrowserDiscovery:
                         result = FetchResult(
                             requested_url=response.request.url,
                             final_url=response.url,
-                            method=response.request.method,
+                            method=(
+                                document_method
+                                if recovery_work and response.request.resource_type == "document"
+                                else response.request.method
+                            ),
                             route_url=request_routes.get(response.request),
                             status_code=response.status,
                             headers=headers,
@@ -294,7 +318,7 @@ class BrowserDiscovery:
                     if pages >= options.max_pages:
                         stopped = stopped or "max_pages"
                         break
-                    url, depth = queue.popleft()
+                    url, depth, document_method = queue.popleft()
                     route_window = url
                     pages += 1
                     timeout = min(
@@ -324,6 +348,8 @@ class BrowserDiscovery:
                                     "auto_visit": False,
                                 }
                             )
+                        if document_method == "HEAD":
+                            continue
                         _, items = parse_html(
                             page.url, page.content(), limit=options.max_candidates
                         )
@@ -338,7 +364,8 @@ class BrowserDiscovery:
                                 enqueue(item.get("route_url") or item["url"], depth + 1)
                     except PlaywrightError:
                         check()
-                        stopped = stopped or "navigation_error"
+                        if document_method != "HEAD":
+                            stopped = stopped or "navigation_error"
                     finally:
                         route_window = None
                 check()
@@ -347,7 +374,12 @@ class BrowserDiscovery:
                 check()
             finally:
                 if on_checkpoint:
-                    on_checkpoint([{"url": url, "depth": depth} for url, depth in queue])
+                    on_checkpoint(
+                        [
+                            {"url": url, "depth": depth, "method": method}
+                            for url, depth, method in queue
+                        ]
+                    )
                 if context is not None:
                     context.close()
                 browser.close()

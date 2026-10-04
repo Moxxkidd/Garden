@@ -50,7 +50,7 @@ class IdentityCollectionService:
             report_service=report_service or ScanReportService(),
         )
 
-    def start(self, session, request: IdentityCollectionRequest):
+    def start(self, session, request: IdentityCollectionRequest, *, recovery=None):
         request = IdentityCollectionRequest.model_validate(request)
         target = session.get(Target, request.target_id)
         if not target or target.status != "active":
@@ -68,13 +68,18 @@ class IdentityCollectionService:
         if options.seed_input:
             parse_seed_input(options.seed_input, options.seed_format, base_url=entry)
         digest = hashlib.sha256(
-            json.dumps(request.model_dump(), sort_keys=True).encode()
+            json.dumps(
+                {"request": request.model_dump(), "recovery": recovery}, sort_keys=True
+            ).encode()
         ).hexdigest()
         existing = session.scalar(select(ScanRun).where(ScanRun.active_key == digest))
         if existing:
             return existing.id
         run = ScanRun(
             mode="identity_collection",
+            parent_run_id=recovery["parent_run_id"] if recovery else None,
+            recovery_context_id=recovery["context_id"] if recovery else None,
+            recovery_checkpoint_version=recovery["checkpoint_version"] if recovery else None,
             target_id=target.id,
             input_url=redacted_observed_url(entry),
             normalized_url=redacted_observed_url(entry),
@@ -92,6 +97,7 @@ class IdentityCollectionService:
             0,
             {
                 "entry_url": entry,
+                "recovery_work": recovery["work"] if recovery else None,
                 "seed_input": options.seed_input,
                 "sitemap_url": options.sitemap_url,
             },
@@ -251,21 +257,49 @@ class IdentityCollectionService:
             if context.auth_session_id
             else None
         )
+        from app.services.identity_recovery import IdentityRecoveryService
+
+        recovery_service = IdentityRecoveryService(storage=self.storage)
+        pending_work = {}
+        uncertain_work = {}
+        observed_work = set()
+
+        def remember(item):
+            url, method = item.get("route_url") or item["url"], item.get("method", "GET")
+            if (
+                method in {"GET", "HEAD"}
+                and item.get("auto_visit", True)
+                and origin(url) == origin(entry)
+                and (url, method) not in observed_work
+                and len(pending_work) < options.max_candidates
+            ):
+                pending_work[(url, method)] = {"url": url, "method": method}
+
+        remember({"url": entry})
         seeds = []
         for item in (
             parse_seed_input(private.get("seed_input", ""), options.seed_format, base_url=entry)
             if private.get("seed_input")
             else []
         ):
+            remember(item)
             if ledger.add(item) and item["auto_visit"]:
                 seeds.append(item["url"])
+        if private.get("recovery_work"):
+            pending_work.clear()
+            seeds = []
+            for item in private["recovery_work"]:
+                remember(item)
+                if item["url"] != entry:
+                    seeds.append(item["url"])
         maps = {}
         warnings = []
-        if options.sitemap_enabled:
+        if options.sitemap_enabled and not private.get("recovery_work"):
             url = private.get("sitemap_url") or urljoin(entry, "/sitemap.xml")
             self.sessions.guard.ensure_allowed(entry, url)
             maps[url] = 0
             seeds.append(url)
+            remember({"url": url})
             ledger.add(DiscoveredAsset(url=url, asset_type="document", source_kind="sitemap"))
 
         def guard():
@@ -281,6 +315,8 @@ class IdentityCollectionService:
 
         def persist_batch(observations, assessment):
             for evidence_id, asset_id in observations:
+                if assessment in {"confirmed", "auth_diagnostic"}:
+                    uncertain_work.pop((evidence_id, asset_id), None)
                 evidence = session.get(ScanEvidence, evidence_id) if evidence_id else None
                 if evidence:
                     evidence.data = {**evidence.data, "identity_assessment": assessment}
@@ -321,6 +357,10 @@ class IdentityCollectionService:
         def save(complete=False):
             snapshot = dict(context.identity_snapshot or {})
             snapshot["discovery"] = ledger.snapshot(complete=complete)
+            if state:
+                snapshot["checkpoint_version"] = recovery_service.save(
+                    session, context.id, list(pending_work.values()), list(uncertain_work.values())
+                )
             context.identity_snapshot = snapshot
             stats = {}
             candidates = []
@@ -342,6 +382,7 @@ class IdentityCollectionService:
             session.commit()
 
         def candidate(item):
+            remember(item)
             ledger.add(item)
             if item.get("route_observed"):
                 key = ledger.key(item["url"], item.get("method", "GET"), item.get("route_url"))
@@ -375,6 +416,11 @@ class IdentityCollectionService:
                         session.add(asset)
                         session.flush()
                     if health_gate:
+                        uncertain_work[(None, asset.id)] = {
+                            "url": item["route_url"],
+                            "method": "GET",
+                        }
+                        pending_work.pop((item["route_url"], "GET"), None)
                         health_gate.pending.append((None, asset.id))
                     else:
                         asset.attributes = {**asset.attributes, "identity_assessment": "confirmed"}
@@ -433,6 +479,13 @@ class IdentityCollectionService:
                     "identity_assessment": "identity_uncertain" if state else "confirmed",
                 }
             context.request_count += 1
+            observed_work.add((result.final_url, result.method))
+            pending_work.pop((result.final_url, result.method), None)
+            if health_gate:
+                uncertain_work[(evidence.id if evidence else None, asset.id)] = {
+                    "url": result.final_url,
+                    "method": result.method,
+                }
             save()
             if health_gate:
                 health_gate.observe(result, (evidence.id if evidence else None, asset.id))
@@ -495,6 +548,12 @@ class IdentityCollectionService:
                 identity_state=state,
                 response_candidates=sources,
                 before_send=health_gate.before_send if health_gate else None,
+                recovery_work=private.get("recovery_work"),
+                allowed_urls=(
+                    {x["url"] for x in private["recovery_work"]}
+                    if private.get("recovery_work")
+                    else None
+                ),
             )
             if outcome["stopped_reason"]:
                 warnings.append(outcome["stopped_reason"])

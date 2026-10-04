@@ -268,6 +268,7 @@ def test_real_expiry_preserves_confirmed_batches_and_budget(seeded_records, tmp_
 
     fixture = FastAPI()
     active = [True]
+    expire_enabled = [True]
     received = []
 
     @fixture.get("/{path:path}")
@@ -283,7 +284,7 @@ def test_real_expiry_preserves_confirmed_batches_and_budget(seeded_records, tmp_
             return HTMLResponse("Forbidden", status_code=403)
         if path == "start":
             return HTMLResponse("".join(f'<a href="/item/{i}">{i}</a>' for i in range(30)))
-        if path == "item/21":
+        if path == "item/21" and expire_enabled[0]:
             active[0] = False
             return RedirectResponse("/login", status_code=302)
         return HTMLResponse("Protected business data")
@@ -364,3 +365,36 @@ def test_real_expiry_preserves_confirmed_batches_and_budget(seeded_records, tmp_
                     assert "confirmed" in assessments
                     assert "identity_uncertain" in assessments
                     assert "item/29" not in received
+
+        from pathlib import Path
+
+        from app.schemas.identity import RecoveryRequest
+        from app.services.identity_recovery import IdentityRecoveryService
+
+        original_id = run_id
+        original_report = Path(run.report_path).read_bytes()
+        original_context_id = context.id
+        checkpoint_version = context.identity_snapshot["checkpoint_version"]
+        active[0], expire_enabled[0] = True, False
+        recovery = IdentityRecoveryService(storage=states.storage, collection=service)
+        with session_scope() as session:
+            request = RecoveryRequest(
+                source_run_id=original_id,
+                source_context_id=original_context_id,
+                checkpoint_version=checkpoint_version,
+                options=ScanOptions(max_pages=100, max_browser_requests=100, render_wait_ms=0),
+            )
+            preview = recovery.preview(session, request)
+            assert preview.pending_count > 0
+            received.clear()
+            child_id = recovery.start(session, request, preview.preview_token)
+        with session_scope() as session:
+            child = session.get(ScanRun, child_id)
+            assert child.parent_run_id == original_id
+            assert child.recovery_context_id == original_context_id
+            assert child.contexts[0].health_status == "ready", child.contexts[0].error_code
+            assert "item/29" in received
+            assert "item/0" not in received
+            assert (
+                Path(session.get(ScanRun, original_id).report_path).read_bytes() == original_report
+            )

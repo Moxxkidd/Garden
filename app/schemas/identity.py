@@ -85,3 +85,38 @@ class LoginAttemptView(BaseModel):
     expires_at: datetime
     session_id: int | None = None
     reason_code: str | None = None
+
+
+class RecoveryPreview(BaseModel):
+    source_run_id: int
+    source_context_id: int
+    checkpoint_version: int
+    profile_id: int | None
+    pending_count: int
+    uncertain_count: int
+    examples: list[str]
+    known_scope_truncated: bool
+    scope_note: str = "仅补采检查点中已知的未完成或身份不确定请求，不代表全站覆盖。"
+    preview_token: str
+
+
+class IdentityMatrixCell(BaseModel):
+    state: Literal["observed", "identity_uncertain", "not_observed", "unknown"]
+    status_codes: list[int] = Field(default_factory=list)
+    observation_ids: list[str] = Field(default_factory=list)
+    evidence_ids: list[int] = Field(default_factory=list)
+
+
+class IdentityMatrixRow(BaseModel):
+    asset_id: str
+    url: str
+    method: str | None
+    cells: dict[str, IdentityMatrixCell]
+
+
+class IdentityMatrix(BaseModel):
+    contexts: list[IdentityContextView]
+    rows: list[IdentityMatrixRow]
+    confirmed_subject_count: int
+    auth_diagnostic_count: int
+    note: str = "已观察仅说明该身份下取得响应，不代表业务有效。未观察不等于不存在或无权限；覆盖不完整时为未知。"
