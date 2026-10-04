@@ -130,7 +130,13 @@ class IdentitySessionService:
         return (
             profile,
             target,
-            config.model_copy(update={"login_url": login_url, "validate_url": validate_url}),
+            config.model_copy(
+                update={
+                    "login_url": login_url,
+                    "validate_url": validate_url,
+                    "allowed_auth_origins": sorted(allowed - {origin(base)}),
+                }
+            ),
         )
 
     def _verify(self, state: StoredIdentityState, config: ManualLoginRequest, before_request):
@@ -184,14 +190,17 @@ class IdentitySessionService:
         except Error:
             return False
 
-    def import_state(self, session, profile_id, raw_json, verification):
+    def import_state(
+        self, session, profile_id, raw_json, verification, before_request=lambda: None
+    ):
         profile, target, config = self.configuration(session, profile_id, verification)
         state = parse_identity_state(raw_json, origin(target.base_url))
         now = datetime.now(timezone.utc)
-        if not self.verifier(state, config, lambda: None):
+        if not self.verifier(state, config, before_request):
             return SessionHealthView(
                 status="validation_failed", checked_at=now, reason_code="restore_not_verified"
             )
+        before_request()
         record = AuthSession(
             target_id=target.id,
             credential_profile_id=profile.id,
