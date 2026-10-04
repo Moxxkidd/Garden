@@ -6,6 +6,7 @@ import hashlib
 import json
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from urllib.parse import urljoin
 
@@ -18,15 +19,16 @@ from app.models.auth_session import AuthSession
 from app.models.credential_profile import CredentialProfile
 from app.models.scan_context import ScanContext
 from app.models.scan_request import ScanRequest
-from app.models.scan_run import ScanAsset, ScanRun, ScanRunStage
+from app.models.scan_run import ScanAsset, ScanEvidence, ScanRun, ScanRunStage
 from app.models.target import Target
-from app.schemas.identity import IdentityCollectionRequest
+from app.schemas.identity import IdentityCollectionRequest, SessionHealthView
 from app.schemas.scan import DiscoveredAsset
 from app.services.browser_discovery import BrowserDiscovery
 from app.services.coverage_identity import redacted_observed_url
 from app.services.discovery import DiscoveryLedger, origin, safe_route
 from app.services.discovery_js import extract_js
 from app.services.discovery_sources import parse_seed_input, parse_sitemap
+from app.services.identity_health import IdentityHealthGate, IdentityHealthStopped
 from app.services.identity_sessions import IdentitySessionService
 from app.services.scan_application import ThreadedScanDispatcher
 from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
@@ -45,7 +47,7 @@ class IdentityCollectionService:
         self.pipeline = ScanPipeline(
             policy=self.policy,
             gateway=HttpScanGateway(self.policy),
-            report_service=report_service or ScanReportService()
+            report_service=report_service or ScanReportService(),
         )
 
     def start(self, session, request: IdentityCollectionRequest):
@@ -226,14 +228,16 @@ class IdentityCollectionService:
             )
             .order_by(AuthSession.id.desc())
         )
-        health = self.sessions.validate(session, stored.id) if stored else None
-        if health and health.status == "ready":
+        try:
+            if not stored:
+                raise InputValidationError("No restored identity")
+            self.sessions.load_for_collection(session, stored.id)
             context.auth_session_id = stored.id
-            context.status = context.health_status = "ready"
-            context.login_status = context.session_validation_status = "completed"
-            context.health_checked_at = health.checked_at
-        else:
-            context.status, context.health_status = "failed", health.status if health else "unknown"
+            context.status, context.health_status = "ready", "checking"
+            context.login_status = "completed"
+            context.session_validation_status = "pending"
+        except InputValidationError:
+            context.status, context.health_status = "failed", "unknown"
             context.login_status = "failed"
             context.completeness, context.error_code = "incomplete", "identity_not_ready"
             context.error_message = "此身份尚未通过恢复验证，请重新认证后补采。"
@@ -265,13 +269,54 @@ class IdentityCollectionService:
             ledger.add(DiscoveredAsset(url=url, asset_type="document", source_kind="sitemap"))
 
         def guard():
-            self.pipeline._check_interrupted(session, run.id)
-            if time.monotonic() >= deadline:
-                raise OverallScanTimeout("Identity collection deadline exceeded.")
-            if context.auth_session_id:
-                stored = session.get(AuthSession, context.auth_session_id, populate_existing=True)
-                if not stored or stored.revoked_at:
-                    raise RuntimeError("identity_revoked")
+            # Also called from the verifier thread: never share the collector Session.
+            with session_scope() as check_session:
+                self.pipeline._check_interrupted(check_session, run.id)
+                if time.monotonic() >= deadline:
+                    raise OverallScanTimeout("Identity collection deadline exceeded.")
+                if context.auth_session_id:
+                    stored = check_session.get(AuthSession, context.auth_session_id)
+                    if not stored or stored.revoked_at:
+                        raise IdentityHealthStopped("identity_revoked")
+
+        def persist_batch(observations, assessment):
+            for evidence_id, asset_id in observations:
+                evidence = session.get(ScanEvidence, evidence_id) if evidence_id else None
+                if evidence:
+                    evidence.data = {**evidence.data, "identity_assessment": assessment}
+                asset = session.get(ScanAsset, asset_id)
+                # A later failed batch must not erase earlier confirmed observations.
+                prior = (asset.attributes or {}).get("identity_assessment")
+                if prior != "confirmed" or assessment == "confirmed":
+                    asset.attributes = {**asset.attributes, "identity_assessment": assessment}
+            session.commit()
+
+        def validate(admit):
+            session.commit()
+
+            def in_fresh_thread():
+                with session_scope() as validation_session:
+                    return self.sessions.validate(
+                        validation_session, context.auth_session_id, before_request=admit
+                    )
+
+            # Playwright sync contexts cannot be nested on the collector event loop.
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                return executor.submit(in_fresh_thread).result()
+
+        health_gate = None
+        if state:
+            payload = self.storage.read_identity_payload(
+                session.get(AuthSession, context.auth_session_id).storage_ref
+            )
+            health_gate = IdentityHealthGate(
+                session_id=context.auth_session_id,
+                request_budget=options.max_browser_requests,
+                validate=validate,
+                persist=persist_batch,
+                admission=guard,
+                login_url=payload["verification"]["login_url"],
+            )
 
         def save(complete=False):
             snapshot = dict(context.identity_snapshot or {})
@@ -312,24 +357,27 @@ class IdentityCollectionService:
                         )
                     )
                     if not asset:
-                        session.add(
-                            ScanAsset(
-                                scan_run_id=run.id,
-                                context_id=context.id,
-                                identity_key="hash-v1:"
-                                + hashlib.sha256(route.encode()).hexdigest(),
-                                asset_type="page",
-                                method="GET",
-                                url=route,
-                                status_code=None,
-                                discovered_at=datetime.now(timezone.utc),
-                                attributes={
-                                    "route_url": route,
-                                    "identity_assessment": "identity_uncertain",
-                                    "discovery": {"version": 1, "sources": saved["sources"]},
-                                },
-                            )
+                        asset = ScanAsset(
+                            scan_run_id=run.id,
+                            context_id=context.id,
+                            identity_key="hash-v1:" + hashlib.sha256(route.encode()).hexdigest(),
+                            asset_type="page",
+                            method="GET",
+                            url=route,
+                            status_code=None,
+                            discovered_at=datetime.now(timezone.utc),
+                            attributes={
+                                "route_url": route,
+                                "identity_assessment": "identity_uncertain",
+                                "discovery": {"version": 1, "sources": saved["sources"]},
+                            },
                         )
+                        session.add(asset)
+                        session.flush()
+                    if health_gate:
+                        health_gate.pending.append((None, asset.id))
+                    else:
+                        asset.attributes = {**asset.attributes, "identity_assessment": "confirmed"}
 
         def response(result, route):
             key = ledger.key(result.final_url, result.method)
@@ -347,7 +395,11 @@ class IdentityCollectionService:
             item = ledger.items.get(key, {})
             asset.attributes = {
                 **asset.attributes,
-                "identity_assessment": "identity_uncertain" if state else "confirmed",
+                "identity_assessment": (
+                    asset.attributes.get("identity_assessment", "identity_uncertain")
+                    if state
+                    else "confirmed"
+                ),
                 "discovery": {
                     "version": 1,
                     "sources": item.get("sources", []),
@@ -369,8 +421,21 @@ class IdentityCollectionService:
                     protected_storage_ref=ref,
                 )
             )
+            session.flush()
+            evidence = session.scalar(
+                select(ScanEvidence)
+                .where(ScanEvidence.asset_id == asset.id)
+                .order_by(ScanEvidence.id.desc())
+            )
+            if evidence:
+                evidence.data = {
+                    **evidence.data,
+                    "identity_assessment": "identity_uncertain" if state else "confirmed",
+                }
             context.request_count += 1
             save()
+            if health_gate:
+                health_gate.observe(result, (evidence.id if evidence else None, asset.id))
 
         def sources(result):
             found = []
@@ -429,21 +494,13 @@ class IdentityCollectionService:
                 attempt,
                 identity_state=state,
                 response_candidates=sources,
+                before_send=health_gate.before_send if health_gate else None,
             )
             if outcome["stopped_reason"]:
                 warnings.append(outcome["stopped_reason"])
-            healthy = (
-                self.sessions.validate(session, context.auth_session_id).status == "ready"
-                if state
-                else True
-            )
-            for asset in session.scalars(
-                select(ScanAsset).where(ScanAsset.context_id == context.id)
-            ):
-                asset.attributes = {
-                    **asset.attributes,
-                    "identity_assessment": "confirmed" if healthy else "identity_uncertain",
-                }
+            if health_gate:
+                health_gate.finish()
+            healthy = True
             context.asset_count = len(
                 session.scalars(select(ScanAsset).where(ScanAsset.context_id == context.id)).all()
             )
@@ -458,5 +515,31 @@ class IdentityCollectionService:
             for item in ledger.items.values():
                 if item["reason"] == "pending":
                     item["reason"] = outcome["stopped_reason"] or "request_failed"
+        except IdentityHealthStopped as error:
+            if health_gate and not health_gate.reason_code:
+                health_gate.reason_code = str(error)
+                health_gate.health = SessionHealthView(
+                    session_id=context.auth_session_id, status="unknown", reason_code=str(error)
+                )
+            context.status = context.collection_status = "incomplete"
+            context.completeness = "incomplete"
+            context.error_code = health_gate.reason_code or str(error)
+            context.error_message = "身份未能继续确认，未确认批次保留为身份不确定。"
         finally:
+            if health_gate:
+                if health_gate.pending:
+                    persist_batch(health_gate.pending, "identity_uncertain")
+                    health_gate.pending = []
+                context.health_status = health_gate.health.status
+                context.health_checked_at = health_gate.health.checked_at
+                context.session_validation_status = (
+                    "completed" if health_gate.health.status == "ready" else "failed"
+                )
+                snapshot = dict(context.identity_snapshot or {})
+                snapshot["request_attempts"] = health_gate.request_count
+                context.identity_snapshot = snapshot
+            context.asset_count = len(
+                session.scalars(select(ScanAsset).where(ScanAsset.context_id == context.id)).all()
+            )
+            context.finished_at = datetime.now(timezone.utc)
             save(complete=context.completeness == "complete")

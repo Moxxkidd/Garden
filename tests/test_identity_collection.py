@@ -244,6 +244,13 @@ def test_all_discovery_sources_share_identity_and_budget(seeded_records, tmp_pat
         with session_scope() as session:
             run = session.get(ScanRun, run_id)
             assert run.status == "completed", [(c.error_code) for c in run.contexts]
+            route_assets = session.scalars(
+                select(ScanAsset).where(
+                    ScanAsset.scan_run_id == run_id, ScanAsset.status_code.is_(None)
+                )
+            ).all()
+            assert route_assets
+            assert all(a.attributes["identity_assessment"] == "confirmed" for a in route_assets)
             snapshot = run.contexts[0].identity_snapshot["discovery"]
             assert {"html_link", "sitemap", "js_literal", "url_import", "hash_route"} <= set(
                 snapshot["stats"]
@@ -253,3 +260,107 @@ def test_all_discovery_sources_share_identity_and_budget(seeded_records, tmp_pat
         assert "unrequested-api" not in paths
         assert {who for _, who in received} == {"same-account"}
         assert len(received) <= 30
+
+
+def test_real_expiry_preserves_confirmed_batches_and_budget(seeded_records, tmp_path):
+    from fastapi import FastAPI, Request
+    from fastapi.responses import HTMLResponse, RedirectResponse
+
+    fixture = FastAPI()
+    active = [True]
+    received = []
+
+    @fixture.get("/{path:path}")
+    def page(path: str, request: Request):
+        received.append(path)
+        if path == "login":
+            return HTMLResponse("Please sign in")
+        if request.cookies.get("identity") != "valid" or not active[0]:
+            return RedirectResponse("/login", status_code=302)
+        if path == "proof":
+            return HTMLResponse('<b id="identity">Authenticated</b>')
+        if path == "denied":
+            return HTMLResponse("Forbidden", status_code=403)
+        if path == "start":
+            return HTMLResponse("".join(f'<a href="/item/{i}">{i}</a>' for i in range(30)))
+        if path == "item/21":
+            active[0] = False
+            return RedirectResponse("/login", status_code=302)
+        return HTMLResponse("Protected business data")
+
+    with _serve(fixture) as base:
+        states = IdentitySessionService(storage=SessionStorageService(tmp_path / "states"))
+        with session_scope() as session:
+            target = session.get(Target, seeded_records["target"].id)
+            target.base_url = base
+            profile_id = seeded_records["credential"].id
+            health = states.import_state(
+                session,
+                profile_id,
+                json.dumps(
+                    {
+                        "cookies": [
+                            {
+                                "name": "identity",
+                                "value": "valid",
+                                "domain": "127.0.0.1",
+                                "path": "/",
+                            }
+                        ],
+                        "origins": [],
+                    }
+                ),
+                ManualLoginRequest(
+                    profile_id=profile_id,
+                    login_url=base + "/login",
+                    validate_url=base + "/proof",
+                    success_selector="#identity",
+                ),
+            )
+            assert health.status == "ready"
+        service = IdentityCollectionService(
+            sessions=states,
+            dispatcher=InlineScanDispatcher(),
+            report_service=ScanReportService(tmp_path / "reports"),
+        )
+        for entry, budget in [("denied", 30), ("start", 2), ("start", 100)]:
+            received.clear()
+            with session_scope() as session:
+                run_id = service.start(
+                    session,
+                    IdentityCollectionRequest(
+                        url=base + "/" + entry,
+                        target_id=target.id,
+                        profile_ids=[profile_id],
+                        options=ScanOptions(
+                            render_wait_ms=0, max_pages=100, max_browser_requests=budget
+                        ),
+                    ),
+                )
+            with session_scope() as session:
+                run = session.get(ScanRun, run_id)
+                context = run.contexts[0]
+                assets = session.scalars(
+                    select(ScanAsset).where(ScanAsset.context_id == context.id)
+                ).all()
+                assert all(not a.url.endswith("/proof") for a in assets)
+                assert len(received) <= budget
+                if entry == "denied":
+                    assert context.health_status == "ready", context.error_code
+                    assert any(
+                        a.status_code == 403 and a.attributes["identity_assessment"] == "confirmed"
+                        for a in assets
+                    )
+                elif budget == 2:
+                    assert context.error_code == "max_browser_requests"
+                    assert context.completeness == "incomplete"
+                    assert all(
+                        a.attributes["identity_assessment"] == "identity_uncertain" for a in assets
+                    )
+                else:
+                    assert context.health_status != "ready"
+                    assert context.completeness == "incomplete"
+                    assessments = {a.attributes["identity_assessment"] for a in assets}
+                    assert "confirmed" in assessments
+                    assert "identity_uncertain" in assessments
+                    assert "item/29" not in received
