@@ -475,7 +475,7 @@ class ScanApplicationService:
     def _assessment_view(self, run: ScanRun) -> AssessmentRunView:
         context_counts = {kind.value: 0 for kind in ContextKind}
         for context in run.contexts:
-            context_counts[context.kind] += 1
+            context_counts[context.kind] = context_counts.get(context.kind, 0) + 1
         return AssessmentRunView(
             **self._view_data(run),
             active_checks_enabled=run.active_checks_enabled,

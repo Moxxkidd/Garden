@@ -25,7 +25,8 @@
     {% if result.scope.live %}<p class="mt-2 text-amber-800">任务仍在执行，记录及计数可能变化；筛选与导出反映各自读取时的结果。</p>{% endif %}
     <p class="mt-2 text-sm text-slate-600">“已有响应”只代表记录了 HTTP 响应，401/403 也会保留；不代表资源有效或目标安全。身份标签不代表当前登录态有效。</p>
     <div class="mt-4 flex flex-wrap gap-3 text-sm">{% for kind, count in result.counts_by_kind.items() %}<span class="rounded-full bg-stone-100 px-3 py-1">{{ kinds[kind] }} {{ count }}</span>{% endfor %}</div>
-    {% if result.scope.contexts %}<details class="mt-4 text-sm"><summary class="cursor-pointer">身份采集状态</summary><ul class="mt-2">{% for c in result.scope.contexts %}<li>{{ c.kind }} · 采集 {{ c.status }} · 完整性 {{ c.completeness or '未知' }}</li>{% endfor %}</ul></details>{% endif %}
+    {% if result.identity_matrix %}{% include 'identity_matrix.html' %}{% endif %}
+    {% if result.scope.contexts %}<details class="mt-4 text-sm"><summary class="cursor-pointer">身份采集状态</summary><ul class="mt-2">{% for c in result.scope.contexts %}<li>{{ c.display_name or c.kind }} ({{ c.context_key or c.kind }}) · 健康 {{ c.health_status or '未知' }} · 采集 {{ c.status }} · 完整性 {{ c.completeness or '未知' }}</li>{% endfor %}</ul></details>{% endif %}
   </section>
   <form action="/assets" method="get" class="grid gap-4 rounded-3xl border border-black/10 bg-white p-6 sm:grid-cols-2 lg:grid-cols-4">
     <input type="hidden" name="source" value="{{ query.source }}"><input type="hidden" name="run_id" value="{{ query.run_id }}">
@@ -51,7 +52,7 @@
       <tbody>{% for item in result.items %}<tr class="border-t align-top">
         <td class="p-4"><p class="font-medium">{{ item.title or '标题未记录' }}</p><p class="mt-1 min-w-48 max-w-lg break-all">{{ item.url }}</p><p class="mt-1 text-xs text-slate-500">{{ item.asset_id }}</p></td>
         <td class="p-4">{{ kinds[item.kind] }}<p class="mt-1">{{ item.method or '方法未知' }}</p><p class="mt-1 text-xs text-slate-500">{{ item.content_type or '内容类型未知' }}</p></td>
-        <td class="p-4">{{ item.context }}<p class="mt-1 text-xs">完整性：{{ item.context_completeness or '未知' }}</p></td>
+        <td class="p-4">{{ item.display_name or item.context }} ({{ item.context }})<p class="mt-1 text-xs">完整性：{{ item.context_completeness or '未知' }}</p></td>
         <td class="p-4">{{ item.status_codes|join(', ') if item.status_codes else '未知' }}<p class="mt-1">{{ '候选（未请求）' if item.validity.verification == 'candidate' else observations[item.observation] }}</p></td>
         <td class="p-4"><div class="min-w-48 max-w-md">{% with validity=item.validity %}{% include 'asset_validity.html' %}{% endwith %}</div></td>
         <td class="p-4 whitespace-nowrap">{{ item.last_seen.strftime('%Y-%m-%d %H:%M') if item.last_seen else '未知' }}<p class="mt-1 text-xs">UTC</p></td>

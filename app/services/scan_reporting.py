@@ -63,6 +63,39 @@ class ScanReportService:
             if run.mode == AssessmentMode.AUTHENTICATED_COVERAGE.value
             else self._render(run, generated_at)
         )
+        if run.mode == "identity_collection":
+            from app.schemas.assets import AssetQuery
+            from app.services.asset_catalog import AssetCatalogService
+            from app.services.identity_matrix import CELL_LABELS, matrix_summary
+
+            catalog = AssetCatalogService().select(
+                session, AssetQuery(source="scan", run_id=run.id)
+            )
+            matrix = catalog.identity_matrix
+            lines.extend(["", "## 身份可见性矩阵", "", matrix_summary(matrix), "", matrix["note"]])
+            if run.parent_run_id:
+                lines.extend(["", f"补采来源：任务 #{run.parent_run_id}；仅覆盖检查点已知请求。"])
+            columns = matrix["contexts"]
+            lines.extend(
+                [
+                    "",
+                    "| 资产 | "
+                    + " | ".join(
+                        self._cell(c["display_name"] + " (" + c["context_key"] + ")")
+                        for c in columns
+                    )
+                    + " |",
+                    "|---|" + "---|" * len(columns),
+                ]
+            )
+            for row in matrix["rows"]:
+                cells = []
+                for column in columns:
+                    cell = row["cells"][column["context_key"]]
+                    cells.append(
+                        CELL_LABELS[cell["state"]] + " " + ",".join(map(str, cell["status_codes"]))
+                    )
+                lines.append("| " + self._cell(row["url"]) + " | " + " | ".join(cells) + " |")
         metadata = run.asset_metadata
         if isinstance(metadata, dict) and metadata.get("version") == 2:
             from app.services.discovery import SOURCE_KINDS
@@ -619,4 +652,8 @@ class ScanReportService:
         return " ".join(self._clean(value).replace("|", "\\|").split())
 
     def _clean(self, value: str) -> str:
-        return self._control_character_pattern.sub(" ", value)
+        from app.services.asset_catalog import safe_text
+
+        return self._control_character_pattern.sub(
+            " ", safe_text(value, limit=max(500, len(value))) or ""
+        )
