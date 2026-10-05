@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="identity-page space-y-6" hx-boost="false">
+<h1 class="text-3xl font-semibold">身份与资产采集</h1>
+<p>匿名或任一账号均可独立采集；同角色账号保持独立。登录成功不自动开始扫描。</p>
+<section class="rounded-2xl bg-white p-6 space-y-4">
+<h2 class="text-xl font-semibold">1. 建立身份</h2>
+<p>登录窗口打开在 <strong>Garden 所在电脑</strong>，验证码、短信或扫码由你完成。远程部署请导入状态；导入后仍须通过新浏览器恢复验证。</p>
+<form method="post" action="/identities/auth/login" class="grid gap-4 sm:grid-cols-2" autocomplete="off">
+<label>身份<select required name="profile_id" class="block w-full border rounded p-2">{% for p in profiles %}<option value="{{ p.id }}">{{ p.name }} · {{ p.role }} · 目标 #{{ p.target_id }} · 身份 #{{ p.id }}</option>{% endfor %}</select></label>
+<label>登录地址<input required type="url" name="login_url" class="block w-full border rounded p-2"></label>
+<label>登录后的验证地址<input required type="url" name="validate_url" class="block w-full border rounded p-2"></label>
+<label>成功元素选择器<input name="success_selector" placeholder="#account-menu" class="block w-full border rounded p-2"></label>
+<label>或成功文本<input name="success_text" class="block w-full border rounded p-2"></label>
+<label>SSO origin 白名单（空格分隔，可选）<input name="allowed_auth_origins" class="block w-full border rounded p-2"></label>
+<p class="sm:col-span-2">必须提供成功元素或文本。只有 HTTP 200、Cookie 或非登录地址不足以证明登录成功。</p>
+<label class="sm:col-span-2">导入状态 JSON（仅导入时填写，最多 1 MiB）<textarea name="raw_json" rows="3" class="block w-full border rounded p-2" spellcheck="false" autocomplete="off"></textarea></label>
+<button class="rounded bg-slate-900 text-white p-3" type="submit">打开人工登录窗口</button>
+<button class="rounded border p-3" type="submit" formaction="/identities/auth/import">导入并验证状态</button>
+</form>
+<details><summary>使用已有自动登录配置</summary>{% for p in profiles %}<form method="post" action="/identities/profiles/{{ p.id }}/activate" class="mt-2"><button class="border rounded p-2">{{ p.name }} #{{ p.id }}：登录并验证恢复</button></form>{% endfor %}<p>配置须包含成功元素或文本。此操作不启动扫描。</p></details>
+<details><summary>创建新身份档案</summary><form method="post" action="/identities/profiles" class="flex flex-wrap gap-3 mt-3"><label>目标<select name="target_id" required>{% for t in targets %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></label><label>名称<input required name="name" maxlength="120" class="border p-2"></label><label>角色标签<input required name="role" value="user" maxlength="120" class="border p-2"></label><button class="border rounded p-2">创建档案</button></form></details>
+{% if not targets %}<p>暂无目标。先使用 garden target add 建立已授权目标，再创建身份。</p>{% endif %}
+</section>
+<section class="rounded-2xl bg-white p-6 space-y-4"><h2 class="text-xl font-semibold">2. 检查已保存状态</h2>
+{% for s in states %}<div class="flex flex-wrap items-center gap-3 border-b py-2"><span>会话 #{{ s.id }} · 身份 #{{ s.profile_id }} · {{ s.status }}</span><form method="post" action="/identities/sessions/{{ s.id }}/validate"><button class="border rounded px-3 py-1">重新验证</button></form><form method="post" action="/identities/sessions/{{ s.id }}/revoke"><button class="border rounded px-3 py-1">撤销状态</button></form></div>{% else %}<p>尚无已验证状态。匿名采集无需登录。</p>{% endfor %}</section>
+<section class="rounded-2xl bg-white p-6 space-y-4"><h2 class="text-xl font-semibold">3. 预览并开始采集</h2>
+<form method="post" action="/identities/preview" class="grid gap-4">
+<label>目标<select required name="target_id" class="border p-2">{% for t in targets %}<option value="{{ t.id }}">{{ t.name }} #{{ t.id }}</option>{% endfor %}</select></label>
+<label>采集入口<input required type="url" name="url" class="block w-full border rounded p-2"></label>
+<fieldset><legend>选择身份（最多 10 个）</legend><label class="block"><input type="checkbox" name="anonymous" value="1"> 匿名</label>{% for p in profiles %}<label class="block"><input type="checkbox" name="profile_ids" value="{{ p.id }}"> {{ p.name }} · {{ p.role }} · 目标 #{{ p.target_id }} · 身份 #{{ p.id }}</label>{% endfor %}</fieldset>
+<label>每身份页面预算<input type="number" required min="1" max="500" name="max_pages" value="50" class="border p-2"></label>
+<button class="rounded bg-slate-900 text-white p-3">预览采集范围</button></form></section>
+<section class="rounded-2xl bg-white p-6 space-y-3"><h2 class="text-xl font-semibold">最近身份采集与补采</h2>
+{% for r in runs %}<div class="border-b py-3"><a class="underline" href="/assets?source=scan&run_id={{ r.id }}&view=grouped">任务 #{{ r.id }} · {{ r.status }} · 查看统一清单</a>{% if r.parent_run_id %}<p>补采来源 #{{ r.parent_run_id }}</p>{% endif %}{% for c in r.contexts %}{% if c.checkpoint %}<form method="post" action="/identities/recovery/preview" class="mt-2"><input type="hidden" name="source_run_id" value="{{ r.id }}"><input type="hidden" name="source_context_id" value="{{ c.id }}"><input type="hidden" name="checkpoint_version" value="{{ c.checkpoint }}"><button class="border rounded p-2">预览 {{ c.key }} 已知缺口补采</button></form>{% endif %}{% endfor %}</div>{% else %}<p>还没有身份采集任务。</p>{% endfor %}</section>
+</div>
+{% endblock %}

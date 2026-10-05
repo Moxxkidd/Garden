@@ -43,7 +43,9 @@ class IdentityCollectionService:
         self.policy = TargetNetworkPolicy(self.settings)
         self.sessions = sessions or IdentitySessionService(policy=self.policy)
         self.storage = self.sessions.storage
-        self.dispatcher = dispatcher or ThreadedScanDispatcher()
+        self.dispatcher = dispatcher or ThreadedScanDispatcher(
+            self.settings.scan_max_concurrent_tasks
+        )
         self.pipeline = ScanPipeline(
             policy=self.policy,
             gateway=HttpScanGateway(self.policy),
@@ -119,6 +121,21 @@ class IdentityCollectionService:
             ["validate", "establish_contexts", "collect", "normalize", "analyze", "report"]
         ):
             session.add(ScanRunStage(scan_run_id=run.id, name=name, position=index + 1))
+        from app.models.audit_event import AuditEvent
+
+        session.add(
+            AuditEvent(
+                event_type="identity_collection",
+                status="success",
+                target_id=target.id,
+                detail_redacted={
+                    "run_id": run.id,
+                    "profile_ids": request.profile_ids,
+                    "include_anonymous": request.include_anonymous,
+                    "parent_run_id": run.parent_run_id,
+                },
+            )
+        )
         session.commit()
         try:
             self.dispatcher.submit(run.id, self.execute)

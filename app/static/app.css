@@ -34,3 +34,16 @@ dd {
   margin: 0;
   font-weight: 600;
 }
+
+/* Identity forms remain readable without JavaScript or the optional CSS CDN. */
+.identity-page { max-width: 64rem; margin: 1.5rem auto; padding: 1rem; line-height: 1.6; }
+.identity-page > section { background: white; border: 1px solid #d7ddd7; border-radius: 1rem; padding: 1.25rem; margin: 1.25rem 0; }
+.identity-page form { display: grid; gap: .8rem; margin: 1rem 0; }
+.identity-page label { display: block; min-width: 0; }
+.identity-page input:not([type="checkbox"]):not([type="hidden"]),
+.identity-page select, .identity-page textarea { display: block; width: 100%; max-width: 100%; box-sizing: border-box; padding: .55rem; border: 1px solid #87978a; border-radius: .35rem; font: inherit; }
+.identity-page input[type="checkbox"] { margin-right: .5rem; }
+.identity-page button { padding: .65rem 1rem; border: 1px solid #87978a; border-radius: .45rem; font: inherit; cursor: pointer; }
+.identity-page details { margin: 1rem 0; }
+.identity-page a { overflow-wrap: anywhere; }
+.identity-matrix .overflow-x-auto { overflow-x: auto; max-width: 100%; }

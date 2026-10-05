@@ -119,4 +119,23 @@ class IdentityMatrix(BaseModel):
     rows: list[IdentityMatrixRow]
     confirmed_subject_count: int
     auth_diagnostic_count: int
-    note: str = "已观察仅说明该身份下取得响应，不代表业务有效。未观察不等于不存在或无权限；覆盖不完整时为未知。"
+    note: str = (
+        "已观察仅说明该身份下取得响应，不代表业务有效。"
+        "未观察不等于不存在或无权限；覆盖不完整时为未知。"
+    )
+
+
+class IdentityStateImport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    profile_id: int = Field(gt=0)
+    raw_json: str = Field(max_length=1024 * 1024, repr=False)
+    verification: ManualLoginRequest
+
+
+class IdentityPreviewConfirmation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    preview_token: str = Field(min_length=20, max_length=200)
+
+
+class RecoveryConfirmation(RecoveryRequest):
+    preview_token: str = Field(min_length=20, max_length=200)

@@ -25,6 +25,8 @@ class AssessmentStartRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_mode_and_authorization(self) -> AssessmentStartRequest:
+        if self.mode == AssessmentMode.IDENTITY_COLLECTION:
+            raise ValueError("独立身份采集请使用 identities 入口。")
         profile_ids = (self.user_profile_id, self.admin_profile_id)
         if self.mode == AssessmentMode.QUICK and any(item is not None for item in profile_ids):
             raise ValueError("quick 模式不接受认证凭证档案。")

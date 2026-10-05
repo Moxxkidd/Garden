@@ -149,6 +149,7 @@ class IdentitySessionService:
                     context = browser.new_context(
                         storage_state=state.storage_state, service_workers="block"
                     )
+                    context.route_web_socket("**/*", lambda socket: socket.close())
                     install_session_storage(context, state)
                     errors = []
                     attempts = 0
@@ -226,6 +227,7 @@ class IdentitySessionService:
             if path:
                 Path(path).unlink(missing_ok=True)
             raise InputValidationError("保存登录状态失败，请重新认证。") from None
+        self._audit(session, "identity_import", record)
         return SessionHealthView(session_id=record.id, status="ready", checked_at=now)
 
     def _record(self, session, session_id):
@@ -261,6 +263,7 @@ class IdentitySessionService:
             record.status = "active" if valid else "invalid"
             record.last_error = None if valid else "restore_not_verified"
             session.flush()
+            self._audit(session, "identity_validation", record, success=valid)
             return SessionHealthView(
                 session_id=session_id,
                 status="ready" if valid else "validation_failed",
@@ -282,3 +285,75 @@ class IdentitySessionService:
         record.revoked_at = datetime.now(timezone.utc)
         record.status = "invalid"
         session.flush()
+        self._audit(session, "identity_revoke", record)
+
+    def _audit(self, session, operation, record, success=True):
+        from app.models.audit_event import AuditEvent
+
+        session.add(
+            AuditEvent(
+                event_type=operation,
+                status="success" if success else "failure",
+                target_id=record.target_id,
+                credential_profile_id=record.credential_profile_id,
+                auth_session_id=record.id,
+                detail_redacted={"operation": operation},
+            )
+        )
+        session.flush()
+
+    def activate_automatic_profile(self, session, profile_id):
+        """Explicitly adapt an existing automatic login config using fresh positive proof."""
+        from urllib.parse import urljoin, urlsplit
+
+        from app.services.login_configs import LoginConfigService
+        from app.services.sessions import AuthSessionService
+
+        profile = session.get(CredentialProfile, profile_id)
+        target = session.get(Target, profile.target_id) if profile else None
+        if not target or target.status != "active":
+            raise InputValidationError("身份或目标不可用。")
+        try:
+            config = LoginConfigService().load(profile.login_config_path)
+            if config.adapter == "playwright":
+                proof = ManualLoginRequest(
+                    profile_id=profile_id,
+                    login_url=urljoin(target.base_url, config.login_url),
+                    validate_url=urljoin(target.base_url, config.validate_url),
+                    success_selector=config.success_selector,
+                    success_text=config.success_text,
+                )
+            else:
+                proof = ManualLoginRequest(
+                    profile_id=profile_id,
+                    login_url=urljoin(target.base_url + "/", config.login_request.url),
+                    validate_url=urljoin(target.base_url + "/", config.validate_request.url),
+                    success_text=config.validate_request.success_contains,
+                )
+            self.configuration(session, profile_id, proof)
+        except Exception:
+            raise InputValidationError(
+                "自动登录配置需要有效的正向成功条件；也可使用人工登录或导入。"
+            ) from None
+        legacy = AuthSessionService(storage_service=self.storage).ensure_valid_for_profile(
+            session, profile_id
+        )
+        payload = self.storage.read_payload(legacy.storage_ref)
+        if "storage_state" in payload:
+            state = payload["storage_state"]
+        elif isinstance(payload.get("cookies"), dict):
+            state = {
+                "cookies": [
+                    {
+                        "name": name,
+                        "value": value,
+                        "domain": urlsplit(target.base_url).hostname,
+                        "path": "/",
+                    }
+                    for name, value in payload["cookies"].items()
+                ],
+                "origins": [],
+            }
+        else:
+            raise InputValidationError("现有状态不能转换为浏览器状态，请使用人工登录或导入。")
+        return self.import_state(session, profile_id, json.dumps(state), proof)

@@ -196,6 +196,17 @@ class ManualLoginService:
             )
             session.add(record)
             session.flush()
+            from app.models.audit_event import AuditEvent
+
+            session.add(
+                AuditEvent(
+                    event_type="manual_login",
+                    status="success",
+                    target_id=target.id,
+                    credential_profile_id=request.profile_id,
+                    detail_redacted={"attempt_id": record.id, "operation": "start"},
+                )
+            )
             worker = _Worker(record.id, config, origin(target.base_url), self)
             self._workers[record.id] = worker
             self._owned.add(record.id)

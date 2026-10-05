@@ -79,7 +79,8 @@ def test_0008_preserves_old_context_and_refuses_loss(tmp_path):
         )
         db.execute(
             text("""INSERT INTO scan_contexts
-        (id,scan_run_id,kind,created_at,updated_at) VALUES (7,1,'user',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""")
+        (id,scan_run_id,kind,created_at,updated_at)
+        VALUES (7,1,'user',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""")
         )
     upgrade_database(url)
     with engine.connect() as db:
