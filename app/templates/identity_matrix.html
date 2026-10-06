@@ -6,7 +6,7 @@
   <p class="text-sm">{{ matrix.note }}</p>
   <div class="overflow-x-auto"><table class="w-full text-sm text-left">
     <thead><tr><th class="p-3">资产</th>{% for c in matrix.contexts %}<th class="p-3 whitespace-nowrap">{{ c.display_name }}<br><span class="font-normal">{{ c.context_key }} · {{ c.health.status }}</span></th>{% endfor %}</tr></thead>
-    <tbody>{% for row in matrix.rows[:200] %}<tr class="border-t"><td class="p-3 break-all">{{ row.method or '方法未知' }} {{ row.url }}</td>{% for c in matrix.contexts %}{% set cell = row.cells[c.context_key] %}<td class="p-3 whitespace-nowrap">{{ labels[cell.state] }}<br>{{ cell.status_codes|join(', ') or '无响应状态' }}<br><span class="text-xs">证据 {{ cell.evidence_ids|join(', ') or '未记录' }}</span></td>{% endfor %}</tr>{% endfor %}</tbody>
+    <tbody>{% for row in matrix.rows[:200] %}<tr class="border-t"><td class="p-3 break-all">{{ row.method or '方法未知' }} {{ row.url }}</td>{% for c in matrix.contexts %}{% set cell = row.cells[c.context_key] %}<td class="p-3 whitespace-nowrap">{{ labels[cell.state] }}<br>{{ cell.status_codes|join(', ') or '无响应状态' }}<br><span class="text-xs">证据 {{ cell.evidence_ids|join(', ') or '未记录' }}</span>{% if cell.uncertain_status_codes or cell.uncertain_evidence_ids %}<p>身份不确定：HTTP {{ cell.uncertain_status_codes|join(', ') or '未知' }}<br>证据 {{ cell.uncertain_evidence_ids|join(', ') or '未记录' }}</p>{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
   </table></div>
   {% if matrix.rows|length > 200 %}<p class="text-sm">矩阵显示前 200 类；可筛选身份或导出完整 JSON。</p>{% endif %}
 </section>

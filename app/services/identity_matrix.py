@@ -18,22 +18,63 @@ def build_identity_matrix(records, contexts):
         cells = {}
         for context in contexts:
             observations = [r for r in group.observations if r.context == context.context_key]
-            verified = [r for r in observations if r.identity_assessment == "confirmed"]
-            uncertain = [r for r in observations if r.identity_assessment == "identity_uncertain"]
+            proofs = []
+            for row in observations:
+                if row.identity_observations:
+                    proofs.extend(row.identity_observations)
+                else:
+                    proofs.extend(
+                        {
+                            "assessment": row.identity_assessment,
+                            "status_code": code,
+                            "evidence_ids": row.evidence_ids or [],
+                        }
+                        for code in (row.status_codes or [None])
+                    )
+            verified = [p for p in proofs if p.get("assessment") == "confirmed"]
+            uncertain = [p for p in proofs if p.get("assessment") == "identity_uncertain"]
             state = (
                 "observed"
                 if verified
                 else "identity_uncertain"
                 if uncertain
+                else "unknown"
+                if observations
                 else "not_observed"
                 if context.completeness == "complete" and context.health.status == "ready"
                 else "unknown"
             )
+
+            def codes(items):
+                return sorted(
+                    {
+                        p["status_code"]
+                        for p in items
+                        if type(p.get("status_code")) is int and 100 <= p["status_code"] <= 599
+                    }
+                )
+
+            def evidence(items):
+                return sorted(
+                    {
+                        i
+                        for p in items
+                        for i in (
+                            [p["evidence_id"]]
+                            if p.get("evidence_id") is not None
+                            else p.get("evidence_ids", [])
+                        )
+                        if type(i) is int
+                    }
+                )
+
             cells[context.context_key] = IdentityMatrixCell(
                 state=state,
-                status_codes=sorted({n for r in observations for n in r.status_codes}),
+                status_codes=codes(verified),
+                evidence_ids=evidence(verified),
+                uncertain_status_codes=codes(uncertain),
+                uncertain_evidence_ids=evidence(uncertain),
                 observation_ids=[r.asset_id for r in observations],
-                evidence_ids=sorted({i for r in observations for i in (r.evidence_ids or [])}),
             )
         confirmed += any(c.state == "observed" for c in cells.values())
         rows.append(

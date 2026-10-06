@@ -325,6 +325,19 @@ pre{
   </div>
 </section>
 
+<div class="extra" id="identity-collection" style="margin-bottom:48px;scroll-margin-top:80px">
+  <div class="tag">v0.6.0 · 独立身份采集</div>
+  <h2>带着可验证的身份，聚合资产清单</h2>
+  <p class="sub">匿名、单个账号或多个账号均可独立采集；同角色账号也保持隔离。矩阵保留不同身份的响应与证据。</p>
+  <div class="card"><h3>登录、确认、采集、补采，各自可检查</h3>
+    <p>人工完成验证码、短信或扫码后，用新浏览器验证恢复，再单独确认采集。登录窗口位于 Garden 主机；远程部署可以导入状态。</p>
+    <p>会话验证占用请求预算。失效后保留此前确认的观察，未确认批次标为身份不确定；普通 403 不直接等同于会话失效。</p>
+    <p>已观察不代表业务有效，未知也不代表不存在。重新认证后仅补检查点中已知缺口，生成关联子任务，原报告不变。</p>
+    <p>本地实际演示：1 个身份取得 2 类资产主体，2 个矩阵单元均为 HTTP 200；无 JavaScript 的桌面／手机表单流程已验证。</p>
+    <p><a href="demo-v06-identities.md">演示步骤、验证范围与限制</a> · 数据库迁移 0008</p>
+  </div>
+</div>
+
 <div class="extra" id="multi-source-discovery" style="margin-bottom:48px;scroll-margin-top:80px">
   <div class="tag">v0.5.0 · 多来源资产发现</div>
   <h2>从一个入口，汇集更多资产线索</h2>
@@ -332,7 +345,7 @@ pre{
   <div class="card"><h3>明确发现来源，区分响应和声明</h3>
     <p>默认 HTTP 采集；在 Web「发现选项」中开启地图、JS 线索或匿名浏览器。动态请求只允许 GET/HEAD；表单、JS 静态声明和 OpenAPI 操作保留为候选，不自动提交或调用。</p>
     <p>路由视图与 HTTP 响应分别记录。每条记录可查看脱敏来源，按来源筛选；详情页、CLI 和报告说明发现、新候选、重复、请求尝试与响应观察。统计不是站点发现率，执行结束也不表示覆盖完整。</p>
-    <p>候选、地图递归、页面、资源和浏览器请求均有上限。输入原文不回显；预览临时保留 15 分钟，历史任务导入内容需重新提供。新增发现选项当前用于匿名扫描，已有认证采集流程保留。</p>
+    <p>候选、地图递归、页面、资源和浏览器请求均有上限。输入原文不回显；预览临时保留 15 分钟，历史任务导入内容需重新提供。v0.5 的匿名发现流程继续保留；v0.6 独立身份采集复用同一有界浏览器引擎。</p>
     <pre><code>garden scan https://authorized.example --sitemap --js
 garden scan https://authorized.example --collection-mode browser --max-browser-requests 150
 garden assets list --source scan --run-id N --source-kind sitemap</code></pre>

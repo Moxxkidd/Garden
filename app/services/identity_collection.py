@@ -66,7 +66,9 @@ class IdentityCollectionService:
             if not profile or profile.target_id != target.id:
                 raise InputValidationError("身份不存在或不属于当前目标。")
             profiles.append(profile)
-        options = resolve_scan_options(request.options, self.settings)
+        options = resolve_scan_options(request.options, self.settings).model_copy(
+            update={"collection_mode": "browser"}
+        )
         if options.seed_input:
             parse_seed_input(options.seed_input, options.seed_format, base_url=entry)
         digest = hashlib.sha256(
@@ -200,8 +202,8 @@ class IdentityCollectionService:
                         session.commit()
                 self._stage(session, run, "collect", "completed")
                 self._stage(session, run, "normalize", "completed")
-                # Only confirmed identity observations may enter analysis.
-                self._stage(session, run, "analyze", "completed")
+                # This mode produces an asset catalog, not a risk-analysis verdict.
+                self._stage(session, run, "analyze", "skipped")
                 complete = all(c.completeness == "complete" for c in run.contexts)
                 run.completeness = "complete" if complete else "incomplete"
                 run.status = "completed" if complete else "completed_with_warnings"
@@ -344,13 +346,19 @@ class IdentityCollectionService:
                     asset.attributes = {**asset.attributes, "identity_assessment": assessment}
             session.commit()
 
+        state_provider = [lambda: state]
+
         def validate(admit):
+            current_state = state_provider[0]()
             session.commit()
 
             def in_fresh_thread():
                 with session_scope() as validation_session:
                     return self.sessions.validate(
-                        validation_session, context.auth_session_id, before_request=admit
+                        validation_session,
+                        context.auth_session_id,
+                        before_request=admit,
+                        current_state=current_state,
                     )
 
             # Playwright sync contexts cannot be nested on the collector event loop.
@@ -565,6 +573,8 @@ class IdentityCollectionService:
                 identity_state=state,
                 response_candidates=sources,
                 before_send=health_gate.before_send if health_gate else None,
+                on_state_provider=lambda provider: state_provider.__setitem__(0, provider),
+                on_finish=health_gate.finish if health_gate else None,
                 recovery_work=private.get("recovery_work"),
                 allowed_urls=(
                     {x["url"] for x in private["recovery_work"]}
@@ -574,8 +584,6 @@ class IdentityCollectionService:
             )
             if outcome["stopped_reason"]:
                 warnings.append(outcome["stopped_reason"])
-            if health_gate:
-                health_gate.finish()
             healthy = True
             context.asset_count = len(
                 session.scalars(select(ScanAsset).where(ScanAsset.context_id == context.id)).all()

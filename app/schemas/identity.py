@@ -101,6 +101,8 @@ class RecoveryPreview(BaseModel):
 
 
 class IdentityMatrixCell(BaseModel):
+    uncertain_status_codes: list[int] = Field(default_factory=list)
+    uncertain_evidence_ids: list[int] = Field(default_factory=list)
     state: Literal["observed", "identity_uncertain", "not_observed", "unknown"]
     status_codes: list[int] = Field(default_factory=list)
     observation_ids: list[str] = Field(default_factory=list)

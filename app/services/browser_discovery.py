@@ -41,6 +41,8 @@ class BrowserDiscovery:
         on_checkpoint=None,
         allowed_urls=None,
         recovery_work=None,
+        on_state_provider=None,
+        on_finish=None,
     ) -> dict:
         from playwright.sync_api import Error as PlaywrightError
         from playwright.sync_api import sync_playwright
@@ -120,10 +122,6 @@ class BrowserDiscovery:
                     accept_downloads=False,
                     storage_state=identity_state.storage_state if identity_state else None,
                 )
-                if identity_state:
-                    from app.services.identity_sessions import install_session_storage
-
-                    install_session_storage(context, identity_state)
                 # Worker traffic has no reliable page attribution. Block worker creation;
                 # the anonymous mode observes page/frame HTTP requests only.
                 context.add_init_script("""
@@ -136,7 +134,79 @@ class BrowserDiscovery:
                 """)
                 context.route_web_socket("**/*", lambda socket: socket.close())
                 page = context.new_page()
+                if identity_state:
+                    from app.services.identity_sessions import install_session_storage
+
+                    install_session_storage(context, identity_state, page)
                 cdp = context.new_cdp_session(page)
+
+                live_local = {}
+                live_session = {}
+                if identity_state:
+                    for item in identity_state.storage_state["origins"]:
+                        live_local[item["origin"]] = {
+                            entry["name"]: entry["value"] for entry in item["localStorage"]
+                        }
+                    live_session = {
+                        site: dict(values)
+                        for site, values in identity_state.session_storage.items()
+                    }
+
+                    def storage_changed(event, action):
+                        storage_id = event["storageId"]
+                        site = storage_id.get("securityOrigin")
+                        if site != identity_state.target_origin:
+                            return
+                        stores = live_local if storage_id["isLocalStorage"] else live_session
+                        values = stores.setdefault(site, {})
+                        if action == "clear":
+                            values.clear()
+                        elif action == "remove":
+                            values.pop(event["key"], None)
+                        else:
+                            values[event["key"]] = event["newValue"]
+
+                    for event_name, action in (
+                        ("domStorageItemsCleared", "clear"),
+                        ("domStorageItemRemoved", "remove"),
+                        ("domStorageItemAdded", "set"),
+                        ("domStorageItemUpdated", "set"),
+                    ):
+                        cdp.on(
+                            "DOMStorage." + event_name,
+                            lambda event, action=action: storage_changed(event, action),
+                        )
+                    cdp.send("DOMStorage.enable")
+
+                def current_identity_state():
+                    if identity_state is None:
+                        return None
+                    # Storage events track mutations even during navigation. Querying
+                    # the departing document here can block a paused request.
+                    cookies = context.cookies()
+                    stored = {
+                        "cookies": cookies,
+                        "origins": [
+                            {
+                                "origin": site,
+                                "localStorage": [
+                                    {"name": name, "value": value} for name, value in values.items()
+                                ],
+                            }
+                            for site, values in live_local.items()
+                        ],
+                    }
+                    return identity_state.model_copy(
+                        update={
+                            "storage_state": stored,
+                            "session_storage": {
+                                site: dict(values) for site, values in live_session.items()
+                            },
+                        }
+                    )
+
+                if on_state_provider:
+                    on_state_provider(current_identity_state)
 
                 def guard_request(event: dict) -> None:
                     nonlocal attempts, resources, stopped, document_requests
@@ -213,6 +283,13 @@ class BrowserDiscovery:
                                 {"requestId": event["requestId"], "errorReason": "BlockedByClient"},
                             )
                     except Exception as error:
+                        # Navigation can cancel a paused request while health proof
+                        # yields to Chromium. There is then nothing left to resume;
+                        # keep its attempted budget charge and unobserved candidate.
+                        if isinstance(error, PlaywrightError) and (
+                            "Invalid InterceptionId" in str(error)
+                        ):
+                            return
                         errors.append(error)
                         try:
                             cdp.send(
@@ -372,6 +449,8 @@ class BrowserDiscovery:
                 for response in list(pending_responses.values()):
                     response_observed(response, finished=False)
                 check()
+                if on_finish:
+                    on_finish()
             finally:
                 if on_checkpoint:
                     on_checkpoint(

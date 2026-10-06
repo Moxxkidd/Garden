@@ -56,6 +56,8 @@ def coverage_summary(status: str, completeness: str | None, mode: str) -> str:
     if status == "completed":
         if mode == "quick" and completeness in {"legacy_single_context", "complete"}:
             return "本次范围内采集完成（仅匿名上下文）；不代表整个站点已覆盖。"
+        if mode == "identity_collection" and completeness == "complete":
+            return "本次范围内所选身份采集完成；不代表整个站点已覆盖。"
         if mode == "authenticated_coverage" and completeness == "complete":
             return "本次范围内三上下文采集完成；不代表整个站点已覆盖。"
     return "覆盖完整性未知：当前响应未提供可确认的完整性信息。"
@@ -95,9 +97,13 @@ def build_result_summary(
     active = status in {"queued", "running"}
     bounded_complete = status == "completed" and (
         (mode == "quick" and completeness in {"legacy_single_context", "complete"})
-        or (mode == "authenticated_coverage" and completeness == "complete")
+        or (
+            mode in {"authenticated_coverage", "identity_collection"} and completeness == "complete"
+        )
     )
-    if active:
+    if mode == "identity_collection":
+        findings = "本任务汇总身份资产与观察，未执行风险分析；不能据此判断目标安全。"
+    elif active:
         findings = f"暂定：{count}；尚未形成最终结果，观察仍可能变化。"
     elif raw_count:
         findings = f"{count}，待复核；被动观察不等同于已确认漏洞。"

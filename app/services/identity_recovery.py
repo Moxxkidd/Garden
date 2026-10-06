@@ -43,6 +43,9 @@ class IdentityRecoveryService:
         return {
             "target_id": target.id,
             "target_origin": origin(target.base_url),
+            "target_base_url": target.base_url,
+            "target_type": target.type,
+            "target_status": target.status,
             "profile_id": profile.id,
             "context_key": context.context_key,
             "options": run.options,

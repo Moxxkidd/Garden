@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from sqlalchemy import select
 
 from app.db.bootstrap import session_scope
@@ -262,7 +263,8 @@ def test_all_discovery_sources_share_identity_and_budget(seeded_records, tmp_pat
         assert len(received) <= 30
 
 
-def test_real_expiry_preserves_confirmed_batches_and_budget(seeded_records, tmp_path):
+@pytest.mark.parametrize("storage_kind", ["cookie", "localStorage", "sessionStorage"])
+def test_real_expiry_preserves_confirmed_batches_and_budget(seeded_records, tmp_path, storage_kind):
     from fastapi import FastAPI, Request
     from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -276,9 +278,16 @@ def test_real_expiry_preserves_confirmed_batches_and_budget(seeded_records, tmp_
         received.append(path)
         if path == "login":
             return HTMLResponse("Please sign in")
-        if request.cookies.get("identity") != "valid" or not active[0]:
+        if (storage_kind == "cookie" and request.cookies.get("identity") != "valid") or not active[
+            0
+        ]:
             return RedirectResponse("/login", status_code=302)
         if path == "proof":
+            if storage_kind != "cookie":
+                return HTMLResponse(
+                    f"<body><script>if ({storage_kind}.getItem('identity') === 'valid') "
+                    "document.body.innerHTML='<b id=identity>Authenticated</b>';</script></body>"
+                )
             return HTMLResponse('<b id="identity">Authenticated</b>')
         if path == "denied":
             return HTMLResponse("Forbidden", status_code=403)
@@ -295,22 +304,26 @@ def test_real_expiry_preserves_confirmed_batches_and_budget(seeded_records, tmp_
             target = session.get(Target, seeded_records["target"].id)
             target.base_url = base
             profile_id = seeded_records["credential"].id
+            raw = {"cookies": [], "origins": []}
+            if storage_kind == "cookie":
+                raw["cookies"] = [
+                    {"name": "identity", "value": "valid", "domain": "127.0.0.1", "path": "/"}
+                ]
+            elif storage_kind == "localStorage":
+                raw["origins"] = [
+                    {"origin": base, "localStorage": [{"name": "identity", "value": "valid"}]}
+                ]
+            else:
+                raw = {
+                    "version": 1,
+                    "target_origin": base,
+                    "storage_state": raw,
+                    "session_storage": {base: {"identity": "valid"}},
+                }
             health = states.import_state(
                 session,
                 profile_id,
-                json.dumps(
-                    {
-                        "cookies": [
-                            {
-                                "name": "identity",
-                                "value": "valid",
-                                "domain": "127.0.0.1",
-                                "path": "/",
-                            }
-                        ],
-                        "origins": [],
-                    }
-                ),
+                json.dumps(raw),
                 ManualLoginRequest(
                     profile_id=profile_id,
                     login_url=base + "/login",

@@ -90,14 +90,32 @@ def parse_identity_state(raw_json: str, target_origin: str) -> StoredIdentitySta
         ) from None
 
 
-def install_session_storage(context, state: StoredIdentityState):
-    values = json.dumps(state.session_storage, ensure_ascii=True)
-    context.add_init_script(
-        script=(
-            f"(() => {{ const states = {values}; const s = states[location.origin];"
-            "if(s) for(const [k,v] of Object.entries(s)) sessionStorage.setItem(k,v); })();"
-        )
-    )
+def install_session_storage(context, state: StoredIdentityState, page):
+    # Hydrate each tab only once. Replaying an init script on every document
+    # would restore credentials that the application deliberately cleared.
+    def attach(page):
+        cdp = context.new_cdp_session(page)
+        cdp.send("Page.enable")
+        scripts = {}
+        for site_origin, values in state.session_storage.items():
+            source = (
+                f"if (location.origin === {json.dumps(site_origin)}) {{"
+                f"const values = {json.dumps(values, ensure_ascii=True)};"
+                "for (const [k, v] of Object.entries(values)) sessionStorage.setItem(k, v); }"
+            )
+            result = cdp.send("Page.addScriptToEvaluateOnNewDocument", {"source": source})
+            scripts[site_origin] = result["identifier"]
+
+        def navigated():
+            site_origin = origin(page.url)
+            identifier = scripts.pop(site_origin, None)
+            if identifier is not None:
+                cdp.send("Page.removeScriptToEvaluateOnNewDocument", {"identifier": identifier})
+
+        page.on("domcontentloaded", navigated)
+
+    if state.session_storage:
+        attach(page)
 
 
 class IdentitySessionService:
@@ -150,7 +168,6 @@ class IdentitySessionService:
                         storage_state=state.storage_state, service_workers="block"
                     )
                     context.route_web_socket("**/*", lambda socket: socket.close())
-                    install_session_storage(context, state)
                     errors = []
                     attempts = 0
 
@@ -170,6 +187,7 @@ class IdentitySessionService:
 
                     context.route("**/*", admit)
                     page = context.new_page()
+                    install_session_storage(context, state, page)
                     response = page.goto(
                         config.validate_url, wait_until="domcontentloaded", timeout=10000
                     )
@@ -249,11 +267,13 @@ class IdentitySessionService:
             raise InputValidationError("会话目标或身份已变更。")
         return parse_identity_state(json.dumps(payload.get("identity")), origin(target.base_url))
 
-    def validate(self, session, session_id, before_request=lambda: None):
+    def validate(self, session, session_id, before_request=lambda: None, *, current_state=None):
         now = datetime.now(timezone.utc)
         try:
             record = self._record(session, session_id)
             state = self.load_for_collection(session, session_id)
+            if current_state is not None:
+                state = parse_identity_state(current_state.model_dump_json(), state.target_origin)
             payload = self.storage.read_identity_payload(record.storage_ref)
             config = ManualLoginRequest.model_validate(payload["verification"])
             self.configuration(session, record.credential_profile_id, config)
