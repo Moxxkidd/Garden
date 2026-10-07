@@ -936,8 +936,9 @@ class ScanPipeline:
         *,
         depth: int,
         asset_type_hint: str | None = None,
-    ) -> None:
-        context = session.scalar(
+        context: ScanContext | None = None,
+    ) -> ScanAsset:
+        context = context or session.scalar(
             select(ScanContext).where(
                 ScanContext.scan_run_id == run.id,
                 ScanContext.kind == ContextKind.ANONYMOUS.value,
@@ -1081,6 +1082,7 @@ class ScanPipeline:
         )
         run.retry_count += max(0, result.attempts - 1)
         session.flush()
+        return asset
 
     def _discoveries(self, result: FetchResult) -> list[DiscoveredAsset]:
         if result.discovered_assets:

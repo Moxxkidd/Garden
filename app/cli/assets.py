@@ -70,6 +70,11 @@ def list_assets(
         if as_json:
             typer.echo(result.model_dump_json(indent=2))
             return
+        if result.identity_matrix:
+            from app.services.identity_matrix import matrix_summary
+
+            console.print(matrix_summary(result.identity_matrix), markup=False)
+            console.print(result.identity_matrix["note"], markup=False)
         if view == "grouped":
             _print_groups(result, page)
             return
@@ -99,7 +104,11 @@ def list_assets(
                         KINDS[row.kind],
                         row.method or "未知",
                         row.url,
-                        row.context,
+                        (
+                            f"{row.display_name} ({row.context})"
+                            if row.display_name
+                            else row.context
+                        ),
                         ", ".join(map(str, row.status_codes)) or "未知",
                         "候选（未请求）"
                         if row.validity.verification == "candidate"

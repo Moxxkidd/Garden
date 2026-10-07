@@ -70,7 +70,11 @@ def test_context_kind_rejects_values_outside_fixed_protocol(db_session, kind):
 
 
 def test_assessment_enums_publish_protocol_values():
-    assert [item.value for item in AssessmentMode] == ["quick", "authenticated_coverage"]
+    assert [item.value for item in AssessmentMode] == [
+        "quick",
+        "authenticated_coverage",
+        "identity_collection",
+    ]
     assert [item.value for item in ContextKind] == ["anonymous", "user", "admin"]
     assert [item.value for item in ReplayVerdict] == [
         "blocked",

@@ -63,6 +63,48 @@ class ScanReportService:
             if run.mode == AssessmentMode.AUTHENTICATED_COVERAGE.value
             else self._render(run, generated_at)
         )
+        if run.mode == "identity_collection":
+            from app.schemas.assets import AssetQuery
+            from app.services.asset_catalog import AssetCatalogService
+            from app.services.identity_matrix import CELL_LABELS, matrix_summary
+
+            catalog = AssetCatalogService().select(
+                session, AssetQuery(source="scan", run_id=run.id)
+            )
+            matrix = catalog.identity_matrix
+            lines.extend(["", "## 身份可见性矩阵", "", matrix_summary(matrix), "", matrix["note"]])
+            if run.parent_run_id:
+                lines.extend(["", f"补采来源：任务 #{run.parent_run_id}；仅覆盖检查点已知请求。"])
+            columns = matrix["contexts"]
+            lines.extend(
+                [
+                    "",
+                    "| 资产 | "
+                    + " | ".join(
+                        self._cell(c["display_name"] + " (" + c["context_key"] + ")")
+                        for c in columns
+                    )
+                    + " |",
+                    "|---|" + "---|" * len(columns),
+                ]
+            )
+            for row in matrix["rows"]:
+                cells = []
+                for column in columns:
+                    cell = row["cells"][column["context_key"]]
+                    cells.append(
+                        CELL_LABELS[cell["state"]] + " " + ",".join(map(str, cell["status_codes"]))
+                    )
+                for index, column in enumerate(columns):
+                    cell = row["cells"][column["context_key"]]
+                    if cell["uncertain_status_codes"] or cell["uncertain_evidence_ids"]:
+                        cells[index] += "；身份不确定 HTTP " + ",".join(
+                            map(str, cell["uncertain_status_codes"])
+                        )
+                        cells[index] += "，证据 " + ",".join(
+                            f"E{x}" for x in cell["uncertain_evidence_ids"]
+                        )
+                lines.append("| " + self._cell(row["url"]) + " | " + " | ".join(cells) + " |")
         metadata = run.asset_metadata
         if isinstance(metadata, dict) and metadata.get("version") == 2:
             from app.services.discovery import SOURCE_KINDS
@@ -393,7 +435,8 @@ class ScanReportService:
             for asset in assets:
                 lines.append(
                     f"| A{asset.id} | {asset.asset_type} | {asset.status_code or '-'} | "
-                    f"{self._cell(asset.title or '-')} | {self._cell(asset.url)} |"
+                    f"{self._cell(asset.title or '-')} | "
+                    f"{self._cell(redacted_observed_url(asset.url))} |"
                 )
         lines.extend(["", "## 关键属性", ""])
         if not assets:

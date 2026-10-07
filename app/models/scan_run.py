@@ -47,6 +47,9 @@ class ScanRun(TimestampMixin, Base):
     rerun_of_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("scan_runs.id", name="fk_scan_runs_rerun_of"), nullable=True, index=True
     )
+    parent_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recovery_context_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recovery_checkpoint_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     input_url: Mapped[str] = mapped_column(String(1000))
     normalized_url: Mapped[str] = mapped_column(String(1000), index=True)
     active_key: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)

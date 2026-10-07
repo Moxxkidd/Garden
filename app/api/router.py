@@ -9,6 +9,7 @@ from app.api.routes.demo_auth import router as demo_auth_router
 from app.api.routes.evidence import router as evidence_router
 from app.api.routes.findings import router as findings_router
 from app.api.routes.health import router as health_router
+from app.api.routes.identities import router as identities_router
 from app.api.routes.inventory import router as inventory_router
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.pages import router as pages_router
@@ -18,6 +19,7 @@ from app.api.routes.sessions import router as sessions_router
 from app.api.routes.targets import router as targets_router
 
 api_router = APIRouter()
+api_router.include_router(identities_router)
 api_router.include_router(assets_router)
 api_router.include_router(pages_router)
 api_router.include_router(scan_preview_router)

@@ -27,6 +27,13 @@ async def lifespan(app: FastAPI):
     )
     init_database(settings.database_url)
     app.state.scan_service = ScanApplicationService(settings=settings)
+    from app.services.identity_collection import IdentityCollectionService
+    from app.services.identity_preview import IdentityPreviewService
+    from app.services.manual_login import ManualLoginService
+
+    app.state.identity_collection = IdentityCollectionService()
+    app.state.identity_preview = IdentityPreviewService(app.state.identity_collection)
+    app.state.manual_login = ManualLoginService(sessions=app.state.identity_collection.sessions)
     purged = app.state.scan_service.purge_expired_temporary_secrets(max_age_seconds=900)
     if purged:
         logger.warning("Purged expired temporary coverage secrets", extra={"count": len(purged)})
@@ -36,6 +43,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        app.state.manual_login.shutdown()
+        app.state.identity_collection.dispatcher.shutdown()
         app.state.scan_service.shutdown()
         logger.info("Shutting down Garden application")
 
@@ -47,6 +56,15 @@ def create_app() -> FastAPI:
         version=settings.project_version,
         lifespan=lifespan,
     )
+
+    @app.middleware("http")
+    async def identity_privacy_headers(request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith(("/identities", "/api/identity", "/api/login-attempts")):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
     register_exception_handlers(app)
     app.mount(
         "/static",

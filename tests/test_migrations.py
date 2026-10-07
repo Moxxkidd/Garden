@@ -86,7 +86,7 @@ def test_stamp_existing_database_preserves_rows(tmp_path):
 
     with engine.connect() as connection:
         assert connection.scalar(text("select count(*) from targets")) == 1
-        assert connection.scalar(text("select version_num from alembic_version")) == "0007"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0008"
 
 
 def test_legacy_scan_assets_are_backfilled_into_anonymous_context(tmp_path):
@@ -180,7 +180,7 @@ def test_unified_assessment_migration_round_trip(tmp_path):
 
     upgrade_database(url)
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0007"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0008"
 
 
 def test_application_requires_explicit_stamp_for_unversioned_legacy_database(tmp_path, monkeypatch):
@@ -234,7 +234,7 @@ def test_application_auto_migrates_fresh_database_in_development(tmp_path, monke
         assert client.get("/healthz").status_code == 200
 
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0007"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0008"
 
 
 def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
@@ -247,7 +247,7 @@ def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
     current_result = runner.invoke(cli_app, ["db", "current"])
 
     assert upgrade_result.exit_code == 0
-    assert "0007" in current_result.stdout
+    assert "0008" in current_result.stdout
 
 
 def test_database_cli_stamp_existing_preserves_legacy_rows(tmp_path, monkeypatch):
@@ -451,7 +451,6 @@ def test_coverage_gap_migration_preserves_legacy_warning_and_round_trips(tmp_pat
 def test_asset_identity_migration_keeps_ids_requests_and_evidence_and_guards_downgrade(tmp_path):
     from datetime import datetime, timezone
 
-    from app.models.scan_context import ScanContext
     from app.models.scan_request import ScanRequest
     from app.models.scan_run import ScanAsset, ScanEvidence
 
@@ -472,9 +471,12 @@ def test_asset_identity_migration_keeps_ids_requests_and_evidence_and_guards_dow
                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"""
             )
         )
-        context = ScanContext(scan_run_id=run.id, kind="anonymous")
-        session.add(context)
-        session.flush()
+        context = SimpleNamespace(id=1)
+        session.execute(
+            text("""INSERT INTO scan_contexts
+            (id,scan_run_id,kind,created_at,updated_at)
+            VALUES (1,1,'anonymous',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""")
+        )
         asset = ScanAsset(
             scan_run_id=run.id,
             context_id=context.id,

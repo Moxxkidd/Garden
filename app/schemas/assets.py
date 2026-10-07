@@ -55,12 +55,19 @@ class AssetQuery(BaseModel):
 
 
 class AssetContext(BaseModel):
+    context_id: int | None = None
+    context_key: str | None = None
+    profile_id: int | None = None
+    display_name: str | None = None
+    health_status: str | None = None
+    health_checked_at: datetime | None = None
     kind: str
     status: str
     completeness: str | None = None
 
 
 class AssetScope(BaseModel):
+    mode: str | None = None
     source: AssetSource
     run_id: int
     target_id: int | None = None
@@ -92,6 +99,12 @@ class AssetValidity(BaseModel):
 
 
 class AssetRecord(BaseModel):
+    context_id: int | None = None
+    profile_id: int | None = None
+    display_name: str | None = None
+    health_status: str | None = None
+    identity_assessment: Literal["confirmed", "identity_uncertain", "auth_diagnostic"] | None = None
+    identity_observations: list[dict] | None = None
     discovery: dict | None = None
     candidate_reason: str | None = None
     route_url: str | None = None
@@ -162,6 +175,7 @@ class AssetGroup(BaseModel):
 
 
 class AssetPage(BaseModel):
+    identity_matrix: dict | None = None
     schema_version: str = "1.3"
     validity_rule_version: str = "passive-v1"
     validity_counts: dict[str, int] = Field(default_factory=dict)

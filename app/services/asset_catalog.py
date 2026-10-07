@@ -166,6 +166,25 @@ class AssetCatalogService:
             and (not search or search in f"{r.url} {r.title or ''} {r.method or ''}".casefold())
         ]
 
+        identity_matrix = None
+        if scope.mode == "identity_collection" and query.view != "candidates":
+            from app.schemas.identity import IdentityContextView, SessionHealthView
+            from app.services.identity_matrix import build_identity_matrix
+
+            contexts = [
+                IdentityContextView(
+                    context_id=c.context_id,
+                    context_key=c.context_key,
+                    profile_id=c.profile_id,
+                    display_name=c.display_name or c.context_key,
+                    health=SessionHealthView(
+                        status=c.health_status or "unknown", checked_at=c.health_checked_at
+                    ),
+                    completeness=c.completeness or "unknown",
+                )
+                for c in scope.contexts
+            ]
+            identity_matrix = build_identity_matrix(filtered, contexts).model_dump(mode="json")
         total = len(rows)
         matched_observation_count = len(filtered)
         if query.view == "grouped":
@@ -214,6 +233,7 @@ class AssetCatalogService:
         filtered.sort(key=key, reverse=query.order == "desc")
         return AssetPage(
             scope=scope,
+            identity_matrix=identity_matrix,
             candidate_count=candidate_count,
             validity_counts=validity_counts,
             total=total,
@@ -273,6 +293,7 @@ class AssetCatalogService:
         source_url = f"/scans/{run_id}"
         scope = AssetScope(
             source="scan",
+            mode=run.mode,
             run_id=run_id,
             target_id=run.target_id,
             entry_url=safe_url(run.normalized_url),
@@ -282,14 +303,30 @@ class AssetCatalogService:
             source_url=source_url,
             live=run.status in {"queued", "running"},
             contexts=[
-                AssetContext(kind=c.kind, status=c.collection_status, completeness=c.completeness)
+                AssetContext(
+                    kind=c.kind,
+                    status=c.collection_status,
+                    completeness=c.completeness,
+                    context_id=c.id,
+                    context_key=c.context_key,
+                    profile_id=c.credential_profile_id,
+                    display_name=safe_text((c.identity_snapshot or {}).get("name")),
+                    health_status=c.health_status,
+                    health_checked_at=c.health_checked_at,
+                )
                 for c in run.contexts
             ],
         )
         rows = []
         for asset in run.assets:
             context = context_by_id.get(asset.context_id)
-            kind = context.kind if context else ("anonymous" if run.mode == "quick" else "unknown")
+            kind = (
+                context.context_key
+                if context and run.mode == "identity_collection"
+                else context.kind
+                if context
+                else ("anonymous" if run.mode == "quick" else "unknown")
+            )
             url = safe_url(asset.url)
             codes = _codes([asset.status_code])
             attrs = asset.attributes if isinstance(asset.attributes, dict) else {}
@@ -311,6 +348,29 @@ class AssetCatalogService:
                     status_codes=codes,
                     observation="response_observed" if codes else "unknown",
                     context=kind,
+                    context_id=context.id if context else None,
+                    profile_id=context.credential_profile_id if context else None,
+                    display_name=safe_text((context.identity_snapshot or {}).get("name"))
+                    if context
+                    else None,
+                    health_status=context.health_status if context else None,
+                    identity_assessment=attrs.get("identity_assessment")
+                    if attrs.get("identity_assessment")
+                    in {"confirmed", "identity_uncertain", "auth_diagnostic"}
+                    else None,
+                    identity_observations=[
+                        {
+                            "evidence_id": e.id,
+                            "status_code": e.data.get("status_code"),
+                            "assessment": e.data.get("identity_assessment"),
+                        }
+                        for e in session.scalars(
+                            select(ScanEvidence).where(ScanEvidence.asset_id == asset.id)
+                        )
+                        if isinstance(e.data, dict) and "identity_assessment" in e.data
+                    ]
+                    if run.mode == "identity_collection"
+                    else None,
                     context_completeness=context.completeness if context else None,
                     first_seen=asset.discovered_at,
                     last_seen=asset.discovered_at,
@@ -465,7 +525,10 @@ class AssetCatalogService:
                     candidate_reason=safe_text(candidate.get("reason")),
                     status_codes=[],
                     observation="unknown",
-                    context="anonymous",
+                    context=safe_text(candidate.get("context")) or "anonymous",
+                    context_id=candidate.get("context_id")
+                    if type(candidate.get("context_id")) is int
+                    else None,
                     validity=AssetValidity(verification="candidate"),
                     discovery_url=safe_url(candidate.get("source_url"))
                     if candidate.get("source_url")

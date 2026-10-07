@@ -16,6 +16,37 @@ URL
   → Markdown 报告
 ```
 
+## v0.6.0：独立身份采集与已知缺口补采
+
+从 Web 导航进入「身份与采集」：选择任一账号或匿名即可采集，不要求管理员账号。多个身份复用 HTML、Sitemap、JS 线索、URL/OpenAPI 与 Hash 路由发现能力，观察按稳定身份 ID 隔离，在同一任务清单中归并资产主体。
+
+1. **准备身份**：创建档案，使用现有自动登录配置，或人工登录／导入 Playwright 状态。验证码、短信、扫码由用户完成；登录窗口位于 **Garden 所在电脑**，远程部署可导入状态。
+2. **确认恢复**：保存前用新浏览器恢复，验证指定成功元素或文本。HTTP 200、Cookie 或非登录地址本身都不足以证明登录成功；成功后不会自动扫描。
+3. **预览采集**：选择身份、目标和入口，预览不会访问目标。单独确认后开始有界 GET/HEAD 采集；每 20 次允许请求或 30 秒及批次结束时检查身份，验证流量也占用请求预算。
+4. **阅读清单**：矩阵区分「已观察／身份不确定／未观察／未知」，保留不同身份的 HTTP 状态与证据。认证诊断不计入已确认身份下观察到的资产主体；这些主体仍不等于业务有效资产。
+5. **重新认证与补采**：重新导入或登录后，从原任务检查点预览已知缺口并创建关联子任务。原报告不变；仅补已知未完成／身份不确定请求，不代表全站恢复。
+
+本模式输出资产清单，不执行风险分析；结果摘要明确显示「未执行风险分析」。历史已确认响应与后续身份不确定响应分别保留，不能将后者当成该身份下的有效观察。
+
+```bash
+# 单身份或匿名，不要求 user/admin 成对提供
+garden identities collect https://example.test/ --target-id 1 --profile-id 2
+garden identities collect https://example.test/ --target-id 1 --anonymous
+# 导入显式指定的本地文件；状态不进入命令行参数
+garden identities import state.json --profile-id 2 \
+  --login-url https://example.test/login --validate-url https://example.test/me \
+  --success-selector '#account-menu'
+garden identities validate 7
+garden identities revoke 7
+garden identities recover 12 4 8
+```
+
+人工登录的 CLI 子命令 `login / status / confirm / cancel` 通过 `--api-url` 连接正在运行的 Garden Web 服务，由服务持有浏览器窗口，避免 CLI 退出导致状态丢失。`activate PROFILE_ID` 显式使用现有自动登录配置并验证恢复。运行 `garden identities --help` 查看参数。
+
+升级前运行 `garden db upgrade`，当前迁移为 `0008`。兼容旧匿名及固定 anonymous/user/admin 覆盖流程；有新增身份数据时拒绝有损降级。导入上限 1 MiB，支持同源 Cookie、localStorage 和 sessionStorage，不保证 IndexedDB、设备绑定凭据或任意跨域 SSO 状态可以迁移。人工窗口最多同时 3 个，15 分钟过期；补采检查点最多保存 2000 条已知请求及 1 MiB URL 材料，截断会明确显示。
+
+[真实本地 v0.6 演示与验证记录](docs/demo-v06-identities.md)
+
 ## 正式 CLI 快速开始
 
 macOS、Linux 或 WSL（Python 3.10+）可直接在仓库根目录安装用户级 CLI；不需要 `sudo`，也不需要手动激活虚拟环境：

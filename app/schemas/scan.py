@@ -102,7 +102,7 @@ class ScanContextView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    kind: ContextKind
+    kind: ContextKind | Literal["identity"]
     credential_profile_id: int | None = None
     auth_session_id: int | None = None
     status: str
