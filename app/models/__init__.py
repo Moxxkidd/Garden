@@ -55,3 +55,17 @@ __all__ = [
     "ScanFailure",
     "Target",
 ]
+
+from app.models.project import Project, ProjectEntry, ProjectRun  # noqa: F401
+from app.models.project_asset import (  # noqa: F401
+    ProjectAsset,
+    ProjectCandidate,
+    ProjectObservation,
+)
+from app.models.project_curation import (  # noqa: F401
+    ProjectAnnotation,
+    ProjectAudit,
+    ProjectCorrection,
+    ProjectCorrectionMember,
+    ProjectRelation,
+)
