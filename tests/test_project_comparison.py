@@ -106,3 +106,26 @@ def test_incompatible_source_cannot_claim_missing_asset(seeded_records, change, 
         result = ProjectComparisonService().compare(session, project.id, first.id, second.id)
         assert all(item["status"] == "unknown" for item in result.items)
         assert reason in result.limitations
+
+
+def test_authenticated_observation_without_identity_proof_is_unknown(seeded_records):
+    from sqlalchemy import select
+
+    from app.models.scan_run import ScanAsset
+
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        runs = []
+        for day in (1, 2):
+            source = source_run(
+                session, target, day=day, profile_id=seeded_records["credential"].id
+            )
+            session.scalar(
+                select(ScanAsset).where(ScanAsset.scan_run_id == source.id)
+            ).attributes = {}
+            session.flush()
+            runs.append(ingest(session, project, entry, source))
+        result = ProjectComparisonService().compare(session, project.id, runs[0].id, runs[1].id)
+        assert result.items[0]["status"] == "unknown"
+        assert "observation_identity_unknown" in result.items[0]["reasons"]

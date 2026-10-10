@@ -1,9 +1,16 @@
 """Shared public project representations; private fingerprints stay internal."""
 
+from app.models.target import Target
 from app.services.asset_catalog import safe_url
 
 
-def entry_view(entry):
+def entry_view(session, entry):
+    target = session.get(Target, entry.target_id)
+    binding_status = "valid"
+    if not entry.enabled:
+        binding_status = "disabled"
+    elif not target or target.status != "active" or target.base_url != entry.target_base_url:
+        binding_status = "needs_rebind"
     return dict(
         id=entry.id,
         project_id=entry.project_id,
@@ -12,6 +19,7 @@ def entry_view(entry):
         entry_url=safe_url(entry.entry_url),
         origin=entry.origin,
         enabled=entry.enabled,
+        binding_status=binding_status,
     )
 
 

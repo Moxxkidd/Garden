@@ -83,7 +83,7 @@ async def create(request: Request):
 def detail_page(request: Request, project_id: int):
     with session_scope() as session:
         project = ProjectView.model_validate(projects.get(session, project_id))
-        entries = [entry_view(e) for e in projects.entries(session, project_id)]
+        entries = [entry_view(session, e) for e in projects.entries(session, project_id)]
         runs = [run_view(r) for r in ingestion.runs(session, project_id)]
         targets = [
             dict(id=t.id, name=t.name)

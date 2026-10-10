@@ -100,3 +100,19 @@ def test_native_project_mutation_reports_conflict_status(app, seeded_records):
         assert "操作未完成" in response.text
         invalid = client.post(f"/projects/{pid}/archive", data={"expected_revision": "invalid"})
         assert invalid.status_code == 400
+
+
+def test_changed_target_binding_is_visible_before_start(app, seeded_records):
+    from tests.helpers.project_assets import project_fixture
+
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        pid = project.id
+        target.base_url = "http://localhost:8222/"
+    with TestClient(app) as client:
+        result = client.get(f"/api/projects/{pid}")
+        assert result.json()["entries"][0]["binding_status"] == "needs_rebind"
+        page = client.get(f"/projects/{pid}")
+        assert "需要重新绑定" in page.text
+        assert "预览新扫描</a>" not in page.text

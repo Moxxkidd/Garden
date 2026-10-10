@@ -158,7 +158,7 @@ def identity_page(request: Request):
             if not entry:
                 raise InputValidationError("项目入口不存在。")
             ProjectService().validate_entry(session, entry.project_id, entry_id)
-            project_entry = entry_view(entry)
+            project_entry = entry_view(session, entry)
         targets = [{"id": t.id, "name": t.name} for t in session.scalars(select(Target))]
         profiles = [
             {"id": p.id, "name": p.name, "role": p.role, "target_id": p.target_id}

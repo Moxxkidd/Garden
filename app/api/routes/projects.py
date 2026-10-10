@@ -83,7 +83,7 @@ def show_project(project_id: int):
     with session_scope() as session:
         return dict(
             project=ProjectView.model_validate(projects.get(session, project_id)),
-            entries=[entry_view(e) for e in projects.entries(session, project_id)],
+            entries=[entry_view(session, e) for e in projects.entries(session, project_id)],
             runs=[run_view(r) for r in ingestion.runs(session, project_id)],
         )
 
@@ -101,7 +101,7 @@ async def archive_project(project_id: int, request: Request):
 async def add_entry(project_id: int, request: Request):
     body = await payload(request, ProjectEntryCreate)
     with session_scope() as session:
-        return entry_view(projects.add_entry(session, project_id, body))
+        return entry_view(session, projects.add_entry(session, project_id, body))
 
 
 @router.post("/{project_id}/entries/{entry_id}")
@@ -109,7 +109,9 @@ async def update_entry(project_id: int, entry_id: int, request: Request):
     body = await payload(request, ProjectEntryUpdate)
     with session_scope() as session:
         projects.get_entry(session, project_id, entry_id)
-        return entry_view(projects.update_entry(session, entry_id, body, body.expected_revision))
+        return entry_view(
+            session, projects.update_entry(session, entry_id, body, body.expected_revision)
+        )
 
 
 @router.post("/{project_id}/imports/preview")

@@ -109,6 +109,10 @@ class ProjectComparisonService:
             if any(
                 o.record.get("observation") != "response_observed"
                 or o.record.get("identity_assessment") in {"identity_uncertain", "auth_diagnostic"}
+                or (
+                    o.record.get("profile_id") is not None
+                    and o.record.get("identity_assessment") != "confirmed"
+                )
                 for o in previous + current
             ):
                 limitations.append("observation_identity_unknown")

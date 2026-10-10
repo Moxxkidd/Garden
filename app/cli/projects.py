@@ -72,7 +72,7 @@ def show(project_id: int):
         emit(
             dict(
                 project=ProjectView.model_validate(projects.get(session, project_id)).model_dump(),
-                entries=[entry_view(e) for e in projects.entries(session, project_id)],
+                entries=[entry_view(session, e) for e in projects.entries(session, project_id)],
                 runs=[run_view(r) for r in ProjectIngestionService().runs(session, project_id)],
             )
         )
@@ -96,11 +96,12 @@ def entry_add(
     with session_scope() as session:
         emit(
             entry_view(
+                session,
                 projects.add_entry(
                     session,
                     project_id,
                     ProjectEntryCreate(target_id=target_id, entry_url=url, name=name),
-                )
+                ),
             )
         )
 
@@ -120,6 +121,7 @@ def entry_update(
         projects.get_entry(session, project_id, entry_id)
         emit(
             entry_view(
+                session,
                 projects.update_entry(
                     session,
                     entry_id,
@@ -127,7 +129,7 @@ def entry_update(
                         target_id=target_id, entry_url=url, name=name, enabled=enabled
                     ),
                     revision,
-                )
+                ),
             )
         )
 
