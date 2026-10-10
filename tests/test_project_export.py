@@ -73,3 +73,32 @@ def test_export_stays_on_one_snapshot_during_concurrent_annotation(seeded_record
         current = ProjectCatalogService().list(reader, pid, ProjectQuery())
         assert current.revision == revision + 1
         assert current.items[0]["note"] == "new concurrent note"
+
+
+def test_markdown_summary_links_to_filtered_evidence(seeded_records):
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        ingest(session, project, entry, source_run(session, target))
+        text = export_project(
+            session, project.id, ProjectQuery(view="observations", q="asset"), "markdown"
+        )
+        assert f"/projects/{project.id}/assets?" in text
+        assert "view=observations" in text
+        assert "q=asset" in text
+
+
+def test_empty_csv_preserves_filter_and_project_metadata(seeded_records):
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, _ = project_fixture(session, target)
+        rows = list(
+            csv.DictReader(
+                io.StringIO(export_project(session, project.id, ProjectQuery(q="missing"), "csv"))
+            )
+        )
+        assert len(rows) == 1
+        assert rows[0]["row_kind"] == "metadata"
+        assert rows[0]["project_id"] == str(project.id)
+        assert rows[0]["exported_count"] == "0"
+        assert json.loads(rows[0]["filters"])["q"] == "missing"

@@ -175,6 +175,11 @@ class ScanApplicationService:
                         request.project_entry_id,
                         ProjectSourceRef(source="scan", run_id=existing.id),
                     )
+                    session.commit()
+                    ProjectLifecycleService().reconcile(
+                        ProjectSourceRef(source="scan", run_id=existing.id)
+                    )
+                    session.refresh(existing)
                 return self._assessment_view(existing)
             run = ScanRun(
                 mode=request.mode.value,
@@ -221,6 +226,11 @@ class ScanApplicationService:
                             request.project_entry_id,
                             ProjectSourceRef(source="scan", run_id=existing.id),
                         )
+                        session.commit()
+                        ProjectLifecycleService().reconcile(
+                            ProjectSourceRef(source="scan", run_id=existing.id)
+                        )
+                        session.refresh(existing)
                     return self._assessment_view(existing)
                 raise
             if resolved.seed_input or resolved.sitemap_url:

@@ -18,3 +18,5 @@ data/
 exports/
 baselines/
 PLANS.md
+.verification/
+output/playwright/

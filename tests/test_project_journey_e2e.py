@@ -103,6 +103,52 @@ def test_two_origins_project_scan_history_and_download_without_js(app, seeded_re
                 exported = json.loads(Path(download.value.path()).read_text())
                 assert exported["exported_count"] == 1
                 assert exported["items"][0]["note"] == "Reviewed local fixture"
+                # Read IDs from the public catalog; all changes use native preview forms.
+                pid = project_url.rsplit("/", 1)[1]
+                rows = page.request.get(garden + f"/api/projects/{pid}/assets").json()["items"]
+                same_origin = [r for r in rows if r["url"].startswith(first + "/")]
+                retained = next(r["id"] for r in same_origin if r["url"] == first + "/asset")
+                original_history = page.request.get(
+                    garden + f"/api/projects/{pid}/assets?view=observations"
+                ).json()["items"]
+                for operation in ("merge", "split"):
+                    page.goto(project_url + "/assets")
+                    page.get_by_text("人工合并或拆分", exact=True).click()
+                    form = page.locator('form[action$="/corrections/preview"]')
+                    form.locator('[name="action"]').select_option(operation)
+                    form.locator('[name="asset_ids"]').fill(
+                        " ".join(r["id"] for r in same_origin) if operation == "merge" else retained
+                    )
+                    if operation == "merge":
+                        form.locator('[name="target_asset_id"]').fill(retained)
+                    else:
+                        observations = page.request.get(
+                            garden
+                            + f"/api/projects/{pid}/assets?view=observations&asset_id={retained}"
+                        ).json()["items"]
+                        form.locator('[name="observation_ids"]').fill(str(observations[0]["id"]))
+                    form.locator('[name="reason"]').fill("Synthetic journey verification")
+                    form.get_by_role("button", name="预览整理影响").click()
+                    page.get_by_role("button", name="确认整理", exact=True).click()
+                    expect(
+                        page.get_by_text(
+                            f"项目累计 {3 if operation == 'merge' else 4} 个主体", exact=False
+                        )
+                    ).to_be_visible()
+                # Dependent split must be revoked before the earlier merge.
+                for _ in range(2):
+                    page.goto(project_url + "/assets/" + retained)
+                    forms = page.locator('form[action$="/revoke"]')
+                    form = forms.last
+                    form.locator('[name="reason"]').fill("Restore original presentation")
+                    form.get_by_role("button", name="撤销此整理").click()
+                restored = page.request.get(
+                    garden + f"/api/projects/{pid}/assets?view=observations"
+                ).json()["items"]
+                assert [(o["id"], o["asset_id"], o["display_asset_id"]) for o in restored] == [
+                    (o["id"], o["asset_id"], o["display_asset_id"]) for o in original_history
+                ]
+                page.goto(project_url + "/assets?tag=reviewed")
                 artifacts = Path("output/playwright/v07")
                 artifacts.mkdir(parents=True, exist_ok=True)
                 page.screenshot(path=str(artifacts / "project-desktop.png"), full_page=True)

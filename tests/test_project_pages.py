@@ -85,3 +85,18 @@ def test_identity_page_prefills_project_entry_and_preview(app, seeded_records):
         )
         assert response.status_code == 200
         assert f"项目入口 #{eid}" in response.text
+
+
+def test_native_project_mutation_reports_conflict_status(app, seeded_records):
+    from tests.helpers.project_assets import project_fixture
+
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, _ = project_fixture(session, target)
+        pid = project.id
+    with TestClient(app) as client:
+        response = client.post(f"/projects/{pid}/archive", data={"expected_revision": 0})
+        assert response.status_code == 409
+        assert "操作未完成" in response.text
+        invalid = client.post(f"/projects/{pid}/archive", data={"expected_revision": "invalid"})
+        assert invalid.status_code == 400

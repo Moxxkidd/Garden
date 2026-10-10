@@ -69,7 +69,14 @@ class ProjectComparisonService:
                 return (
                     context.get("completeness") == "complete"
                     and context.get("status") in {"completed", "ready"}
-                    and context.get("health_status") in {None, "ready", "valid", "healthy"}
+                    and (
+                        context.get("health_status") in {"ready", "valid", "healthy"}
+                        or (
+                            context.get("kind") == "anonymous"
+                            and context.get("profile_id") is None
+                            and context.get("health_status") is None
+                        )
+                    )
                 )
         return False
 

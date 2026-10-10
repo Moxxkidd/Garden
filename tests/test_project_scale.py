@@ -4,7 +4,7 @@ import json
 import time
 from datetime import datetime, timezone
 
-from sqlalchemy import insert
+from sqlalchemy import event, insert
 
 from app.db.bootstrap import session_scope
 from app.models.scan_run import ScanAsset
@@ -16,9 +16,17 @@ from app.services.project_ingestion import ProjectIngestionService
 from tests.helpers.project_assets import import_request, project_fixture, source_run
 
 
-def test_ten_thousand_observations_paginate_and_export_exactly(seeded_records):
+def test_ten_thousand_observations_paginate_and_export_exactly(seeded_records, request):
     start = time.perf_counter()
     with session_scope() as session:
+        statements = []
+        engine = session.get_bind()
+
+        def count_sql(conn, cursor, statement, parameters, context, executemany):
+            statements.append(statement.split(None, 1)[0])
+
+        event.listen(engine, "before_cursor_execute", count_sql)
+        request.addfinalizer(lambda: event.remove(engine, "before_cursor_execute", count_sql))
         target = session.get(Target, seeded_records["target"].id)
         project, entry = project_fixture(session, target)
         run = source_run(session, target)
@@ -45,6 +53,7 @@ def test_ten_thousand_observations_paginate_and_export_exactly(seeded_records):
         membership = service.confirm(session, project.id, preview.token)
         assert service.confirm(session, project.id, preview.token).id == membership.id
         indexed = time.perf_counter()
+        index_sql = len(statements)
         query = ProjectQuery(view="observations")
         catalog = ProjectCatalogService()
         ids = []
@@ -60,5 +69,6 @@ def test_ten_thousand_observations_paginate_and_export_exactly(seeded_records):
         assert export["counts"]["assets"] == 101
         print(
             f"scale observations=10000 index_seconds={indexed - start:.3f} "
-            f"query_export_seconds={time.perf_counter() - indexed:.3f}"
+            f"query_export_seconds={time.perf_counter() - indexed:.3f} "
+            f"setup_index_sql={index_sql} query_export_sql={len(statements) - index_sql}"
         )

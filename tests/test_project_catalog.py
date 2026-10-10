@@ -88,3 +88,40 @@ def test_observation_filters_apply_before_subject_count(seeded_records):
             filtered = catalog.list(session, project.id, ProjectQuery(**changes))
             assert filtered.matched == expected, changes
             assert filtered.counts["observations"] == 3
+
+
+def test_same_route_keeps_anonymous_401_and_user_200_after_failed_login(seeded_records):
+    from sqlalchemy import select
+
+    from app.models.scan_run import ScanAsset
+    from app.schemas.projects import ProjectQuery
+    from app.services.project_comparison import ProjectComparisonService
+    from tests.test_project_comparison import ingest
+
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        anonymous = source_run(session, target, day=1, status_code=401)
+        ingest(session, project, entry, anonymous)
+        user = source_run(session, target, day=2, profile_id=seeded_records["credential"].id)
+        before = ingest(session, project, entry, user)
+        failed = source_run(
+            session,
+            target,
+            day=3,
+            profile_id=seeded_records["credential"].id,
+            completeness="incomplete",
+        )
+        failed.status = "failed"
+        session.delete(session.scalar(select(ScanAsset).where(ScanAsset.scan_run_id == failed.id)))
+        session.flush()
+        after = ingest(session, project, entry, failed)
+        result = ProjectCatalogService().list(session, project.id, ProjectQuery())
+        assert result.counts["assets"] == 1
+        assert result.counts["observations"] == 2
+        latest = result.items[0]["latest_observations"]
+        assert {tuple(o["record"]["status_codes"]) for o in latest} == {(401,), (200,)}
+        assert len({o["identity_key"] for o in latest}) == 2
+        comparison = ProjectComparisonService().compare(session, project.id, before.id, after.id)
+        assert comparison.items[0]["status"] == "unknown"
+        assert comparison.counts["not_observed"] == 0

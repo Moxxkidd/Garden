@@ -44,9 +44,12 @@ refresh_request:
     )
 
 
-@pytest.mark.parametrize("project_selected", [False, True])
+@pytest.mark.parametrize(
+    "project_selected,collection_fails", [(False, False), (True, False), (True, True)]
+)
 def test_inventory_build_from_target_profile(
     project_selected,
+    collection_fails,
     auth_http_transport,
     fake_inventory_collection_service,
     tmp_path,
@@ -105,6 +108,32 @@ def test_inventory_build_from_target_profile(
         ),
         collection_service=fake_inventory_collection_service,
     )
+    if collection_fails:
+        from app.models.inventory_run import InventoryRun
+        from app.services.project_ingestion import ProjectIngestionService
+
+        def fail_collection(*args):
+            raise RuntimeError("Synthetic collection failure")
+
+        monkeypatch.setattr(fake_inventory_collection_service, "collect", fail_collection)
+        with (
+            pytest.raises(RuntimeError, match="Synthetic collection failure"),
+            session_scope() as session,
+        ):
+            service.build_from_target_profile(
+                session,
+                "inventory-target",
+                "inventory-profile",
+                InventoryBuildControls(project_entry_id=entry_id),
+            )
+        with session_scope() as session:
+            membership = ProjectIngestionService().runs(session, project_id)
+            assert len(membership) == 1
+            assert membership[0].status == "complete"
+            assert membership[0].observation_count == 0
+            assert membership[0].snapshot["scope"]["status"] == "failed"
+            assert session.get(InventoryRun, membership[0].run_id).status == "failed"
+        return
     with session_scope() as session:
         summary = service.build_from_target_profile(
             session,

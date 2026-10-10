@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from app.core.errors import ConflictError, ResourceNotFoundError
@@ -108,13 +109,13 @@ class ProjectSourceService:
         }
         relations = []
         if ref.source == "scan":
+            evidence_by_asset = defaultdict(list)
+            for evidence in run.evidence:
+                if isinstance(evidence.data, dict):
+                    evidence_by_asset[evidence.asset_id].append((evidence.data, evidence.id))
             for asset in run.assets:
                 sources = [(asset.attributes or {}, None)]
-                sources.extend(
-                    (e.data, e.id)
-                    for e in run.evidence
-                    if e.asset_id == asset.id and isinstance(e.data, dict)
-                )
+                sources.extend(evidence_by_asset[asset.id])
                 for data, evidence_id in sources:
                     pairs = data.get("catalog_redirects", [])
                     if not isinstance(pairs, list):

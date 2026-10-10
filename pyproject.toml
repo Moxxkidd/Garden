@@ -41,6 +41,9 @@ dev = [
 garden = "app.cli.main:app"
 gardenctl = "app.cli.main:app"
 
+[tool.hatch.build.targets.sdist]
+exclude = ["/.verification", "/output", "/.worktrees", "/.coverage"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
 

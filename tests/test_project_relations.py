@@ -46,6 +46,12 @@ def test_saved_page_and_script_sources_do_not_invent_observed_targets(seeded_rec
         assert script["to_asset_id"] is None
         assert script["detail"]["to_state"] == "candidate"
         assert relations.counts["assets"] == 1
+        assert (
+            ProjectCatalogService()
+            .list(session, project.id, ProjectQuery(view="relations", site="http://localhost:8111"))
+            .matched
+            == 2
+        )
 
 
 def test_candidate_identity_and_time_filters_do_not_silently_return_all(seeded_records):
@@ -113,3 +119,62 @@ def test_redirect_relations_use_saved_pairs_and_redact_queries(seeded_records):
         assert relations.items[0]["detail"]["from_state"] == "unresolved"
         assert relations.items[0]["to_asset_id"] is not None
         assert "SECRET" not in relations.model_dump_json()
+
+
+def test_missing_saved_relations_reports_unknown_not_no_dependencies(seeded_records):
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        service = ProjectIngestionService()
+        preview = service.preview(
+            session, project.id, import_request(entry, source_run(session, target))
+        )
+        service.confirm(session, project.id, preview.token)
+        result = ProjectCatalogService().list(session, project.id, ProjectQuery(view="relations"))
+        assert result.matched == 0
+        assert any("不代表不存在依赖" in note for note in result.limitations)
+
+
+def test_relation_filters_use_its_own_source_observation(seeded_records):
+    from datetime import datetime, timezone
+
+    from tests.test_project_comparison import ingest
+
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        old = source_run(session, target, day=1)
+        asset = session.scalar(select(ScanAsset).where(ScanAsset.scan_run_id == old.id))
+        asset.attributes = {
+            "discovery": {"version": 1, "sources": [{"kind": "html_link", "url": target.base_url}]}
+        }
+        ingest(session, project, entry, old)
+        ingest(
+            session,
+            project,
+            entry,
+            source_run(session, target, day=2, profile_id=seeded_records["credential"].id),
+        )
+        catalog = ProjectCatalogService()
+        assert catalog.list(session, project.id, ProjectQuery(view="relations")).matched == 1
+        assert (
+            catalog.list(
+                session,
+                project.id,
+                ProjectQuery(
+                    view="relations", seen_from=datetime(2026, 10, 2, tzinfo=timezone.utc)
+                ),
+            ).matched
+            == 0
+        )
+        assert (
+            catalog.list(
+                session,
+                project.id,
+                ProjectQuery(
+                    view="relations",
+                    identity_key=f"target:{target.id}:profile:{seeded_records['credential'].id}",
+                ),
+            ).matched
+            == 0
+        )

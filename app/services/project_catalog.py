@@ -245,11 +245,41 @@ class ProjectCatalogService:
                 )
             ):
                 endpoint_query = query.model_copy(update={"kind": None, "asset_id": None, "q": ""})
-                endpoint_ids = self._observations(project_id, endpoint_query).with_only_columns(
-                    ProjectObservation.asset_id
+                source_observations = (
+                    self._observations(project_id, endpoint_query)
+                    .where(
+                        ProjectObservation.project_run_id == model.project_run_id,
+                        ProjectObservation.source_key == model.detail["source_key"].as_string(),
+                    )
+                    .correlate(model)
                 )
+                source_candidates = select(ProjectCandidate.id).where(
+                    ProjectCandidate.project_id == project_id,
+                    ProjectCandidate.project_run_id == model.project_run_id,
+                    ProjectCandidate.source_key == model.detail["source_key"].as_string(),
+                )
+                for value, column in [
+                    (query.site, ProjectCandidate.record["site"].as_string()),
+                    (query.method, ProjectCandidate.record["method"].as_string()),
+                    (query.identity_key, ProjectCandidate.identity_key),
+                    (query.original_asset_id, ProjectCandidate.asset_id),
+                ]:
+                    if value is not None:
+                        source_candidates = source_candidates.where(column == value)
+                if query.seen_from is not None or query.seen_to is not None:
+                    source_candidates = source_candidates.where(False)
+                if query.tag:
+                    tags = func.json_each(ProjectAnnotation.tags).table_valued("value")
+                    source_candidates = source_candidates.where(
+                        select(ProjectAnnotation.asset_id)
+                        .where(
+                            ProjectAnnotation.asset_id == ProjectCandidate.asset_id,
+                            select(1).select_from(tags).where(tags.c.value == query.tag).exists(),
+                        )
+                        .exists()
+                    )
                 rows = rows.where(
-                    or_(model.from_asset_id.in_(endpoint_ids), model.to_asset_id.in_(endpoint_ids))
+                    or_(source_observations.exists(), source_candidates.correlate(model).exists())
                 )
             matched = session.scalar(select(func.count()).select_from(rows.subquery()))
             order = model.id
@@ -300,6 +330,7 @@ class ProjectCatalogService:
             limitations=[
                 "资产主体为路由族；观察来自历史任务，不代表持续在线或业务有效。",
                 "时间缺失的观察无法判断先后；同一时间的不同响应均予以保留。",
+                "关系仅来自已保存的发现或重定向证据；没有保存关系不代表不存在依赖。",
             ],
         )
 

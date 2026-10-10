@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.api.routes.identities import check_origin
 from app.api.routes.projects import parse_query
-from app.core.errors import GardenError, InputValidationError, ResourceNotFoundError
+from app.core.errors import ConflictError, GardenError, InputValidationError, ResourceNotFoundError
 from app.db.bootstrap import session_scope
 from app.models.project import ProjectRun
 from app.models.target import Target
@@ -37,9 +37,13 @@ ingestion, curation = ProjectIngestionService(), ProjectCurationService()
 _HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
 
 
-def render(request, template, **context):
+def render(request, template, *, status_code=200, **context):
     return templates.TemplateResponse(
-        request=request, name=f"projects/{template}.html", context=context, headers=_HEADERS
+        request=request,
+        name=f"projects/{template}.html",
+        context=context,
+        headers=_HEADERS,
+        status_code=status_code,
     )
 
 
@@ -252,10 +256,20 @@ async def mutate(request: Request, project_id: int, action: str):
             project_id=project_id,
             message="字段无效，请返回检查必填项与取值范围。",
             page_title="请检查输入",
+            status_code=400,
         )
     except GardenError as error:
         return render(
-            request, "error", project_id=project_id, message=str(error), page_title="操作未完成"
+            request,
+            "error",
+            project_id=project_id,
+            message=str(error),
+            page_title="操作未完成",
+            status_code=404
+            if isinstance(error, ResourceNotFoundError)
+            else 409
+            if isinstance(error, ConflictError)
+            else 400,
         )
 
 

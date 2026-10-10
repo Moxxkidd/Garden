@@ -56,7 +56,9 @@ def test_cli_scan_flags_and_defaults_are_unchanged() -> None:
 def test_scan_api_schema_preserves_old_fields_and_adds_optional_presentation_fields() -> None:
     assert ScanRunView.model_fields["rerun_of_run_id"].default is None
     assert ScanRunView.model_fields["can_reuse_configuration"].default is False
-    assert set(ScanStartRequest.model_fields) == {"url", "options"}
+    assert set(ScanStartRequest.model_fields) == {"url", "options", "project_entry_id"}
+    assert ScanStartRequest.model_fields["project_entry_id"].default is None
+    assert ScanStartRequest(url="https://example.com/").project_entry_id is None
     assert set(ScanRunView.model_fields) == {
         "id",
         "mode",

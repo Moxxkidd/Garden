@@ -105,3 +105,39 @@ def test_caller_rollback_also_rolls_back_successful_import(seeded_records):
             raise RuntimeError("outer transaction cancelled")
     with session_scope() as session:
         assert service.runs(session, pid) == []
+
+
+def test_concurrent_confirmation_conflicts_safely_then_retries_once(seeded_records):
+    from sqlalchemy import select
+
+    from app.db.bootstrap import get_engine, get_session
+    from app.models.project import Project
+    from app.schemas.projects import ProjectQuery
+    from app.services.project_catalog import ProjectCatalogService
+    from app.services.project_transactions import ensure_read_snapshot
+
+    with get_engine().connect() as connection:
+        connection.exec_driver_sql("PRAGMA journal_mode=WAL")
+    service = ProjectIngestionService()
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        preview = service.preview(
+            session, project.id, import_request(entry, source_run(session, target))
+        )
+        pid = project.id
+    with get_session() as stale:
+        ensure_read_snapshot(stale)
+        stale.scalar(select(Project).where(Project.id == pid))
+        with session_scope() as winner:
+            membership_id = service.confirm(winner, pid, preview.token).id
+        with pytest.raises(ConflictError, match="project_concurrent_update"):
+            service.confirm(stale, pid, preview.token)
+        stale.rollback()
+        assert service.confirm(stale, pid, preview.token).id == membership_id
+        stale.commit()
+    with session_scope() as session:
+        assert (
+            ProjectCatalogService().list(session, pid, ProjectQuery(view="observations")).matched
+            == 1
+        )

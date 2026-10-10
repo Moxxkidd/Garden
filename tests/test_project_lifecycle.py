@@ -159,3 +159,39 @@ def test_identity_preview_binds_project_revision(seeded_records, tmp_path):
         ProjectIngestionService().projects.bump(session, project.id)
         with pytest.raises(GardenError):
             previews.start(session, preview["preview_token"])
+
+
+def test_deduplicated_task_rechecks_completion_after_membership_commit(seeded_records, tmp_path):
+    import httpx
+
+    from app.models.scan_run import ScanRun
+    from app.schemas.assessment import AssessmentStartRequest
+    from tests.test_scan_preview_pages import HoldingDispatcher
+    from tests.test_url_scan_pipeline import _service
+
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        pid, eid, tid, url = project.id, entry.id, target.id, entry.entry_url
+    service = _service(tmp_path, lambda request: httpx.Response(200, text="fixture"))
+    service.dispatcher = HoldingDispatcher()
+    try:
+        original = service.start_assessment(AssessmentStartRequest(url=url, target_id=tid))
+        # A worker can reach terminal state between dedup selection and attachment.
+        # Keep its selected active key to reproduce the late-attachment branch.
+        from sqlalchemy import update
+
+        with session_scope() as session:
+            session.execute(
+                update(ScanRun).where(ScanRun.id == original.id).values(status="completed")
+            )
+        duplicate = service.start_assessment(
+            AssessmentStartRequest(url=url, target_id=tid, project_entry_id=eid)
+        )
+        assert duplicate.id == original.id
+        with session_scope() as session:
+            runs = ProjectIngestionService().runs(session, pid)
+            assert len(runs) == 1
+            assert runs[0].status == "complete"
+    finally:
+        service.shutdown()
