@@ -30,6 +30,7 @@ class ProjectSourceSnapshot(BaseModel):
     records: list[AssetRecord]
     candidates: list[AssetRecord]
     comparison_metadata: dict
+    relations: list[dict] = Field(default_factory=list)
     digest: str = Field(exclude=True)
 
 
@@ -50,6 +51,7 @@ class ProjectQuery(BaseModel):
     identity_key: str | None = None
     project_run_id: int | None = Field(default=None, gt=0)
     asset_id: str | None = None
+    original_asset_id: str | None = None
     tag: str | None = None
     q: str = Field(default="", max_length=200)
     seen_from: datetime | None = None
@@ -109,3 +111,33 @@ class ProjectView(BaseModel):
     description: str
     status: str
     revision: int
+
+
+class ProjectCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=2000)
+
+
+class ProjectRevision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=0)
+
+
+class ProjectEntryUpdate(ProjectEntryCreate):
+    expected_revision: int = Field(ge=0)
+
+
+class ProjectConfirmation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    preview_token: str = Field(min_length=1, max_length=200)
+
+
+class ProjectAnnotationRequest(ProjectRevision):
+    asset_id: str = Field(min_length=1, max_length=32)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    note: str = Field(default="", max_length=2000)
+
+
+class ProjectRevokeRequest(ProjectRevision):
+    reason: str = Field(min_length=1, max_length=2000)

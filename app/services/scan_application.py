@@ -28,6 +28,7 @@ from app.schemas.assessment import (
     AssessmentStartRequest,
     CoverageDifferenceView,
 )
+from app.schemas.projects import ProjectSourceRef
 from app.schemas.scan import (
     ScanContextView,
     ScanFailureView,
@@ -38,6 +39,7 @@ from app.schemas.scan import (
 )
 from app.schemas.scan_comparison import ScanComparison
 from app.services.coverage_gaps import explain_coverage_gaps
+from app.services.project_lifecycle import ProjectLifecycleService
 from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_options import resolve_scan_options
 from app.services.scan_pipeline import STAGES, ScanPipeline
@@ -121,10 +123,13 @@ class ScanApplicationService:
             self.settings.scan_max_concurrent_tasks
         )
 
-    def start_scan(self, url: str, options: ScanOptions | None = None) -> ScanRunView:
+    def start_scan(
+        self, url: str, options: ScanOptions | None = None, *, project_entry_id: int | None = None
+    ) -> ScanRunView:
         assessment = self.start_assessment(
             AssessmentStartRequest(
                 url=url,
+                project_entry_id=project_entry_id,
                 mode=AssessmentMode.QUICK,
                 options=options or ScanOptions(),
             )
@@ -148,6 +153,10 @@ class ScanApplicationService:
         with self._start_lock, session_scope() as session:
             target_id = self._resolve_target_id(session, request)
             self._validate_source_run(session, request, target_id)
+            if request.project_entry_id is not None:
+                ProjectLifecycleService().validate(
+                    session, request.project_entry_id, target_id, normalized
+                )
             if request.rerun_of_run_id is not None:
                 original = reusable_run(session, request.rerun_of_run_id)
                 if (
@@ -160,6 +169,12 @@ class ScanApplicationService:
             active_key = self._active_key(normalized, request, resolved, target_id)
             existing = session.scalar(select(ScanRun).where(ScanRun.active_key == active_key))
             if existing is not None:
+                if request.project_entry_id is not None:
+                    ProjectLifecycleService().attach(
+                        session,
+                        request.project_entry_id,
+                        ProjectSourceRef(source="scan", run_id=existing.id),
+                    )
                 return self._assessment_view(existing)
             run = ScanRun(
                 mode=request.mode.value,
@@ -200,6 +215,12 @@ class ScanApplicationService:
                 session.rollback()
                 existing = session.scalar(select(ScanRun).where(ScanRun.active_key == active_key))
                 if existing is not None:
+                    if request.project_entry_id is not None:
+                        ProjectLifecycleService().attach(
+                            session,
+                            request.project_entry_id,
+                            ProjectSourceRef(source="scan", run_id=existing.id),
+                        )
                     return self._assessment_view(existing)
                 raise
             if resolved.seed_input or resolved.sitemap_url:
@@ -212,6 +233,12 @@ class ScanApplicationService:
                 )
             session.add_all(self._assessment_contexts(session, run, request))
             create_assessment_stages(session, run)
+            if request.project_entry_id is not None:
+                ProjectLifecycleService().attach(
+                    session,
+                    request.project_entry_id,
+                    ProjectSourceRef(source="scan", run_id=run.id),
+                )
             session.commit()
             run_id = run.id
         callback = (
@@ -223,14 +250,27 @@ class ScanApplicationService:
             self.dispatcher.submit(run_id, callback)
         except Exception:
             self._mark_dispatch_failed(run_id)
+            ProjectLifecycleService().reconcile(ProjectSourceRef(source="scan", run_id=run_id))
             raise
         return self._get_assessment_view_unchecked(run_id)
 
     def execute_scan(self, scan_run_id: int) -> None:
+        try:
+            self._execute_scan(scan_run_id)
+        finally:
+            ProjectLifecycleService().reconcile(ProjectSourceRef(source="scan", run_id=scan_run_id))
+
+    def _execute_scan(self, scan_run_id: int) -> None:
         with session_scope() as session:
             self.pipeline.execute(session, scan_run_id)
 
     def execute_authenticated_assessment(self, scan_run_id: int) -> None:
+        try:
+            self._execute_authenticated_assessment(scan_run_id)
+        finally:
+            ProjectLifecycleService().reconcile(ProjectSourceRef(source="scan", run_id=scan_run_id))
+
+    def _execute_authenticated_assessment(self, scan_run_id: int) -> None:
         with session_scope() as session:
             try:
                 self.pipeline.execute_authenticated(session, scan_run_id)
@@ -244,7 +284,9 @@ class ScanApplicationService:
             run = self._get(session, scan_run_id)
             if run.status not in TERMINAL_SCAN_RUN_STATUSES:
                 self._mark_interrupted(run)
-            return self._view(run)
+            result = self._view(run)
+        ProjectLifecycleService().reconcile(ProjectSourceRef(source="scan", run_id=scan_run_id))
+        return result
 
     def cancel_assessment(self, scan_run_id: int) -> AssessmentRunView:
         with session_scope() as session:
@@ -254,7 +296,9 @@ class ScanApplicationService:
             if run.status not in TERMINAL_SCAN_RUN_STATUSES:
                 self._mark_interrupted(run)
                 self.pipeline.cleanup_temporary_context_secrets(session, run.id)
-            return self._assessment_view(run)
+            result = self._assessment_view(run)
+        ProjectLifecycleService().reconcile(ProjectSourceRef(source="scan", run_id=scan_run_id))
+        return result
 
     def interrupt_active_scans(self) -> int:
         """在服务启动时收敛上次异常退出遗留的活动扫描。"""
@@ -274,7 +318,9 @@ class ScanApplicationService:
                 self._mark_interrupted(run)
                 if run.mode == AssessmentMode.AUTHENTICATED_COVERAGE.value:
                     self.pipeline.cleanup_temporary_context_secrets(session, run.id)
-            return len(active_ids)
+        for scan_run_id in active_ids:
+            ProjectLifecycleService().reconcile(ProjectSourceRef(source="scan", run_id=scan_run_id))
+        return len(active_ids)
 
     def purge_expired_temporary_secrets(
         self,
@@ -583,6 +629,13 @@ class ScanApplicationService:
 
     def _resolve_target_id(self, session, request: AssessmentStartRequest) -> int | None:
         if request.mode == AssessmentMode.QUICK:
+            if request.project_entry_id is not None and request.target_id is None:
+                from app.models.project import ProjectEntry
+
+                entry = session.get(ProjectEntry, request.project_entry_id)
+                if entry is None:
+                    raise ResourceNotFoundError("project_entry_not_found")
+                return entry.target_id
             if request.target_id is not None and session.get(Target, request.target_id) is None:
                 raise ResourceNotFoundError(f"Target {request.target_id} was not found.")
             return request.target_id

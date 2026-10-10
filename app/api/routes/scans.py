@@ -35,6 +35,10 @@ router = APIRouter(tags=["scans"])
 
 @router.post("/api/scans", response_model=ScanRunView, status_code=status.HTTP_202_ACCEPTED)
 def start_scan_api(request: Request, payload: ScanStartRequest) -> ScanRunView:
+    if payload.project_entry_id is not None:
+        return request.app.state.scan_service.start_scan(
+            payload.url, payload.options, project_entry_id=payload.project_entry_id
+        )
     return request.app.state.scan_service.start_scan(payload.url, payload.options)
 
 

@@ -13,12 +13,16 @@ from app.api.routes.identities import router as identities_router
 from app.api.routes.inventory import router as inventory_router
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.pages import router as pages_router
+from app.api.routes.project_pages import router as project_pages_router
+from app.api.routes.projects import router as projects_router
 from app.api.routes.scan_preview_pages import router as scan_preview_router
 from app.api.routes.scans import router as scans_router
 from app.api.routes.sessions import router as sessions_router
 from app.api.routes.targets import router as targets_router
 
 api_router = APIRouter()
+api_router.include_router(projects_router)
+api_router.include_router(project_pages_router)
 api_router.include_router(identities_router)
 api_router.include_router(assets_router)
 api_router.include_router(pages_router)

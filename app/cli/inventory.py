@@ -38,6 +38,7 @@ def build_inventory(
     target_name: Annotated[str | None, typer.Option("--target")] = None,
     profile_name: Annotated[str | None, typer.Option("--profile")] = None,
     session_id: Annotated[int | None, typer.Option("--session")] = None,
+    project_entry_id: Annotated[int | None, typer.Option("--project-entry-id", min=1)] = None,
     max_pages: Annotated[int, typer.Option("--max-pages")] = 25,
     max_depth: Annotated[int, typer.Option("--max-depth")] = 2,
     max_requests: Annotated[int, typer.Option("--max-requests")] = 100,
@@ -55,6 +56,7 @@ def build_inventory(
             InputValidationError("Use either --session or --target/--profile, not both.")
         )
     controls = InventoryBuildControls(
+        project_entry_id=project_entry_id,
         max_pages=max_pages,
         max_depth=max_depth,
         max_requests=max_requests,

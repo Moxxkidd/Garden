@@ -23,6 +23,7 @@ from app.models.inventory_parameter import InventoryParameter
 from app.models.inventory_run import InventoryRun
 from app.schemas.inventory import InventoryBuildControls, InventoryBuildSummary, InventoryCounts
 from app.schemas.job import ScanJobCreate
+from app.schemas.projects import ProjectSourceRef
 from app.services.asset_validity import capture_traits
 from app.services.coverage_identity import redacted_observed_url
 from app.services.credentials import CredentialProfileService
@@ -30,6 +31,7 @@ from app.services.inventory_annotations import AnnotationCandidate, InventoryAnn
 from app.services.inventory_collection import InventoryCollectionService
 from app.services.inventory_export import InventoryExportService
 from app.services.jobs import ScanJobService
+from app.services.project_lifecycle import ProjectLifecycleService
 from app.services.sessions import AuthSessionService
 from app.services.targets import TargetService
 
@@ -63,6 +65,9 @@ class InventoryBuildService:
         profile_name: str,
         controls: InventoryBuildControls,
     ) -> InventoryBuildSummary:
+        if controls.project_entry_id is not None:
+            target = self.target_service.get_by_name(session, target_name)
+            ProjectLifecycleService().validate(session, controls.project_entry_id, target.id, None)
         login_result = self.auth_session_service.login_test(session, target_name, profile_name)
         if not login_result.success or login_result.created_session_id is None:
             detail = (
@@ -79,6 +84,11 @@ class InventoryBuildService:
         session_id: int,
         controls: InventoryBuildControls,
     ) -> InventoryBuildSummary:
+        if controls.project_entry_id is not None:
+            bound_session = self.auth_session_service.get(session, session_id)
+            ProjectLifecycleService().validate(
+                session, controls.project_entry_id, bound_session.target_id, None
+            )
         validation_result = self.auth_session_service.validate(session, session_id)
         if not validation_result.valid:
             raise ConflictError(validation_result.message)
@@ -96,6 +106,10 @@ class InventoryBuildService:
             ),
         )
         collection_context = self.collection_service.build_collection_context(target, auth_session)
+        if controls.project_entry_id is not None:
+            ProjectLifecycleService().validate(
+                session, controls.project_entry_id, target.id, collection_context.start_url
+            )
         inventory_run = InventoryRun(
             target_id=target.id,
             credential_profile_id=credential.id,
@@ -114,6 +128,13 @@ class InventoryBuildService:
         )
         session.add(inventory_run)
         session.flush()
+        if controls.project_entry_id is not None:
+            ProjectLifecycleService().attach(
+                session,
+                controls.project_entry_id,
+                ProjectSourceRef(source="inventory", run_id=inventory_run.id),
+            )
+            session.commit()
 
         try:
             result = self.collection_service.collect(target, auth_session, controls)
@@ -141,10 +162,20 @@ class InventoryBuildService:
             job.status = JobStatus.FAILED.value
             job.finished_at = inventory_run.finished_at
             job.error_message = str(error)
+            if controls.project_entry_id is not None:
+                session.commit()
+                ProjectLifecycleService().reconcile(
+                    ProjectSourceRef(source="inventory", run_id=inventory_run.id)
+                )
             raise
 
         session.flush()
         session.refresh(inventory_run)
+        if controls.project_entry_id is not None:
+            session.commit()
+            ProjectLifecycleService().reconcile(
+                ProjectSourceRef(source="inventory", run_id=inventory_run.id)
+            )
         return InventoryBuildSummary(
             inventory_run_id=inventory_run.id,
             scan_job_id=job.id,

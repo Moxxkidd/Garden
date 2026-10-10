@@ -1,6 +1,6 @@
 # Garden v0.7 Project Asset Library Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> 执行方式：用户已授权实施，并已移除 Superpowers。使用本地 TDD 流程继续，不再适用旧插件门控。复选框仅在整片验收证据齐全后核销。
 
 **Goal:** 交付跨入口、跨任务的项目资产库，保留历史观察和证据，支持可信变更、关系、可撤销人工整理以及完整用户闭环。
 **Architecture:** 在原采集和单任务清单外新增持久化项目索引；来源投影负责脱敏，入库负责幂等和快照，查询／比较／纠正独立服务。原任务和报告不变，终态入库使用独立事务，失败可显式重试。
@@ -167,4 +167,18 @@
 
 接口自审：source ref、entry ID、ProjectRun ID 与原 run ID 明确分开；比较只接受同项目 ProjectRun IDs；query/export 共用 ProjectQuery；schema 在 Task 1 建立后随所属任务补足可序列化视图。Task 7 索引纳入 Task 3 同一入库事务；Task 8 展示覆盖只改变查询归属，Task 6 始终使用原始来源快照。
 
-Native：本会话主代理按顺序实施全部 12 片，每片独立 RED/GREEN/提交，最终一名独立评审。暂不派发子代理；计划评审通过后开始实施，不再逐片请求普通实现许可。当前仅设计和计划文件变更，未执行产品迁移或修改产品代码。
+Native：本会话主代理按顺序实施全部 12 片，每片独立 RED/GREEN/提交，最终一名独立评审。暂不派发子代理；计划评审通过后开始实施，不再逐片请求普通实现许可。实施中；下列进度记录覆盖实际代码和本次验证，整版尚未验收。
+
+
+## 2026-10-09 实施进度（未完成版本）
+
+环境：macOS，本地 Python 3.10.10，隔离工作区 `.worktrees/project-assets-v07`，分支 `codex/project-assets-v07`，基线 `1529fe6`。未改主工作区原有文件，未推送或创建 PR。
+
+- 已提交基础 `b183b77`：11 个项目数据表、0009 无损迁移/有数据拒绝降级、项目/入口绑定、只读来源预览、终态幂等入库与安全快照。提交后的补充测试发现 SQLite SAVEPOINT 需显式外层 BEGIN；修复在当前工作区，尚待下一提交。
+- 当前代码已接入 quick/固定身份扫描共用启动流程、独立身份采集、可选项目库存采集；取消/启动中断后的扫描索引单独执行。索引失败不重写原任务状态或报告。库存选择项目时先持久化运行/关联，再单独提交终态并入库；未选项目保持原事务路径。
+- 已实现并测试核心查询、来源删除后快照读取、按来源时间汇总与同时冲突保留；比较 200→404 与不完整覆盖；保存的页面/脚本关系；合并/拆分/撤销和新观察应用合并、原 ID 标签归属；JSON/CSV 全量导出与显式读事务。
+- 测试证据：基础+迁移+doctor 64 项通过；随后项目/扫描管线/预览/assessment 回归 91 项通过；最新事务/生命周期/整理/导出针对性 17 项通过。不同组存在交集，不相加为唯一测试总数。真实命令均使用 `PYTHONPATH=. /Users/an/Documents/Garden/.venv/bin/python -m pytest <对应测试文件> -q`，本地输出在未入库的 `.verification/`。
+- 合成规模 `tests/test_project_scale.py`：10000 条观察、101 个主体，重复确认不增记录，50 个 200 条分页无重复，JSON 精确导出 10000 条。首次本机基线：入库 7.706s；分页+导出 2.454s；这不是跨环境性能承诺，SQL 次数及并发快照实验仍待补充。
+- 所有新行为已先观察缺失模块/断言失败或事务错误，再实现；纯扩展边界测试若已通过则保留，不人为制造红灯。曾运行 Ruff 全库 check 与 diff 检查通过，后续新文件仍需最终重跑。
+
+未完成项（不能将 Tasks 1–12 或 v0.7 标记整体完成）：全部筛选视图一致性和并发试验、真实重定向关系、更多身份/配置比较边界、整理依赖/并发边界、固定身份及库存失败专项、API/CLI/Web 接线、无 JS 桌面/移动用户旅程、真实演示文档、全量 pytest/格式/打包和独立最终评审。版本号仍保持 0.6.0。

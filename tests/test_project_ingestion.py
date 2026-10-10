@@ -88,3 +88,20 @@ def test_failed_import_is_atomic_even_when_caller_commits(seeded_records):
         result = service.confirm(session, pid, preview.token)
         assert result.status == "complete"
         assert result.observation_count == 1
+
+
+def test_caller_rollback_also_rolls_back_successful_import(seeded_records):
+    service = ProjectIngestionService()
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        run = source_run(session, target)
+        pid = project.id
+        request = import_request(entry, run)
+    with pytest.raises(RuntimeError, match="outer transaction cancelled"):
+        with session_scope() as session:
+            preview = service.preview(session, pid, request)
+            service.confirm(session, pid, preview.token)
+            raise RuntimeError("outer transaction cancelled")
+    with session_scope() as session:
+        assert service.runs(session, pid) == []

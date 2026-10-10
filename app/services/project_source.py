@@ -9,7 +9,7 @@ from app.models.inventory_run import InventoryRun
 from app.models.scan_run import TERMINAL_SCAN_RUN_STATUSES, ScanRun
 from app.schemas.assets import AssetQuery
 from app.schemas.projects import ProjectSourceSnapshot
-from app.services.asset_catalog import AssetCatalogService
+from app.services.asset_catalog import AssetCatalogService, safe_url
 from app.services.projects import ProjectService, project_origin, project_url
 
 
@@ -106,14 +106,48 @@ class ProjectSourceService:
             "finished_at": canonical_value(run.finished_at),
             "rule_version": "project-route-v1",
         }
+        relations = []
+        if ref.source == "scan":
+            for asset in run.assets:
+                sources = [(asset.attributes or {}, None)]
+                sources.extend(
+                    (e.data, e.id)
+                    for e in run.evidence
+                    if e.asset_id == asset.id and isinstance(e.data, dict)
+                )
+                for data, evidence_id in sources:
+                    pairs = data.get("catalog_redirects", [])
+                    if not isinstance(pairs, list):
+                        continue
+                    for pair in pairs:
+                        if (
+                            not isinstance(pair, dict)
+                            or not pair.get("requested_url")
+                            or not pair.get("final_url")
+                        ):
+                            continue
+                        relations.append(
+                            dict(
+                                kind="redirect",
+                                from_url=safe_url(pair["requested_url"]),
+                                to_url=safe_url(pair["final_url"]),
+                                source_key=f"scan:{run.id}:asset:{asset.id}",
+                                evidence_id=evidence_id,
+                            )
+                        )
         value = dict(
-            scope=result.scope, records=records, candidates=candidates, comparison_metadata=metadata
+            scope=result.scope,
+            records=records,
+            candidates=candidates,
+            comparison_metadata=metadata,
+            relations=relations,
         )
         material = {
             "scope": result.scope.model_dump(),
             "records": [r.model_dump() for r in records],
             "candidates": [r.model_dump() for r in candidates],
             "metadata": metadata,
+            "relations": relations,
         }
         return ProjectSourceSnapshot(**value, digest=digest(material))
 

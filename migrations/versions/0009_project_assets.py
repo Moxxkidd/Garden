@@ -174,6 +174,7 @@ def upgrade():
         sa.Column("project_id", sa.Integer(), nullable=False),
         sa.Column("project_run_id", sa.Integer(), nullable=False),
         sa.Column("source_key", sa.String(length=200), nullable=False),
+        sa.Column("identity_key", sa.Text(), nullable=False),
         sa.Column("natural_key", sa.Text(), nullable=False),
         sa.Column("asset_id", sa.String(length=32), nullable=True),
         sa.Column("record", sa.JSON(), nullable=False),

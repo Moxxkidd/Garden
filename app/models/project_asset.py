@@ -48,6 +48,7 @@ class ProjectCandidate(TimestampMixin, Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
     project_run_id: Mapped[int] = mapped_column(ForeignKey("project_runs.id"), index=True)
     source_key: Mapped[str] = mapped_column(String(200))
+    identity_key: Mapped[str] = mapped_column(Text)
     natural_key: Mapped[str] = mapped_column(Text)
     asset_id: Mapped[str | None] = mapped_column(ForeignKey("project_assets.id"), index=True)
     record: Mapped[dict] = mapped_column(JSON)

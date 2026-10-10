@@ -11,6 +11,7 @@ from app.schemas.scan import ScanOptions, ScanRunView
 
 
 class AssessmentStartRequest(BaseModel):
+    project_entry_id: int | None = Field(default=None, gt=0)
     url: str = Field(min_length=1, max_length=1000)
     mode: AssessmentMode = AssessmentMode.QUICK
     target_id: int | None = Field(default=None, gt=0)
@@ -46,6 +47,7 @@ class PassiveCoverageStartRequest(BaseModel):
 
     url: str = Field(min_length=1, max_length=1000)
     target_id: int | None = Field(default=None, gt=0)
+    project_entry_id: int | None = Field(default=None, gt=0)
     source_run_id: int | None = Field(default=None, gt=0)
     user_profile_id: int = Field(gt=0)
     admin_profile_id: int = Field(gt=0)
@@ -60,6 +62,7 @@ class PassiveCoverageStartRequest(BaseModel):
             url=self.url,
             mode=AssessmentMode.AUTHENTICATED_COVERAGE,
             target_id=self.target_id,
+            project_entry_id=self.project_entry_id,
             source_run_id=self.source_run_id,
             user_profile_id=self.user_profile_id,
             admin_profile_id=self.admin_profile_id,

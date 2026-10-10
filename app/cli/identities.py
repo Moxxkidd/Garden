@@ -50,6 +50,7 @@ def remote(api_url, path, data=None, method="POST"):
 def collect(
     url: str,
     target_id: int = typer.Option(...),
+    project_entry_id: int | None = typer.Option(None, min=1),
     profile_id: Annotated[list[int] | None, typer.Option("--profile-id")] = None,
     anonymous: bool = typer.Option(False),
     max_pages: int = typer.Option(50),
@@ -59,6 +60,7 @@ def collect(
         request = IdentityCollectionRequest(
             url=url,
             target_id=target_id,
+            project_entry_id=project_entry_id,
             profile_ids=profile_id or [],
             include_anonymous=anonymous,
             options=ScanOptions(max_pages=max_pages),

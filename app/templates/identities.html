@@ -26,8 +26,9 @@
 {% for s in states %}<div class="flex flex-wrap items-center gap-3 border-b py-2"><span>会话 #{{ s.id }} · 身份 #{{ s.profile_id }} · {{ s.status }}</span><form method="post" action="/identities/sessions/{{ s.id }}/validate"><button class="border rounded px-3 py-1">重新验证</button></form><form method="post" action="/identities/sessions/{{ s.id }}/revoke"><button class="border rounded px-3 py-1">撤销状态</button></form></div>{% else %}<p>尚无已验证状态。匿名采集无需登录。</p>{% endfor %}</section>
 <section class="rounded-2xl bg-white p-6 space-y-4"><h2 class="text-xl font-semibold">3. 预览并开始采集</h2>
 <form method="post" action="/identities/preview" class="grid gap-4">
-<label>目标<select required name="target_id" class="border p-2">{% for t in targets %}<option value="{{ t.id }}">{{ t.name }} #{{ t.id }}</option>{% endfor %}</select></label>
-<label>采集入口<input required type="url" name="url" class="block w-full border rounded p-2"></label>
+{% if project_entry %}<input type="hidden" name="project_entry_id" value="{{ project_entry.id }}"><p>关联项目入口 #{{ project_entry.id }} · {{ project_entry.name }}</p>{% endif %}
+<label>目标<select required name="target_id" class="border p-2">{% for t in targets %}<option value="{{ t.id }}" {% if project_entry and project_entry.target_id == t.id %}selected{% endif %}>{{ t.name }} #{{ t.id }}</option>{% endfor %}</select></label>
+<label>采集入口<input required type="url" name="url" value="{{ project_entry.entry_url if project_entry else '' }}" class="block w-full border rounded p-2"></label>
 <fieldset><legend>选择身份（最多 10 个）</legend><label class="block"><input type="checkbox" name="anonymous" value="1"> 匿名</label>{% for p in profiles %}<label class="block"><input type="checkbox" name="profile_ids" value="{{ p.id }}"> {{ p.name }} · {{ p.role }} · 目标 #{{ p.target_id }} · 身份 #{{ p.id }}</label>{% endfor %}</fieldset>
 <label>每身份页面预算<input type="number" required min="1" max="500" name="max_pages" value="50" class="border p-2"></label>
 <button class="rounded bg-slate-900 text-white p-3">预览采集范围</button></form></section>

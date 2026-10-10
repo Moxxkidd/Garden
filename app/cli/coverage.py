@@ -61,6 +61,7 @@ def _is_interactive_terminal() -> bool:
 
 def coverage(
     entry_url: Annotated[str, typer.Argument(help="已授权的 HTTP(S) 入口 URL。")],
+    project_entry_id: Annotated[int | None, typer.Option("--project-entry-id", min=1)] = None,
     user_profile: Annotated[int | None, typer.Option("--user-profile", min=1)] = None,
     admin_profile: Annotated[int | None, typer.Option("--admin-profile", min=1)] = None,
     non_interactive: Annotated[
@@ -122,6 +123,9 @@ def coverage(
                 raise typer.Exit(code=2)
             wizard = CoverageSetupWizard(prompts=TyperCoveragePrompts())
             request = wizard.run(entry_url, options=options, source_run_id=source_run)
+
+        if project_entry_id is not None:
+            request = request.model_copy(update={"project_entry_id": project_entry_id})
 
         manager = WebRuntimeManager(
             paths=GardenPaths.from_environment(),

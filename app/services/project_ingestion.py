@@ -1,7 +1,5 @@
 """Atomic, idempotent indexing of terminal tasks into a project."""
 
-from contextlib import contextmanager
-
 from sqlalchemy import select, update
 
 from app.core.errors import ConflictError, ResourceNotFoundError
@@ -11,19 +9,8 @@ from app.schemas.projects import ProjectImportPreview, ProjectSourceRef
 from app.services.project_identity import project_asset_key, project_identity_key
 from app.services.project_source import ProjectSourceService
 from app.services.project_tokens import ProjectTokens
+from app.services.project_transactions import atomic_import
 from app.services.projects import ProjectService
-
-
-@contextmanager
-def atomic_import(session):
-    try:
-        with session.begin_nested():
-            yield
-    except Exception:
-        # Bulk revision updates are not tracked as dirty ORM attributes.
-        # Reload their values after the savepoint has rolled back.
-        session.expire_all()
-        raise
 
 
 class ProjectIngestionService:
@@ -168,6 +155,7 @@ class ProjectIngestionService:
                     project_run_id=run.id,
                     source_key=row.asset_id,
                     natural_key=key,
+                    identity_key=project_identity_key(snapshot.scope, row),
                     asset_id=assets[key].id if key in assets else None,
                     record=row.model_dump(mode="json"),
                 )
@@ -186,7 +174,14 @@ class ProjectIngestionService:
         run.snapshot = {
             "scope": snapshot.scope.model_dump(mode="json"),
             "comparison_metadata": snapshot.comparison_metadata,
+            "relations": snapshot.relations,
         }
+        from app.services.project_relations import ProjectRelationService
+
+        ProjectRelationService().index(session, run.id)
+        from app.services.project_curation import ProjectCurationService
+
+        ProjectCurationService().project_new_observations(session, run.id)
         run.source_digest = snapshot.digest
         run.observation_count = len(snapshot.records)
         run.candidate_count = len(snapshot.candidates)

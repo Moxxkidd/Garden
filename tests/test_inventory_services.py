@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from app.db.bootstrap import session_scope
 from app.integrations.auth.http_adapter import HttpLoginAdapter
 from app.schemas.credential import CredentialProfileCreate
@@ -42,7 +44,9 @@ refresh_request:
     )
 
 
+@pytest.mark.parametrize("project_selected", [False, True])
 def test_inventory_build_from_target_profile(
+    project_selected,
     auth_http_transport,
     fake_inventory_collection_service,
     tmp_path,
@@ -77,6 +81,24 @@ def test_inventory_build_from_target_profile(
             ),
         )
 
+    project_id = entry_id = None
+    if project_selected:
+        from app.schemas.projects import ProjectEntryCreate
+        from app.services.projects import ProjectService
+
+        with session_scope() as session:
+            project = ProjectService().create(session, "Inventory project")
+            entry = ProjectService().add_entry(
+                session,
+                project.id,
+                ProjectEntryCreate(
+                    target_id=target.id,
+                    entry_url="http://localhost:9800/demo/auth/ui/home",
+                    name="Home",
+                ),
+            )
+            project_id, entry_id = project.id, entry.id
+
     service = InventoryBuildService(
         auth_session_service=AuthSessionService(
             http_adapter=HttpLoginAdapter(transport=auth_http_transport)
@@ -88,9 +110,18 @@ def test_inventory_build_from_target_profile(
             session,
             "inventory-target",
             "inventory-profile",
-            InventoryBuildControls(),
+            InventoryBuildControls(project_entry_id=entry_id),
         )
         inventory_run = service.get(session, summary.inventory_run_id)
+
+    if project_selected:
+        from app.services.project_ingestion import ProjectIngestionService
+
+        with session_scope() as session:
+            membership = ProjectIngestionService().runs(session, project_id)
+            assert len(membership) == 1
+            assert membership[0].status == "complete"
+            assert membership[0].run_id == summary.inventory_run_id
 
     assert summary.counts.pages == 4
     assert summary.counts.endpoints == 8
