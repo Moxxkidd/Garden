@@ -260,3 +260,31 @@ def test_identity_query_entry_binds_without_exposing_query_values(
 
         assert "entry_url_digest" not in ScanRunView.model_fields
         assert run.entry_url_digest not in str(run_view(indexed))
+
+
+def test_legacy_redacted_query_without_private_proof_cannot_bind(seeded_records):
+    from app.schemas.projects import ProjectEntryCreate
+    from app.services.projects import ProjectService
+    from tests.helpers.project_assets import import_request
+
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, initial = project_fixture(session, target)
+        redacted = target.base_url + "?tenant=[REDACTED]"
+        entry = ProjectService().update_entry(
+            session,
+            initial.id,
+            ProjectEntryCreate(target_id=target.id, entry_url=redacted, name="Legacy"),
+            project.revision,
+        )
+        run = source_run(session, target)
+        run.mode = "identity_collection"
+        run.input_url = run.normalized_url = redacted
+        assert run.entry_url_digest is None
+        session.flush()
+        with pytest.raises(ConflictError, match="source_entry_mismatch"):
+            ProjectIngestionService().preview(session, project.id, import_request(entry, run))
+        with pytest.raises(ConflictError, match="source_entry_mismatch"):
+            ProjectLifecycleService().attach(
+                session, entry.id, ProjectSourceRef(source="scan", run_id=run.id)
+            )
