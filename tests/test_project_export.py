@@ -102,3 +102,28 @@ def test_empty_csv_preserves_filter_and_project_metadata(seeded_records):
         assert rows[0]["project_id"] == str(project.id)
         assert rows[0]["exported_count"] == "0"
         assert json.loads(rows[0]["filters"])["q"] == "missing"
+
+
+def test_exports_preserve_failed_zero_observation_coverage(seeded_records):
+    from sqlalchemy import select
+
+    from app.models.scan_run import ScanAsset
+
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        source = source_run(session, target, completeness="incomplete")
+        source.status = "failed"
+        session.delete(session.scalar(select(ScanAsset).where(ScanAsset.scan_run_id == source.id)))
+        session.flush()
+        membership = ingest(session, project, entry, source)
+        query = ProjectQuery(q="missing")
+        payload = json.loads(export_project(session, project.id, query, "json"))
+        assert payload["exported_count"] == 0
+        assert payload["source_coverage"][0]["project_run_id"] == membership.id
+        assert payload["source_coverage"][0]["scope"]["status"] == "failed"
+        markdown = export_project(session, project.id, query, "markdown")
+        assert "failed" in markdown and "incomplete" in markdown
+        assert f"/scans/{source.id}" in markdown
+        rows = list(csv.DictReader(io.StringIO(export_project(session, project.id, query, "csv"))))
+        assert json.loads(rows[0]["coverage_summary"])["incomplete_sources"] == 1

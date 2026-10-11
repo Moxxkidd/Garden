@@ -116,3 +116,61 @@ def test_changed_target_binding_is_visible_before_start(app, seeded_records):
         page = client.get(f"/projects/{pid}")
         assert "需要重新绑定" in page.text
         assert "预览新扫描</a>" not in page.text
+
+
+def test_correction_preview_displays_observation_assignments(app, seeded_records):
+    import json
+
+    from app.cli.main import app as cli
+    from app.schemas.projects import ProjectQuery
+    from app.services.project_catalog import ProjectCatalogService
+    from tests.helpers.project_assets import project_fixture
+    from tests.test_project_comparison import ingest
+
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        for path in ("/one", "/two"):
+            ingest(session, project, entry, source_run(session, target, path=path))
+        history = ProjectCatalogService().list(
+            session, project.id, ProjectQuery(view="observations")
+        )
+        ids = [row["asset_id"] for row in history.items]
+        pid = project.id
+    with TestClient(app) as client:
+        response = client.post(
+            f"/projects/{pid}/corrections/preview",
+            data={
+                "action": "merge",
+                "asset_ids": " ".join(ids),
+                "target_asset_id": ids[0],
+                "reason": "Review fixture",
+            },
+        )
+        assert response.status_code == 200
+        assert "观察归属明细" in response.text
+        for row in history.items:
+            assert f"观察 #{row['id']}" in response.text
+            assert row["asset_id"] in response.text
+    from typer.testing import CliRunner
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "projects",
+            "correct",
+            str(pid),
+            "--action",
+            "merge",
+            "--asset-ids",
+            json.dumps(ids),
+            "--target-asset-id",
+            ids[0],
+            "--reason",
+            "Review fixture",
+        ],
+        input="n\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "→" in result.output
+    assert ids[0] in result.output and ids[1] in result.output

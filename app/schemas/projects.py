@@ -88,6 +88,9 @@ class ProjectCorrectionRequest(BaseModel):
 
 
 class ProjectCorrectionPreview(BaseModel):
+    action: Literal["merge", "split"]
+    target_asset_id: str
+    assignments: list[dict]
     token: str
     expires_in: int = 900
     before_subject_count: int

@@ -32,6 +32,8 @@ from app.services.discovery_sources import parse_seed_input, parse_sitemap
 from app.services.identity_health import IdentityHealthGate, IdentityHealthStopped
 from app.services.identity_sessions import IdentitySessionService
 from app.services.project_lifecycle import ProjectLifecycleService
+from app.services.project_source import digest as project_entry_digest
+from app.services.projects import project_url
 from app.services.scan_application import ThreadedScanDispatcher
 from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_options import resolve_scan_options
@@ -97,6 +99,7 @@ class IdentityCollectionService:
             target_id=target.id,
             input_url=redacted_observed_url(entry),
             normalized_url=redacted_observed_url(entry),
+            entry_url_digest=project_entry_digest(project_url(entry)),
             active_key=digest,
             status="queued",
             current_stage="queued",

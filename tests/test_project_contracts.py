@@ -76,3 +76,24 @@ def test_0009_preserves_existing_database_and_refuses_loss(tmp_path):
         )
     with pytest.raises(RuntimeError, match="project"):
         downgrade_database(url, "0008")
+
+
+def test_0009_refuses_loss_of_private_entry_proof_without_projects(tmp_path):
+    from sqlalchemy.orm import Session
+
+    from app.models.scan_run import ScanRun
+
+    url = f"sqlite+pysqlite:///{tmp_path / 'entry-proof.db'}"
+    upgrade_database(url)
+    engine = create_engine(url)
+    with Session(engine) as session:
+        session.add(
+            ScanRun(
+                input_url="https://example.test/",
+                normalized_url="https://example.test/",
+                entry_url_digest="a" * 64,
+            )
+        )
+        session.commit()
+    with pytest.raises(RuntimeError, match="private project entry"):
+        downgrade_database(url, "0008")

@@ -295,6 +295,14 @@ def correct(
         f"影响 {preview.affected_observation_count} 条观察。",
         markup=False,
     )
+    console.print(f"操作：{preview.action}；目标主体：{preview.target_asset_id}", markup=False)
+    for assignment in preview.assignments:
+        console.print(
+            f"观察 #{assignment['observation_id']} · 项目运行 #{assignment['project_run_id']} · "
+            f"{assignment['identity_key']} · {assignment['url']}\n"
+            f"{assignment['from_asset_id']} → {assignment['to_asset_id']}",
+            markup=False,
+        )
     if not yes and not typer.confirm("确认执行可撤销整理？"):
         return
     with session_scope() as session:

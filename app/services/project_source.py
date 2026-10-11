@@ -4,6 +4,7 @@ import hashlib
 import json
 from collections import defaultdict
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 from app.core.errors import ConflictError, ResourceNotFoundError
 from app.models.inventory_run import InventoryRun
@@ -53,6 +54,15 @@ class ProjectSourceService:
             raise ResourceNotFoundError("project_source_missing")
         return run
 
+    def entry_digest(self, ref, run):
+        if ref.source == "scan" and run.entry_url_digest:
+            return run.entry_url_digest
+        url = run.normalized_url if ref.source == "scan" else run.started_from_url
+        if ref.source == "scan" and run.mode == "identity_collection" and urlsplit(url).query:
+            # Legacy redacted query values cannot prove an exact entry binding.
+            return None
+        return digest(project_url(url))
+
     def terminal(self, ref, run):
         return run.status in (
             TERMINAL_SCAN_RUN_STATUSES
@@ -100,9 +110,7 @@ class ProjectSourceService:
                     ]
                 }
             ),
-            "entry": digest(
-                project_url(run.normalized_url if ref.source == "scan" else run.started_from_url)
-            ),
+            "entry": self.entry_digest(ref, run),
             "recovery": bool(getattr(run, "parent_run_id", None)),
             "finished_at": canonical_value(run.finished_at),
             "rule_version": "project-route-v1",

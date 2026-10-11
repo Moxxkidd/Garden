@@ -27,6 +27,11 @@ def test_merge_split_and_revoke_keep_original_history(seeded_records):
                 reason="same route by operator review",
             ),
         )
+        assert preview.action == "merge"
+        assert preview.target_asset_id == ids[0]
+        assert [
+            (a["observation_id"], a["from_asset_id"], a["to_asset_id"]) for a in preview.assignments
+        ] == [(r["id"], r["display_asset_id"], ids[0]) for r in before.items]
         correction = curation.confirm(session, project.id, preview.token)
         merged = catalog.list(session, project.id, ProjectQuery())
         assert merged.matched == 1
@@ -57,6 +62,8 @@ def test_split_only_selected_observations_and_future_import_keeps_natural_subjec
         )
         split = curation.confirm(session, project.id, preview.token)
         assert split.target_asset_id != original_id
+        assert split.target_asset_id == preview.target_asset_id
+        assert preview.assignments[0]["to_asset_id"] == split.target_asset_id
         ingest(session, project, entry, source_run(session, target, day=3))
         separated = catalog.list(session, project.id, ProjectQuery())
         assert sorted(a["observation_count"] for a in separated.items) == [1, 2]

@@ -59,7 +59,9 @@ def test_desktop_mobile_identity_journey_without_javascript(
                     session,
                     project.id,
                     ProjectEntryCreate(
-                        target_id=target.id, entry_url=base + "/me", name="Signed-in entry"
+                        target_id=target.id,
+                        entry_url=base + "/me?tenant=fixture",
+                        name="Signed-in entry",
                     ),
                 )
                 project_id, entry_id = project.id, entry.id
@@ -100,7 +102,9 @@ def test_desktop_mobile_identity_journey_without_javascript(
                         else "/identities"
                     )
                 )
-                page.locator('[name="url"]').fill(base + "/me")
+                page.locator('[name="url"]').fill(
+                    base + ("/me?tenant=fixture" if project_linked else "/me")
+                )
                 for profile_id in profile_ids:
                     page.locator(f'[name="profile_ids"][value="{profile_id}"]').check()
                 page.get_by_role("button", name="预览采集范围").click()

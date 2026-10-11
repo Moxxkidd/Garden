@@ -195,3 +195,68 @@ def test_deduplicated_task_rechecks_completion_after_membership_commit(seeded_re
             assert runs[0].status == "complete"
     finally:
         service.shutdown()
+
+
+@pytest.mark.parametrize("linked_at_start", [False, True])
+def test_identity_query_entry_binds_without_exposing_query_values(
+    seeded_records, tmp_path, linked_at_start
+):
+    from app.models.scan_run import ScanRun
+    from app.schemas.identity import IdentityCollectionRequest
+    from app.schemas.projects import ProjectEntryCreate
+    from app.services.identity_collection import IdentityCollectionService
+    from app.services.projects import ProjectService
+    from tests.helpers.project_assets import import_request
+    from tests.test_scan_preview_pages import HoldingDispatcher
+
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, initial = project_fixture(session, target)
+        url = target.base_url + "?tenant=demo&token=SYNTHETIC_SECRET"
+        entry = ProjectService().update_entry(
+            session,
+            initial.id,
+            ProjectEntryCreate(target_id=target.id, entry_url=url, name="Query entry"),
+            project.revision,
+        )
+        pid, eid, tid = project.id, entry.id, target.id
+    service = IdentityCollectionService(dispatcher=HoldingDispatcher())
+    with session_scope() as session:
+        rid = service.start(
+            session,
+            IdentityCollectionRequest(
+                url=url,
+                target_id=tid,
+                include_anonymous=True,
+                project_entry_id=eid if linked_at_start else None,
+            ),
+        )
+    with session_scope() as session:
+        run = session.get(ScanRun, rid)
+        assert "SYNTHETIC_SECRET" not in run.normalized_url
+        assert "tenant=demo" not in run.normalized_url
+        run.status = "failed"
+    with session_scope() as session:
+        run = session.get(ScanRun, rid)
+        entry = ProjectService().get_entry(session, pid, eid)
+        ingestion = ProjectIngestionService()
+        preview = ingestion.preview(session, pid, import_request(entry, run))
+        indexed = ingestion.confirm(session, pid, preview.token)
+        assert indexed.status == "complete"
+        assert "SYNTHETIC_SECRET" not in str(indexed.snapshot)
+        wrong = ProjectService().add_entry(
+            session,
+            pid,
+            ProjectEntryCreate(
+                target_id=tid,
+                entry_url=url.replace("tenant=demo", "tenant=other"),
+                name="Other tenant",
+            ),
+        )
+        with pytest.raises(ConflictError, match="source_entry_mismatch"):
+            ingestion.preview(session, pid, import_request(wrong, run))
+        from app.schemas.scan import ScanRunView
+        from app.services.project_presentation import run_view
+
+        assert "entry_url_digest" not in ScanRunView.model_fields
+        assert run.entry_url_digest not in str(run_view(indexed))

@@ -8,7 +8,7 @@ from app.core.errors import ConflictError, ResourceNotFoundError
 from app.db.bootstrap import session_scope
 from app.models.project import ProjectEntry, ProjectRun
 from app.services.project_ingestion import ProjectIngestionService
-from app.services.project_source import ProjectSourceService
+from app.services.project_source import ProjectSourceService, digest
 from app.services.project_transactions import atomic_import
 from app.services.projects import ProjectService, project_url
 
@@ -38,8 +38,10 @@ class ProjectLifecycleService:
             session,
             entry_id,
             run.target_id,
-            run.normalized_url if ref.source == "scan" else run.started_from_url,
+            None,
         )
+        if self.sources.entry_digest(ref, run) != digest(project_url(entry.entry_url)):
+            raise ConflictError("source_entry_mismatch")
         existing = session.scalar(
             select(ProjectRun).where(
                 ProjectRun.project_id == entry.project_id,

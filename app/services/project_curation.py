@@ -103,8 +103,25 @@ class ProjectCurationService:
                 ProjectObservation.project_id == project_id
             )
         )
+        destination = uuid4().hex if request.action == "split" else request.target_asset_id
         return ProjectCorrectionPreview(
-            token=self.tokens.put((project_id, request.model_copy(deep=True), project.revision)),
+            action=request.action,
+            target_asset_id=destination,
+            assignments=[
+                dict(
+                    observation_id=row.id,
+                    original_asset_id=row.asset_id,
+                    from_asset_id=row.display_asset_id,
+                    to_asset_id=destination,
+                    project_run_id=row.project_run_id,
+                    identity_key=row.identity_key,
+                    url=row.record["url"],
+                )
+                for row in rows
+            ],
+            token=self.tokens.put(
+                (project_id, request.model_copy(deep=True), project.revision, destination)
+            ),
             before_subject_count=count,
             after_subject_count=count + 1 if request.action == "split" else count - len(assets) + 1,
             affected_observation_count=len(rows),
@@ -112,7 +129,7 @@ class ProjectCurationService:
         )
 
     def confirm(self, session, project_id, preview_token):
-        owner, request, revision = self.tokens.get(preview_token)
+        owner, request, revision, destination = self.tokens.get(preview_token)
         if owner != project_id:
             raise ConflictError("project_preview_mismatch")
         with atomic_import(session):
@@ -122,6 +139,7 @@ class ProjectCurationService:
             if request.action == "split":
                 source = assets[0]
                 target = ProjectAsset(
+                    id=destination,
                     project_id=project_id,
                     natural_key="manual:" + uuid4().hex,
                     rule_version=source.rule_version,
