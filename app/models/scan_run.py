@@ -52,6 +52,7 @@ class ScanRun(TimestampMixin, Base):
     recovery_checkpoint_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     input_url: Mapped[str] = mapped_column(String(1000))
     normalized_url: Mapped[str] = mapped_column(String(1000), index=True)
+    entry_url_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
     active_key: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     status: Mapped[str] = mapped_column(String(40), index=True, default="queued")
     current_stage: Mapped[str] = mapped_column(String(40), index=True, default="queued")

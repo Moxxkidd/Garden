@@ -23,10 +23,13 @@ class LocalScanApi:
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url.rstrip("/")
 
-    def start_scan(self, url: str, options: ScanOptions) -> ScanRunView:
-        return self._scan_request(
-            "POST", "/api/scans", {"url": url, "options": options.model_dump()}
-        )
+    def start_scan(
+        self, url: str, options: ScanOptions, *, project_entry_id: int | None = None
+    ) -> ScanRunView:
+        payload = {"url": url, "options": options.model_dump()}
+        if project_entry_id is not None:
+            payload["project_entry_id"] = project_entry_id
+        return self._scan_request("POST", "/api/scans", payload)
 
     def get_scan(self, scan_run_id: int) -> ScanRunView:
         return self._scan_request("GET", f"/api/scans/{scan_run_id}")

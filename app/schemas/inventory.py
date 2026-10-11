@@ -11,6 +11,7 @@ from app.core.errors import InputValidationError
 
 
 class InventoryBuildControls(BaseModel):
+    project_entry_id: int | None = Field(default=None, gt=0)
     max_pages: int = Field(default=25, ge=1, le=100)
     max_depth: int = Field(default=2, ge=0, le=5)
     max_requests: int = Field(default=100, ge=0, le=2000)

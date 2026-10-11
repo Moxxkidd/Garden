@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from app.db.bootstrap import session_scope
 from app.integrations.auth.http_adapter import HttpLoginAdapter
 from app.schemas.credential import CredentialProfileCreate
@@ -42,7 +44,12 @@ refresh_request:
     )
 
 
+@pytest.mark.parametrize(
+    "project_selected,collection_fails", [(False, False), (True, False), (True, True)]
+)
 def test_inventory_build_from_target_profile(
+    project_selected,
+    collection_fails,
     auth_http_transport,
     fake_inventory_collection_service,
     tmp_path,
@@ -77,20 +84,73 @@ def test_inventory_build_from_target_profile(
             ),
         )
 
+    project_id = entry_id = None
+    if project_selected:
+        from app.schemas.projects import ProjectEntryCreate
+        from app.services.projects import ProjectService
+
+        with session_scope() as session:
+            project = ProjectService().create(session, "Inventory project")
+            entry = ProjectService().add_entry(
+                session,
+                project.id,
+                ProjectEntryCreate(
+                    target_id=target.id,
+                    entry_url="http://localhost:9800/demo/auth/ui/home",
+                    name="Home",
+                ),
+            )
+            project_id, entry_id = project.id, entry.id
+
     service = InventoryBuildService(
         auth_session_service=AuthSessionService(
             http_adapter=HttpLoginAdapter(transport=auth_http_transport)
         ),
         collection_service=fake_inventory_collection_service,
     )
+    if collection_fails:
+        from app.models.inventory_run import InventoryRun
+        from app.services.project_ingestion import ProjectIngestionService
+
+        def fail_collection(*args):
+            raise RuntimeError("Synthetic collection failure")
+
+        monkeypatch.setattr(fake_inventory_collection_service, "collect", fail_collection)
+        with (
+            pytest.raises(RuntimeError, match="Synthetic collection failure"),
+            session_scope() as session,
+        ):
+            service.build_from_target_profile(
+                session,
+                "inventory-target",
+                "inventory-profile",
+                InventoryBuildControls(project_entry_id=entry_id),
+            )
+        with session_scope() as session:
+            membership = ProjectIngestionService().runs(session, project_id)
+            assert len(membership) == 1
+            assert membership[0].status == "complete"
+            assert membership[0].observation_count == 0
+            assert membership[0].snapshot["scope"]["status"] == "failed"
+            assert session.get(InventoryRun, membership[0].run_id).status == "failed"
+        return
     with session_scope() as session:
         summary = service.build_from_target_profile(
             session,
             "inventory-target",
             "inventory-profile",
-            InventoryBuildControls(),
+            InventoryBuildControls(project_entry_id=entry_id),
         )
         inventory_run = service.get(session, summary.inventory_run_id)
+
+    if project_selected:
+        from app.services.project_ingestion import ProjectIngestionService
+
+        with session_scope() as session:
+            membership = ProjectIngestionService().runs(session, project_id)
+            assert len(membership) == 1
+            assert membership[0].status == "complete"
+            assert membership[0].run_id == summary.inventory_run_id
 
     assert summary.counts.pages == 4
     assert summary.counts.endpoints == 8

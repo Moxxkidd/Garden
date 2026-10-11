@@ -2,6 +2,7 @@
 {% set errors = errors | default({}) %}
 <form action="/scans/preview" method="post" hx-boost="false" class="mt-6 space-y-4">
   {% if values.get("rerun_of_run_id") %}<input type="hidden" name="rerun_of_run_id" value="{{ values.rerun_of_run_id }}">{% endif %}
+  {% for key in ["project_entry_id", "target_id"] %}{% if values.get(key) %}<input type="hidden" name="{{ key }}" value="{{ values[key] }}">{% endif %}{% endfor %}
   <div>
     <label class="block text-sm font-medium" for="scan-url">Entry URL · 授权入口</label>
     <input id="scan-url" name="url" type="url" required maxlength="1000" value="{{ values.get('url', '') }}" placeholder="http://127.0.0.1:8080/" class="mt-2 w-full min-w-0 rounded-2xl border border-black/15 px-4 py-3 focus:border-emerald-600" {% if errors.get('url') %}aria-invalid="true" aria-describedby="error-url" autofocus{% endif %} />

@@ -31,6 +31,15 @@ class IdentityPreviewService:
         if origin(entry) != origin(target.base_url):
             raise InputValidationError("采集入口必须与目标同源。")
         records = [{"target": target.id, "url": target.base_url, "status": target.status}]
+        if request.project_entry_id is not None:
+            from app.services.project_lifecycle import ProjectLifecycleService
+            from app.services.projects import ProjectService
+
+            project_entry = ProjectLifecycleService().validate(
+                session, request.project_entry_id, target.id, entry
+            )
+            project = ProjectService().get(session, project_entry.project_id)
+            records.append([project_entry.id, project_entry.entry_url, project.revision])
         labels = []
         for profile_id in request.profile_ids:
             profile = session.get(CredentialProfile, profile_id, populate_existing=True)
@@ -69,6 +78,7 @@ class IdentityPreviewService:
             "preview_token": token,
             "url": redacted_observed_url(request.url),
             "target_id": request.target_id,
+            "project_entry_id": request.project_entry_id,
             "profiles": profiles,
             "include_anonymous": request.include_anonymous,
             "max_pages": request.options.max_pages,

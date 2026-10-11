@@ -16,6 +16,23 @@ URL
   → Markdown 报告
 ```
 
+## v0.7.0：跨任务项目资产库
+
+此分支已接入项目资产库，版本号为 0.7.0；独立审查、826 项回归及干净安装验证通过，尚未正式发布。升级数据库至迁移 `0009` 后，从 Web 导航进入「项目资产库」：创建项目、绑定已有 Target 与精确入口，再通过原扫描／身份预览流程采集，或预览导入已有终态任务。
+
+项目清单分别统计路由主体、历史观察、未请求候选和已保存关系。同一路由保留不同任务与身份的观察，人工合并／拆分只改变展示归属，并可按依赖顺序撤销。比较仅针对显式选择的两次项目运行；不完整覆盖、身份不明或配置变化返回未知，“未再次观察到”不等于删除。项目成员资格不扩大扫描许可。
+
+```bash
+garden projects create "站点资产"
+# 将返回的项目 ID、已有 Target ID 和入口 URL 代入
+garden projects entry-add 1 --target-id 1 --url https://example.test/ --name 主站
+garden projects import 1 --entry-id 1 --source scan --run-id 12
+garden projects assets 1 --json
+garden projects --help
+```
+
+历史导入先预览、再确认；JSON/CSV 导出全部筛选结果，不限于当前页。归档保留读取，停止入库和整理。有项目数据时拒绝有损降级。[真实浏览器演示与验收边界](docs/demo-v07-project-assets.md)。
+
 ## v0.6.0：独立身份采集与已知缺口补采
 
 从 Web 导航进入「身份与采集」：选择任一账号或匿名即可采集，不要求管理员账号。多个身份复用 HTML、Sitemap、JS 线索、URL/OpenAPI 与 Hash 路由发现能力，观察按稳定身份 ID 隔离，在同一任务清单中归并资产主体。

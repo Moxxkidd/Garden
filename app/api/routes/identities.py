@@ -144,6 +144,21 @@ async def recover(request: Request, action: str):
 @router.get("/identities", response_class=HTMLResponse)
 def identity_page(request: Request):
     with session_scope() as session:
+        project_entry = None
+        if request.query_params.get("project_entry_id"):
+            from app.models.project import ProjectEntry
+            from app.services.project_presentation import entry_view
+            from app.services.projects import ProjectService
+
+            try:
+                entry_id = int(request.query_params["project_entry_id"])
+            except ValueError:
+                raise InputValidationError("项目入口 ID 无效。") from None
+            entry = session.get(ProjectEntry, entry_id)
+            if not entry:
+                raise InputValidationError("项目入口不存在。")
+            ProjectService().validate_entry(session, entry.project_id, entry_id)
+            project_entry = entry_view(session, entry)
         targets = [{"id": t.id, "name": t.name} for t in session.scalars(select(Target))]
         profiles = [
             {"id": p.id, "name": p.name, "role": p.role, "target_id": p.target_id}
@@ -184,7 +199,13 @@ def identity_page(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="identities.html",
-        context={"targets": targets, "profiles": profiles, "states": states, "runs": run_rows},
+        context={
+            "targets": targets,
+            "profiles": profiles,
+            "states": states,
+            "runs": run_rows,
+            "project_entry": project_entry,
+        },
         headers=_HEADERS,
     )
 
@@ -218,6 +239,7 @@ async def form_preview(request: Request):
         data = IdentityCollectionRequest(
             url=one(form, "url"),
             target_id=one(form, "target_id"),
+            project_entry_id=one(form, "project_entry_id") or None,
             profile_ids=form.get("profile_ids", []),
             include_anonymous="anonymous" in form,
             options=ScanOptions(max_pages=one(form, "max_pages", "50")),

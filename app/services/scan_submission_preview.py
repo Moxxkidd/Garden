@@ -232,6 +232,19 @@ def _inspect(session, request: AssessmentStartRequest, settings: Settings) -> Sc
                 "source_run_invalid", "source_run_id", "来源必须是同一 Target 下已结束的普通扫描。"
             )
 
+    if request.project_entry_id is not None:
+        from app.services.project_lifecycle import ProjectLifecycleService
+        from app.services.projects import ProjectService
+
+        try:
+            entry = ProjectLifecycleService().validate(
+                session, request.project_entry_id, target_id, normalized
+            )
+            project = ProjectService().get(session, entry.project_id)
+            fingerprint_data.append([entry.id, entry.entry_url, entry.enabled, project.revision])
+        except GardenError:
+            error("project_binding_invalid", "project_entry_id", "项目入口绑定已失效，请重新选择。")
+
     return ScanPreview(
         mode=request.mode.value,
         entry_display=display,

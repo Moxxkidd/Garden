@@ -58,6 +58,7 @@ class ScanOptions(BaseModel):
 
 
 class ScanStartRequest(BaseModel):
+    project_entry_id: int | None = Field(default=None, gt=0)
     url: str = Field(min_length=1, max_length=1000)
     options: ScanOptions = Field(default_factory=ScanOptions)
 

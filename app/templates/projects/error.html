@@ -1,0 +1,1 @@
+{% extends 'base.html' %}{% block content %}<section class="project-page" hx-boost="false"><h1>{{ page_title }}</h1><p role="alert">{{ message }}</p><p>未完成本次操作。若预览过期或项目已变化，请重新预览。</p><a href="/projects/{{ project_id }}">返回项目并重新预览</a> · <a href="/projects/{{ project_id }}/assets">返回清单</a></section>{% endblock %}

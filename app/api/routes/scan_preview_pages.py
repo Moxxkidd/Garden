@@ -39,7 +39,14 @@ _OPTIONAL_DISCOVERY_FIELDS = set(ScanOptions.model_fields) - {
 def _form_values(form):
     values = {
         key: str(form.get(key, ""))
-        for key in ("url", "rerun_of_run_id", "seed_ref", *ScanOptions.model_fields)
+        for key in (
+            "url",
+            "rerun_of_run_id",
+            "seed_ref",
+            "target_id",
+            "project_entry_id",
+            *ScanOptions.model_fields,
+        )
     }
     now = time.time()
     for key, (created, _) in list(_PRIVATE_INPUTS.items()):
@@ -135,6 +142,8 @@ async def _submit(request, *, confirm=False):
         payload = AssessmentStartRequest(
             url=values["url"],
             rerun_of_run_id=rerun_id,
+            target_id=values.get("target_id") or None,
+            project_entry_id=values.get("project_entry_id") or None,
             options=_private_options(values),
         )
     except ValidationError as exc:
@@ -171,7 +180,7 @@ async def _submit(request, *, confirm=False):
         payload.options = resolve_scan_options(payload.options, settings)
         scan = (
             service.start_assessment(payload)
-            if payload.rerun_of_run_id is not None
+            if payload.rerun_of_run_id is not None or payload.project_entry_id is not None
             else service.start_scan(payload.url, payload.options)
         )
         return RedirectResponse(url=f"/scans/{scan.id}", status_code=303)

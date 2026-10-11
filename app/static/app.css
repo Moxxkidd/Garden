@@ -47,3 +47,28 @@ dd {
 .identity-page details { margin: 1rem 0; }
 .identity-page a { overflow-wrap: anywhere; }
 .identity-matrix .overflow-x-auto { overflow-x: auto; max-width: 100%; }
+
+/* Project forms remain usable offline and without the CDN JavaScript. */
+.project-page { max-width: 1100px; margin: auto; padding: 1.2rem; background: #fff; border: 1px solid #d6ded8; border-radius: 16px; overflow-wrap: anywhere; color: #172b24; line-height: 1.6; }
+.project-page h1 { font-size: 1.8rem; margin: .4rem 0 1rem; font-weight: 700; }
+.project-page h2 { font-size: 1.2rem; margin: .6rem 0; font-weight: 650; }
+.project-page h3 { font-weight: 600; }
+.project-page p { margin: .6rem 0; }
+.project-page a { color: #16674a; text-decoration: underline; text-underline-offset: 3px; }
+.project-page article, .project-page form, .project-page details { min-width: 0; padding: 1rem; border: 1px solid #d6ded8; border-radius: 10px; margin: 1rem 0; }
+.project-page label { display: block; font-size: .92rem; margin: .65rem 0; }
+.project-page input, .project-page select, .project-page textarea { display: block; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: .65rem; border: 1px solid #9aafa4; border-radius: 6px; background: #fff; color: #172b24; font: inherit; }
+.project-page textarea { min-height: 85px; }
+.project-page button { padding: .7rem 1rem; border: 0; border-radius: 7px; background: #16674a; color: white; font: inherit; cursor: pointer; margin-top: .6rem; }
+.project-page summary { cursor: pointer; font-weight: 600; }
+.project-page :focus-visible { outline: 3px solid #4394d0; outline-offset: 2px; }
+.project-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 1rem; }
+@media (max-width: 480px) { .project-page { padding: .8rem; } .project-page article, .project-page form { padding: .7rem; } }
+
+/* Local navigation fallback, including no-JavaScript/offline browsing. */
+body > header > div { max-width: 1152px; margin: auto; padding: 1rem 1.5rem; display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; justify-content: space-between; }
+body > header nav { display: flex; flex-wrap: wrap; gap: .7rem; }
+body > header a { color: #244c3d; text-decoration: none; }
+body > header nav a { padding: .35rem .6rem; border: 1px solid #c6d2ca; border-radius: 1rem; }
+body > main { padding: 1.5rem; }
+@media (max-width: 480px) { body > main { padding: .6rem; } body > header > div { padding: .8rem; } }

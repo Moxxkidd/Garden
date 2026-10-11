@@ -9,6 +9,7 @@ from app.schemas.scan import ScanOptions
 
 
 class IdentityCollectionRequest(BaseModel):
+    project_entry_id: int | None = Field(default=None, gt=0)
     model_config = ConfigDict(extra="forbid")
     url: str = Field(min_length=1, max_length=2000)
     target_id: int = Field(gt=0)

@@ -22,6 +22,7 @@ from app.models.scan_request import ScanRequest
 from app.models.scan_run import ScanAsset, ScanEvidence, ScanRun, ScanRunStage
 from app.models.target import Target
 from app.schemas.identity import IdentityCollectionRequest, SessionHealthView
+from app.schemas.projects import ProjectSourceRef
 from app.schemas.scan import DiscoveredAsset
 from app.services.browser_discovery import BrowserDiscovery
 from app.services.coverage_identity import redacted_observed_url
@@ -30,6 +31,9 @@ from app.services.discovery_js import extract_js
 from app.services.discovery_sources import parse_seed_input, parse_sitemap
 from app.services.identity_health import IdentityHealthGate, IdentityHealthStopped
 from app.services.identity_sessions import IdentitySessionService
+from app.services.project_lifecycle import ProjectLifecycleService
+from app.services.project_source import digest as project_entry_digest
+from app.services.projects import project_url
 from app.services.scan_application import ThreadedScanDispatcher
 from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
 from app.services.scan_options import resolve_scan_options
@@ -60,6 +64,8 @@ class IdentityCollectionService:
         entry = self.policy.normalize_url(request.url)
         if origin(entry) != origin(target.base_url):
             raise InputValidationError("采集入口与目标必须同源。")
+        if request.project_entry_id is not None:
+            ProjectLifecycleService().validate(session, request.project_entry_id, target.id, entry)
         profiles = []
         for profile_id in request.profile_ids:
             profile = session.get(CredentialProfile, profile_id)
@@ -78,6 +84,12 @@ class IdentityCollectionService:
         ).hexdigest()
         existing = session.scalar(select(ScanRun).where(ScanRun.active_key == digest))
         if existing:
+            if request.project_entry_id is not None:
+                ProjectLifecycleService().attach(
+                    session,
+                    request.project_entry_id,
+                    ProjectSourceRef(source="scan", run_id=existing.id),
+                )
             return existing.id
         run = ScanRun(
             mode="identity_collection",
@@ -87,6 +99,7 @@ class IdentityCollectionService:
             target_id=target.id,
             input_url=redacted_observed_url(entry),
             normalized_url=redacted_observed_url(entry),
+            entry_url_digest=project_entry_digest(project_url(entry)),
             active_key=digest,
             status="queued",
             current_stage="queued",
@@ -138,12 +151,17 @@ class IdentityCollectionService:
                 },
             )
         )
+        if request.project_entry_id is not None:
+            ProjectLifecycleService().attach(
+                session, request.project_entry_id, ProjectSourceRef(source="scan", run_id=run.id)
+            )
         session.commit()
         try:
             self.dispatcher.submit(run.id, self.execute)
         except Exception:
             run.status, run.error_code, run.active_key = "failed", "dispatch_failed", None
             session.commit()
+        ProjectLifecycleService().reconcile(ProjectSourceRef(source="scan", run_id=run.id))
         return run.id
 
     def _stage(self, session, run, name, status):
@@ -162,6 +180,12 @@ class IdentityCollectionService:
         run.current_stage = name
 
     def execute(self, run_id):
+        try:
+            self._execute(run_id)
+        finally:
+            ProjectLifecycleService().reconcile(ProjectSourceRef(source="scan", run_id=run_id))
+
+    def _execute(self, run_id):
         with session_scope() as session:
             run = session.get(ScanRun, run_id)
             if not run or run.status != "queued":

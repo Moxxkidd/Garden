@@ -1,0 +1,5 @@
+{% extends 'base.html' %}{% block content %}
+<section class="project-page" hx-boost="false"><h1>项目资产库</h1><p>把多个入口与多次任务的观察汇集到项目，保留来源、身份和时间。历史观察不代表资产持续在线。</p>
+<div class="project-grid">{% for p in projects %}<article><h2><a href="/projects/{{ p.id }}">{{ p.name }}</a></h2><p>{{ p.description }}</p><p>{{ '已归档' if p.status == 'archived' else '使用中' }} · 项目 #{{ p.id }}</p></article>{% else %}<p>暂无项目。创建后添加已授权 Target 的入口。</p>{% endfor %}</div>
+<form method="post" action="/projects/create"><h2>创建项目</h2><label>项目名称<input name="name" required maxlength="120"></label><label>说明<textarea name="description" maxlength="2000"></textarea></label><button>创建项目</button></form></section>
+{% endblock %}

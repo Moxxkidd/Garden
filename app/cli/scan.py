@@ -48,6 +48,7 @@ def scan(
     seed_file: Annotated[
         str | None, typer.Option("--seed-file", help="显式读取 UTF-8 种子文件（最多 1 MiB）。")
     ] = None,
+    project_entry_id: Annotated[int | None, typer.Option("--project-entry-id", min=1)] = None,
     detach: Annotated[bool, typer.Option("--detach", help="提交后立即返回。")] = False,
     ui_port: Annotated[int | None, typer.Option("--ui-port", min=1, max=65535)] = None,
 ) -> None:
@@ -82,7 +83,11 @@ def scan(
         )
         runtime = manager.ensure(ui_port=ui_port)
         api = LocalScanApi(runtime.base_url)
-        result = api.start_scan(url, options)
+        result = (
+            api.start_scan(url, options, project_entry_id=project_entry_id)
+            if project_entry_id is not None
+            else api.start_scan(url, options)
+        )
         _print_locations(runtime.base_url, result.id)
         if detach:
             console.print(f"扫描 {result.id} 已后台提交。")
