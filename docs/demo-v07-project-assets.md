@@ -72,4 +72,4 @@ macOS、Python 3.10.10、本地 Chromium；基线 `1529fe6`，实现检查点 `d
 
 本次实际环境为 macOS / Python 3.10.10；Linux 和其他 Python 版本尚未验证。万条观察的性能数据仍采用上文明确记录的中间检查点基线，不作为最终代码的计时或生产 SLA。最终全量包含万条完整性测试。
 
-交付停在本地分支 `codex/project-assets-v07`。没有推送、创建 PR、打 tag 或上传软件包；后续发布需单独授权。
+本地验收记录截至 `31674a1`，分支为 `codex/project-assets-v07`。随后用户授权推送并创建 PR；未授权合并、打 tag 或上传软件包。
