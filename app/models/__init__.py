@@ -56,6 +56,12 @@ __all__ = [
     "Target",
 ]
 
+from app.models.collection_queue import (  # noqa: F401  # noqa: F401
+    CollectionAttempt,
+    CollectionGate,
+    CollectionQueue,
+    CollectionWork,
+)
 from app.models.project import Project, ProjectEntry, ProjectRun  # noqa: F401
 from app.models.project_asset import (  # noqa: F401
     ProjectAsset,
