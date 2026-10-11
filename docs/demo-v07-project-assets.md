@@ -1,6 +1,6 @@
 # v0.7 项目资产库：本地演示与验收记录
 
-状态：独立审查及修复复审通过，最终整版验证中。包版本 0.7.0；本分支数据库迁移为 0009。没有创建 tag、发布软件包或推送远端。
+状态：本地实现与验收完成，独立审查及修复复审通过。包版本 0.7.0；本分支数据库迁移为 0009。没有创建 tag、发布软件包或推送远端。
 
 ## 可重复的 Web 流程
 
@@ -54,7 +54,7 @@ macOS、Python 3.10.10、本地 Chromium；基线 `1529fe6`，实现检查点 `d
 
 导出约定补充：CSV 的 `row_kind=record` 表示数据；零结果仅写一行 `row_kind=metadata`、`exported_count=0`，保留项目与筛选条件。Markdown 带相对于 Garden 服务地址的筛选证据链接。关系筛选只依据关系自身的来源观察或候选，不能借用其他任务的时间或身份。
 
-最终全量结果与后续交接见实施计划中的最新记录。版本号切换后冻结代码执行最终全量；通过前不宣告整版验收完成。
+最终全量结果与后续交接见实施计划中的最新记录。版本号切换后冻结代码执行的最终全量已通过，详情见下节。
 
 
 ## 2026-10-11 评审修复验证
@@ -62,3 +62,14 @@ macOS、Python 3.10.10、本地 Chromium；基线 `1529fe6`，实现检查点 `d
 迁移与真实浏览器组合 7 passed、2 个既有弃用警告，70.95s；专项服务/原生页面/CLI/查询/导出 30 passed，11.24s。项目登录入口包含 `?tenant=fixture`，公开观察仍只显示脱敏值；移动端截图重新检查无溢出。私有入口摘要不暴露至 API，旧脱敏查询缺乏精确绑定证明时保守拒绝。
 
 整理确认前可查看每条观察的原始、当前与目标主体 ID；拆分确认使用预览中的目标 ID。JSON 带 `source_coverage` 与 `coverage_summary`，Markdown 给出来源状态及证据链接；零观察失败任务也保留覆盖限制，CSV 元数据保留覆盖计数。覆盖摘要针对所选项目运行或整个项目，独立于记录筛选。
+
+
+## 最终验收（2026-10-11）
+
+冻结代码提交：`a6c91afe4fe47a6856d7271aad3d93721d2adc6f`。完整命令 `PYTHONPATH=. /Users/an/Documents/Garden/.venv/bin/python -m pytest -o addopts='' -q`：**826 passed、2 warnings，601.25s，退出码 0**，日志 `.verification/full-v070-final.log`。两个警告来自既有 websockets/uvicorn 弃用接口，无测试失败。Ruff check、315 文件格式检查和 `git diff --check` 通过。
+
+`hatchling.build` 构建 `garden-0.7.0-py3-none-any.whl` 和 `garden-0.7.0.tar.gz`；检查 0009、项目模板、服务、CLI 及验证产物排除通过。新临时 venv 安装 wheel 及完整依赖，无共享主环境依赖；验证包导入来自该 venv、`Garden 0.7.0`、projects help、0008→0009、数据库初始化、项目创建/列表通过，退出码 0，日志 `.verification/package-final.log`。仅清除安装子进程代理变量，没有改变用户全局配置。干净环境运行的是安装与迁移/CLI 冒烟，不冒充全新依赖组合上的 826 项全量。
+
+本次实际环境为 macOS / Python 3.10.10；Linux 和其他 Python 版本尚未验证。万条观察的性能数据仍采用上文明确记录的中间检查点基线，不作为最终代码的计时或生产 SLA。最终全量包含万条完整性测试。
+
+交付停在本地分支 `codex/project-assets-v07`。没有推送、创建 PR、打 tag 或上传软件包；后续发布需单独授权。

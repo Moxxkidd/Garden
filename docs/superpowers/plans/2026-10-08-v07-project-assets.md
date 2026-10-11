@@ -219,3 +219,31 @@ Native：本会话主代理按顺序实施全部 12 片，每片独立 RED/GREEN
 
 
 复审：Standards 与 Spec 在 `f7365cf..8db4373` 增量上均通过，原 P1/P2 已解决，无新增实质缺陷；仅静态审查，不冒充运行测试。额外补测旧脱敏查询无摘要时，预览导入及生命周期绑定均拒绝（1 passed）。版本一致性断言先失败后切换 0.7.0，随后冻结代码执行最终门；截至此记录尚未宣告完成。
+
+
+## 2026-10-11 最终分片核销与本地交付
+
+此节是当前状态，取代上述历史待办；保留原 RED/GREEN 清单作为原计划，不伪造逐片执行顺序。Tasks 1–12 均完成本地验收，版本 0.7.0。最终产品代码 SHA `a6c91afe4fe47a6856d7271aad3d93721d2adc6f`，后续仅收尾文档。
+
+| 分片 | 实现与验收证据 | 结果 |
+|---|---|---|
+| 1 数据契约/迁移 | `test_project_contracts.py`：稳定键、旧库保留、有项目或私有入口证明拒绝有损降级 | 通过 |
+| 2 项目/入口/来源 | `test_projects.py`、`test_project_pages.py`：精确绑定、Target 变化显式 needs_rebind、只读预览 | 通过 |
+| 3 入库/观察 | `test_project_ingestion.py`：幂等、WAL 并发冲突重试、外层回滚、快照拒绝篡改 | 通过 |
+| 4 生命周期 | `test_project_lifecycle.py`、`test_inventory_services.py`：终态去重晚关联、身份/库存失败保留、查询入口私有证明 | 通过 |
+| 5 清单/历史 | `test_project_catalog.py`、`test_project_query_matrix.py`：来源删除仍可读、四视图筛选/排序/分页/导出、账号隔离 | 通过 |
+| 6 比较 | `test_project_comparison.py`：200→404、覆盖/配置/时间/身份缺证据均保守 unknown | 通过 |
+| 7 关系 | `test_project_relations.py`：已存页面/脚本/重定向证据、按自身来源筛选、缺关系不等于无依赖 | 通过 |
+| 8 整理 | `test_project_curation.py`、页面/CLI 测试：逐条预览、合并/拆分/逆序撤销、原始观察不变、陈旧确认拒绝 | 通过 |
+| 9 导出/规模 | `test_project_export.py`、`test_project_scale.py`：全量万条无漏重、零记录元数据、失败来源覆盖、概要证据链接 | 通过 |
+| 10 API/CLI | `test_project_adapters.py` 及既有扫描适配器：项目选择、预览确认、查询与导出 | 通过 |
+| 11 原生 Web | `test_project_journey_e2e.py`、`test_identity_journey_e2e.py`：双 origin、验证码单/双账号、查询入口、无 JS、整理撤销、移动端截图 | 通过 |
+| 12 最终门 | 两轴独立审查及修复复审、826 项全量、Ruff/格式/diff、wheel/sdist、干净安装与迁移/CLI | 本地通过 |
+
+真实执行：macOS、Python 3.10.10。`PYTHONPATH=. /Users/an/Documents/Garden/.venv/bin/python -m pytest -o addopts='' -q` 得到 **826 passed、2 warnings / 601.25s / exit 0**（`.verification/full-v070-final.log`）；警告为既有 websockets/uvicorn 弃用提示。`ruff check .`、`ruff format --check .`（315 文件）、`git diff --check` 均通过。
+
+构建通过已安装 `hatchling.build` backend，未安装 build 前端；wheel/sdist 迁移/模板/服务/CLI 资源与产物排除通过。临时独立 venv 下载声明依赖并安装 v0.7.0 wheel，包导入路径、版本/help、0008→0009、db upgrade、项目 create/list 全通过（`.verification/package-final.log`）。该干净依赖环境仅跑安装/迁移/CLI 冒烟；完整 pytest 使用原开发依赖。Linux/其他 Python 版本未验证，不伪造跨平台通过。
+
+Standards：原 P1 已解决，复审无新实质缺陷；Spec：原两项 P2 已解决，复审无新实质缺陷。两轴复审范围 `f7365cf..8db4373`，前次整版静态审查范围 `1529fe6...f7365cf`；版本元数据和补充保守拒绝回归随后由主代理验证。
+
+README、展示页、演示文档同步本地验收结果。仅本地提交；不推送、不创建 PR、不打 tag、不发布包。主工作区原有未提交文件保持原状，继续使用隔离 worktree。v0.8/v0.9 不在本次范围。
