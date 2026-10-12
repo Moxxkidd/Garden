@@ -168,3 +168,18 @@ class CollectionAdmissionService:
                 )
             ),
         )
+
+    def charge_evidence(self, session, attempt_id, token, size):
+        queue, attempt = self._attempt(session, attempt_id, token)
+        if size < 0:
+            raise InputValidationError("collection_invalid_evidence_size")
+        used = session.scalar(
+            select(func.coalesce(func.sum(CollectionAttempt.evidence_bytes), 0)).where(
+                CollectionAttempt.queue_id == queue.id
+            )
+        )
+        if used + size > queue.options["max_evidence_bytes"]:
+            raise ConflictError("collection_evidence_budget")
+        self.queues._bump(session, queue)
+        attempt.evidence_bytes += size
+        session.flush()

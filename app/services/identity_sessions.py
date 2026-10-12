@@ -170,6 +170,8 @@ class IdentitySessionService:
                     context.route_web_socket("**/*", lambda socket: socket.close())
                     errors = []
                     attempts = 0
+                    durable = hasattr(before_request, "for_request")
+                    page = context.new_page()
 
                     def admit(route):
                         nonlocal attempts
@@ -178,15 +180,80 @@ class IdentitySessionService:
                                 route.abort()
                                 return
                             self.guard.ensure_allowed(state.target_origin, route.request.url)
-                            before_request()
-                            attempts += 1
+                            if durable:
+                                if route.request.frame.page != page:
+                                    route.abort()
+                                    return
+                            else:
+                                before_request()
+                                attempts += 1
                             route.continue_()
                         except Exception as error:
                             errors.append(error)
                             route.abort()
 
                     context.route("**/*", admit)
-                    page = context.new_page()
+                    if durable:
+                        # Route callbacks do not run for every redirect hop. CDP admission does.
+                        context.add_init_script("""
+                            for (const key of ['Worker', 'SharedWorker']) {
+                                Object.defineProperty(globalThis, key, {value: class {
+                                    constructor() { throw new Error('Worker blocked'); }
+                                }, configurable: false});
+                            }
+                            window.open = () => null;
+                        """)
+                        cdp = context.new_cdp_session(page)
+                        network_attempts = {}
+
+                        def paused(event):
+                            nonlocal attempts
+                            try:
+                                request = event["request"]
+                                if request["method"] not in {"GET", "HEAD"} or attempts >= 30:
+                                    raise InputValidationError("identity_validation_budget")
+                                self.guard.ensure_allowed(state.target_origin, request["url"])
+                                attempt = before_request.for_request(
+                                    request["url"], request["method"]
+                                )
+                                attempts += 1
+                                if event.get("networkId"):
+                                    network_attempts[event["networkId"]] = attempt
+                                cdp.send("Fetch.continueRequest", {"requestId": event["requestId"]})
+                            except Exception as error:
+                                errors.append(error)
+                                cdp.send(
+                                    "Fetch.failRequest",
+                                    {
+                                        "requestId": event["requestId"],
+                                        "errorReason": "BlockedByClient",
+                                    },
+                                )
+
+                        def account(event):
+                            response = event.get("response") or event.get("redirectResponse")
+                            attempt = network_attempts.get(event["requestId"])
+                            if response and attempt is not None:
+                                try:
+                                    before_request.response(
+                                        attempt,
+                                        int(response["status"]),
+                                        {
+                                            k.lower(): v
+                                            for k, v in response.get("headers", {}).items()
+                                        },
+                                    )
+                                except Exception as error:
+                                    errors.append(error)
+
+                        cdp.send("Network.enable")
+                        cdp.on("Network.responseReceived", account)
+                        cdp.on("Network.requestWillBeSent", account)
+                        cdp.on("Fetch.requestPaused", paused)
+                        cdp.send(
+                            "Fetch.enable",
+                            {"patterns": [{"urlPattern": "*", "requestStage": "Request"}]},
+                        )
                     install_session_storage(context, state, page)
                     response = page.goto(
                         config.validate_url, wait_until="domcontentloaded", timeout=10000

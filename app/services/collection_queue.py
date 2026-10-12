@@ -82,6 +82,8 @@ class CollectionQueueService:
 
     def get(self, session, queue_id):
         queue = self.row(session, queue_id)
+        from app.services.collection_admission import CollectionAdmissionService
+
         counts = dict(
             session.execute(
                 select(CollectionWork.state, func.count())
@@ -100,6 +102,9 @@ class CollectionQueueService:
             identity_key=queue.identity_key,
             options=queue.options,
             counts=counts,
+            metrics=CollectionAdmissionService(queues=self, clock=self.clock).summary(
+                session, queue_id
+            ),
             truncated=queue.truncated,
             coverage_complete=bool(counts) and not queue.truncated and set(counts) <= {"observed"},
         )
@@ -119,6 +124,7 @@ class CollectionQueueService:
                 "sources",
                 "attempts",
                 "not_before",
+                "asset_type",
             )
         }
 
@@ -147,7 +153,18 @@ class CollectionQueueService:
             raise ResourceNotFoundError("collection_work_missing")
         return self.storage.read(work.private_ref, work.private_digest)
 
-    def enqueue(self, session, queue_id, url, *, method="GET", depth=0, source="entry", priority=2):
+    def enqueue(
+        self,
+        session,
+        queue_id,
+        url,
+        *,
+        method="GET",
+        depth=0,
+        source="entry",
+        priority=2,
+        asset_type="page",
+    ):
         with atomic_collection(session):
             queue = self.row(session, queue_id)
             if queue.status not in {"pending", "running"}:
@@ -163,7 +180,9 @@ class CollectionQueueService:
                 )
             )
             source = (
-                source if source in SOURCE_KINDS or source in {"history", "recovery"} else "unknown"
+                source
+                if source in SOURCE_KINDS or source in {"history", "recovery", "sitemap_index"}
+                else "unknown"
             )
             if existing:
                 if source not in existing.sources and len(existing.sources) < 20:
@@ -201,6 +220,7 @@ class CollectionQueueService:
                 route_key=route,
                 url=safe_route(url) or redacted_observed_url(url),
                 method=method,
+                asset_type=asset_type,
                 private_ref=ref,
                 private_digest=proof,
                 depth=depth,
@@ -337,3 +357,69 @@ class CollectionQueueService:
                 )
                 queue.status, queue.lease_token = "paused", None
             return len(expired)
+
+    def for_run(self, session, run_id):
+        ids = list(
+            session.scalars(
+                select(CollectionQueue.id)
+                .where(CollectionQueue.run_id == run_id)
+                .order_by(CollectionQueue.id)
+            )
+        )
+        return [self.get(session, qid) for qid in ids]
+
+    def stop_work(self, session, queue_id, work_id, token, reason, *, retry_at=None):
+        with atomic_collection(session):
+            queue = self.check_lease(session, queue_id, token)
+            work = session.get(CollectionWork, work_id)
+            if not work or work.queue_id != queue_id or work.state == "observed":
+                raise ConflictError("collection_work_not_leased")
+            self._bump(session, queue)
+            work.reason = reason
+            work.state = "deferred" if retry_at is not None else "failed"
+            work.not_before = retry_at or 0
+            session.flush()
+
+    def close(self, session, queue_id, token):
+        with atomic_collection(session):
+            queue = self.check_lease(session, queue_id, token)
+            self._bump(session, queue)
+            session.execute(
+                update(CollectionWork)
+                .where(CollectionWork.queue_id == queue_id, CollectionWork.state == "leased")
+                .values(state="uncertain", reason="collection_stopped")
+            )
+            queue.status, queue.lease_token = "finished", None
+            session.flush()
+            return self.get(session, queue_id)
+
+
+def prepare_queues(session, run, options, entry_url):
+    if options.durable is None:
+        return
+    service = CollectionQueueService()
+    session.flush()
+    contexts = list(session.scalars(select(ScanContext).where(ScanContext.scan_run_id == run.id)))
+    for context in contexts:
+        queue = service.create(session, run.id, context.id, options.durable, entry_url=entry_url)
+        service.enqueue(session, queue["id"], entry_url, priority=0)
+        from urllib.parse import urljoin
+
+        from app.services.discovery_sources import parse_seed_input
+
+        if options.sitemap_enabled:
+            url = options.sitemap_url or urljoin(entry_url, "/sitemap.xml")
+            if origin(url) == origin(entry_url):
+                service.enqueue(session, queue["id"], url, source="sitemap", asset_type="sitemap")
+        if options.seed_input:
+            for seed in parse_seed_input(
+                options.seed_input, options.seed_format, base_url=entry_url
+            ):
+                if seed.get("auto_visit", True) and origin(seed["url"]) == origin(entry_url):
+                    service.enqueue(
+                        session,
+                        queue["id"],
+                        seed["url"],
+                        source=seed["source_kind"],
+                        asset_type=seed["asset_type"],
+                    )

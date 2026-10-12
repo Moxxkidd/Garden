@@ -155,6 +155,9 @@ class IdentityCollectionService:
             ProjectLifecycleService().attach(
                 session, request.project_entry_id, ProjectSourceRef(source="scan", run_id=run.id)
             )
+        from app.services.collection_queue import prepare_queues
+
+        prepare_queues(session, run, options, entry)
         session.commit()
         try:
             self.dispatcher.submit(run.id, self.execute)
@@ -302,6 +305,11 @@ class IdentityCollectionService:
         )
         from app.services.identity_recovery import IdentityRecoveryService
 
+        runtime = None
+        if options.durable is not None:
+            from app.services.collection_browser import CollectionBrowser
+
+            runtime = CollectionBrowser(self.pipeline, session, run, context, options, deadline)
         recovery_service = IdentityRecoveryService(storage=self.storage)
         pending_work = {}
         uncertain_work = {}
@@ -358,6 +366,9 @@ class IdentityCollectionService:
 
         def persist_batch(observations, assessment):
             for evidence_id, asset_id in observations:
+                pending = uncertain_work.get((evidence_id, asset_id))
+                if runtime is not None and pending:
+                    runtime.assess_identity(pending["url"], pending["method"], assessment)
                 if assessment in {"confirmed", "auth_diagnostic"}:
                     uncertain_work.pop((evidence_id, asset_id), None)
                 evidence = session.get(ScanEvidence, evidence_id) if evidence_id else None
@@ -378,10 +389,17 @@ class IdentityCollectionService:
 
             def in_fresh_thread():
                 with session_scope() as validation_session:
+                    validation_admission = admit
+                    if runtime is not None:
+                        from app.services.collection_runtime import IdentityCollectionAdmission
+
+                        validation_admission = IdentityCollectionAdmission(
+                            runtime, validation_session, admit
+                        )
                     return self.sessions.validate(
                         validation_session,
                         context.auth_session_id,
-                        before_request=admit,
+                        before_request=validation_admission,
                         current_state=current_state,
                     )
 
@@ -486,7 +504,11 @@ class IdentityCollectionService:
                     )
                 )
             ledger.observed(result.final_url, result.method)
-            asset = self.pipeline._persist_fetch(session, run, result, depth=0, context=context)
+            asset = (
+                runtime.persist(result, 0, None)
+                if runtime is not None
+                else self.pipeline._persist_fetch(session, run, result, depth=0, context=context)
+            )
             item = ledger.items.get(key, {})
             asset.attributes = {
                 **asset.attributes,
@@ -535,6 +557,8 @@ class IdentityCollectionService:
                     "url": result.final_url,
                     "method": result.method,
                 }
+            if runtime is not None and health_gate:
+                runtime.assess_identity(result.final_url, result.method, "identity_uncertain")
             save()
             if health_gate:
                 health_gate.observe(result, (evidence.id if evidence else None, asset.id))
@@ -595,6 +619,7 @@ class IdentityCollectionService:
                 seeds,
                 attempt,
                 identity_state=state,
+                **({"durable": runtime} if runtime is not None else {}),
                 response_candidates=sources,
                 before_send=health_gate.before_send if health_gate else None,
                 on_state_provider=lambda provider: state_provider.__setitem__(0, provider),
@@ -608,6 +633,9 @@ class IdentityCollectionService:
             )
             if outcome["stopped_reason"]:
                 warnings.append(outcome["stopped_reason"])
+            if runtime is not None:
+                if not runtime.queues.get(session, runtime.queue_id)["coverage_complete"]:
+                    warnings.append("collection_uncovered")
             healthy = True
             context.asset_count = len(
                 session.scalars(select(ScanAsset).where(ScanAsset.context_id == context.id)).all()
@@ -650,4 +678,6 @@ class IdentityCollectionService:
                 session.scalars(select(ScanAsset).where(ScanAsset.context_id == context.id)).all()
             )
             context.finished_at = datetime.now(timezone.utc)
+            if runtime is not None:
+                runtime.close()
             save(complete=context.completeness == "complete")

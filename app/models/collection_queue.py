@@ -34,6 +34,7 @@ class CollectionWork(TimestampMixin, Base):
     request_key: Mapped[str] = mapped_column(String(64))
     url: Mapped[str] = mapped_column(Text)
     method: Mapped[str] = mapped_column(String(10))
+    asset_type: Mapped[str] = mapped_column(String(30), default="page")
     route_key: Mapped[str] = mapped_column(String(64), index=True)
     private_ref: Mapped[str] = mapped_column(String(80))
     private_digest: Mapped[str] = mapped_column(String(64))

@@ -5,9 +5,10 @@ from urllib.parse import urljoin
 
 from sqlalchemy import select
 
-from app.core.errors import InputValidationError, TargetPolicyError
+from app.core.errors import ConflictError, InputValidationError, TargetPolicyError
 from app.models.scan_run import ScanAsset
 from app.schemas.scan import DiscoveredAsset
+from app.services.collection_runtime import CollectionStopped
 from app.services.discovery import DiscoveryLedger, origin
 from app.services.discovery_sources import parse_seed_input, parse_sitemap
 from app.services.scan_network import FetchError
@@ -157,6 +158,19 @@ class ScanDiscovery:
         from app.services.discovery import safe_route
         from app.services.discovery_browser import AnonymousDiscoveryBrowser
 
+        runtime = None
+        if self.options.durable is not None:
+            from app.services.collection_browser import CollectionBrowser
+
+            context = self.session.scalar(
+                select(ScanContext).where(
+                    ScanContext.scan_run_id == self.run.id, ScanContext.kind == "anonymous"
+                )
+            )
+            runtime = CollectionBrowser(
+                self.pipeline, self.session, self.run, context, self.options, self.deadline
+            )
+
         def candidate(item):
             if item.get("attempt_only"):
                 self.ledger.attempted(item["url"], item.get("method", "GET"))
@@ -226,13 +240,21 @@ class ScanDiscovery:
                     )
                 )
             self.ledger.observed(document_url, result.method)
-            self.pipeline._persist_fetch(
-                self.session,
-                self.run,
-                result,
-                depth=0,
-                asset_type_hint="endpoint" if "json" in (result.content_type or "") else None,
-            )
+            if runtime is not None:
+                runtime.persist(
+                    result, 0, "endpoint" if "json" in (result.content_type or "") else None
+                )
+            else:
+                self.pipeline._persist_fetch(
+                    self.session,
+                    self.run,
+                    result,
+                    depth=0,
+                    asset_type_hint="endpoint" if "json" in (result.content_type or "") else None,
+                )
+            if runtime is not None:
+                for child in runtime.sitemap_candidates(result):
+                    candidate(child)
             for child in self.script_sources(result):
                 candidate(child.model_dump())
             self.save()
@@ -240,7 +262,7 @@ class ScanDiscovery:
 
         self.ledger.add(DiscoveredAsset(url=self.entry_url, asset_type="page", source_kind="entry"))
         seeds = []
-        for item in self.extra_sources():
+        for item in [] if runtime is not None else self.extra_sources():
             if self.ledger.add(item) and item.auto_visit:
                 seeds.append(item.url)
         self.save()
@@ -255,16 +277,37 @@ class ScanDiscovery:
                 response,
                 candidate,
                 seeds,
+                **({"durable": runtime} if runtime is not None else {}),
                 on_attempt=lambda url, method: candidate(
                     {"url": url, "method": method, "attempt_only": True}
                 ),
             )
             if result["stopped_reason"]:
                 self.warning(result["stopped_reason"])
+            if runtime is not None:
+                runtime.close()
+                if not runtime.queues.get(self.session, runtime.queue_id)["coverage_complete"]:
+                    self.warning("持久队列仍有未覆盖内容")
             self.save(complete=True)
             self.session.commit()
             return None, "Anonymous browser discovery completed within the recorded bounds."
+        except (CollectionStopped, ConflictError) as error:
+            expected = isinstance(error, CollectionStopped) or str(error) in {
+                "collection_request_budget",
+                "collection_evidence_budget",
+                "collection_max_work",
+            }
+            if runtime is not None:
+                runtime.close()
+            if not expected:
+                raise
+            self.warning(str(error))
+            self.save(complete=False)
+            self.session.commit()
+            return None, "Browser collection stopped at a recorded bound; observations retained."
         except Exception:
+            if runtime is not None:
+                runtime.close()
             self.save(complete=False)
             self.session.commit()
             raise

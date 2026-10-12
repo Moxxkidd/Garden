@@ -131,3 +131,28 @@
 公开服务/保护文件首轮 RED 为缺少 collection schema 模块；实现后发现测试 fixture 的入口缺 `/`，按规范 URL 调整 fixture。租约和计费首轮 RED 为缺少接口；随后 WAL 陈旧租约错误码、变体保留、多来源及同 origin 并发分别先 RED 后修复。
 
 本机 Python 3.10.10：`tests/test_collection_queue.py tests/test_collection_admission.py` 10 passed / 2.60s；此前队列+迁移+doctor 66 passed / 27.03s（存在交集，不相加）。迁移 0010、保护文件校验、查询脱敏、租约 fencing、暂停、未知工作、实际发送预留、持久退避及并发门已实现基础服务，尚待真实采集接线与故障旅程。Ruff check/diff 检查通过。S04 的公开扫描入口用例已 RED（旧执行没有持久配置/队列），本检查点不提交该待实现用例。
+
+
+### 2026-10-12 S04/S05 接线进展（未完成整版验收）
+
+环境仍为本机 Python 3.10.10、仓库现有虚拟环境与本地 Chromium；基线提交 c57a17d，以下产品变更在工作区，尚未发布。
+
+- HTTP 通过扫描公开入口消费持久队列，重定向/Sitemap/普通请求统一计费。旧比较选项兼容新增 nullable durable 字段，避免旧报告错误降为 unknown。
+- 匿名浏览器导航与子请求通过 CDP 准入；Sitemap、重定向和 hash 路由均有真实本地站点测试。成功的 hash/重定向导航还需已捕获底层文档才能完成工作项；预算耗尽保留观察和未覆盖工作，显示 completed_with_warnings。
+- 独立身份采集创建分身份队列，健康验证与业务使用同一预算。真实重定向用例发现普通 route 钩子仅计首跳（目标收到 5 次、账本 3 次），改为 CDP 逐跳守门后 5 次均计费。验证线程使用独立 Session，不跨线程共享采集 Session。
+- 收尾身份验证预算不足时，队列将未确认批次保留为 uncertain，不因业务响应已到达而宣称覆盖完整。
+
+本次 TDD 命令均以 `PYTHONPATH=. /Users/an/Documents/Garden/.venv/bin/python -m pytest -o addopts='' -q` 执行，浏览器使用本地合成 fixture，日志在忽略目录 `.verification/`：
+
+| 场景 | RED | GREEN |
+|---|---|---|
+| 浏览器 Sitemap 隐藏入口 | s05-sitemap-red.log，隐藏入口未访问 | s05-sitemap-green.log，2 passed / 6.45s |
+| 重定向及 hash 完成记录 | s05-route-red.log，coverage_complete=False | s05-route-green.log，8 passed / 21.86s，含旧浏览器回归 |
+| 预算停止的结果语义 | s05-budget-red.log，错误显示 failed | s05-budget-green.log，4 passed / 10.70s |
+| 身份业务与验证共享预算 | s05-identity-red.log，未建立队列 | s05-identity-green.log，1 passed / 8.10s |
+| 验证重定向逐跳计费 | s05-health-redirect-red.log，3 != 5 | s05-health-redirect-green.log，2 passed / 14.41s |
+| 身份收尾未确认保守记录 | s05-health-incomplete-red.log，错误显示覆盖完整 | s05-health-incomplete-green.log，3 passed / 21.57s |
+
+以上测试集合有交集，不累计成独立测试总数。S04 既有 targeted 回归为 43 passed / 14.57s（s04-regression-retry.log）。新的集成回归 `s05-integration-regression.log`：143 passed，2 个依赖弃用 warning，258.69s。命令覆盖 collection_queue/admission/http/browser_e2e/identity_e2e、discovery_browser/pipeline/submission、identity_collection/sessions/health/recovery/review_regressions、scan_preview_pages、migrations、doctor。此为针对性回归，不是完整 pytest。
+
+待完成：浏览器退避重试、身份辅助流量失败状态/证据预算细化、租约失效后的最终写入隔离、真正崩溃/新轮恢复、项目增量规划、API/CLI/Web/导出、万级真实采集、完整 pytest 和包安装验收。版本号保持 0.7.0；不把本检查点描述成可发布的 v0.8。

@@ -144,7 +144,8 @@ class ScanApplicationService:
         if resolved.seed_input:
             parse_seed_input(resolved.seed_input, resolved.seed_format, base_url=normalized)
         if request.mode != AssessmentMode.QUICK and (
-            resolved.collection_mode != "http"
+            resolved.durable is not None
+            or resolved.collection_mode != "http"
             or resolved.sitemap_enabled
             or resolved.js_enabled
             or resolved.seed_input
@@ -243,6 +244,9 @@ class ScanApplicationService:
                 )
             session.add_all(self._assessment_contexts(session, run, request))
             create_assessment_stages(session, run)
+            from app.services.collection_queue import prepare_queues
+
+            prepare_queues(session, run, resolved, normalized)
             if request.project_entry_id is not None:
                 ProjectLifecycleService().attach(
                     session,

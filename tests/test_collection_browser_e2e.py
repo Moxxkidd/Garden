@@ -1,0 +1,168 @@
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+
+from app.db.bootstrap import session_scope
+from app.schemas.collection_queue import CollectionOptions
+from app.schemas.scan import ScanOptions
+from app.services.collection_queue import CollectionQueueService
+from tests.test_scan_preview_e2e import _serve
+from tests.test_url_scan_pipeline import _service
+
+
+def test_browser_network_requests_are_durably_counted(tmp_path):
+    site = FastAPI()
+    seen = []
+
+    @site.middleware("http")
+    async def count(request, call_next):
+        seen.append(request.url.path)
+        return await call_next(request)
+
+    @site.get("/", response_class=HTMLResponse)
+    def home():
+        return (
+            '<link rel="icon" href="data:,"><script>fetch("/api");</script><a href="/next">next</a>'
+        )
+
+    @site.get("/api")
+    def api():
+        return {"fixture": True}
+
+    @site.get("/next", response_class=HTMLResponse)
+    def next_page():
+        return '<link rel="icon" href="data:,"><p>done</p>'
+
+    with _serve(site) as base:
+        service = _service(tmp_path, lambda request: None)
+        try:
+            result = service.start_scan(
+                base,
+                ScanOptions(
+                    collection_mode="browser",
+                    render_wait_ms=100,
+                    durable=CollectionOptions(min_interval_ms=0),
+                ),
+            )
+            with session_scope() as session:
+                queue = CollectionQueueService().for_run(session, result.id)[0]
+                assert queue["metrics"]["requests_used"] == len(seen)
+                assert queue["counts"]["observed"] >= 3
+                assert "/api" in seen and "/next" in seen
+        finally:
+            service.shutdown()
+
+
+def test_browser_sitemap_discovers_and_visits_hidden_asset(tmp_path):
+    from fastapi import Request, Response
+
+    site = FastAPI()
+    seen = []
+
+    @site.get("/", response_class=HTMLResponse)
+    def home():
+        return '<link rel="icon" href="data:,"><p>home</p>'
+
+    @site.get("/sitemap.xml")
+    def sitemap(request: Request):
+        return Response(
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f"<url><loc>{request.base_url}hidden</loc></url></urlset>",
+            media_type="application/xml",
+        )
+
+    @site.get("/hidden", response_class=HTMLResponse)
+    def hidden():
+        seen.append("hidden")
+        return '<link rel="icon" href="data:,"><p>hidden</p>'
+
+    with _serve(site) as base:
+        service = _service(tmp_path, lambda request: None)
+        try:
+            result = service.start_scan(
+                base,
+                ScanOptions(
+                    collection_mode="browser",
+                    sitemap_enabled=True,
+                    render_wait_ms=100,
+                    durable=CollectionOptions(min_interval_ms=0),
+                ),
+            )
+            assert seen == ["hidden"]
+            with session_scope() as session:
+                queues = CollectionQueueService()
+                queue = queues.for_run(session, result.id)[0]
+                items = queues.list_work(session, queue["id"])["items"]
+                assert any(i["url"].endswith("/hidden") and i["state"] == "observed" for i in items)
+        finally:
+            service.shutdown()
+
+
+def test_browser_redirect_and_hash_navigation_complete_their_work(tmp_path):
+    from fastapi.responses import RedirectResponse
+
+    site = FastAPI()
+
+    @site.get("/")
+    def home():
+        return RedirectResponse("/app", status_code=302)
+
+    @site.get("/app", response_class=HTMLResponse)
+    def app():
+        return '<link rel="icon" href="data:,"><a href="/app#/view">view</a>'
+
+    with _serve(site) as base:
+        service = _service(tmp_path, lambda request: None)
+        try:
+            result = service.start_scan(
+                base,
+                ScanOptions(
+                    collection_mode="browser",
+                    render_wait_ms=100,
+                    durable=CollectionOptions(min_interval_ms=0),
+                ),
+            )
+            with session_scope() as session:
+                queues = CollectionQueueService()
+                queue = queues.for_run(session, result.id)[0]
+                items = queues.list_work(session, queue["id"])["items"]
+                assert queue["coverage_complete"], items
+                assert any(i["url"].endswith("#/view") and i["state"] == "observed" for i in items)
+        finally:
+            service.shutdown()
+
+
+def test_browser_budget_preserves_observations_and_uncovered_work(tmp_path):
+    site = FastAPI()
+    seen = []
+
+    @site.get("/", response_class=HTMLResponse)
+    def home():
+        seen.append("home")
+        return '<link rel="icon" href="data:,"><a href="/next">next</a>'
+
+    @site.get("/next", response_class=HTMLResponse)
+    def next_page():
+        seen.append("next")
+        return '<link rel="icon" href="data:,"><p>next</p>'
+
+    with _serve(site) as base:
+        service = _service(tmp_path, lambda request: None)
+        try:
+            result = service.start_scan(
+                base,
+                ScanOptions(
+                    collection_mode="browser",
+                    render_wait_ms=100,
+                    durable=CollectionOptions(max_requests=1, min_interval_ms=0),
+                ),
+            )
+            assert seen == ["home"]
+            assert result.status == "completed_with_warnings"
+            assert result.asset_count == 1
+            with session_scope() as session:
+                queue = CollectionQueueService().for_run(session, result.id)[0]
+                assert queue["metrics"]["requests_used"] == 1
+                assert not queue["coverage_complete"]
+                assert queue["counts"]["observed"] == 1
+        finally:
+            service.shutdown()

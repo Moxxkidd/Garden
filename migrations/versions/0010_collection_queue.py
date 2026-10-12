@@ -63,6 +63,7 @@ def upgrade():
         sa.Column("request_key", sa.String(length=64), nullable=False),
         sa.Column("url", sa.Text(), nullable=False),
         sa.Column("method", sa.String(length=10), nullable=False),
+        sa.Column("asset_type", sa.String(length=30), nullable=False),
         sa.Column("route_key", sa.String(length=64), nullable=False),
         sa.Column("private_ref", sa.String(length=80), nullable=False),
         sa.Column("private_digest", sa.String(length=64), nullable=False),

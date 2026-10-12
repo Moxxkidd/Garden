@@ -43,6 +43,7 @@ class BrowserDiscovery:
         recovery_work=None,
         on_state_provider=None,
         on_finish=None,
+        durable=None,
     ) -> dict:
         from playwright.sync_api import Error as PlaywrightError
         from playwright.sync_api import sync_playwright
@@ -93,6 +94,8 @@ class BrowserDiscovery:
                 return
             if len(queued) >= options.max_candidates:
                 stopped = stopped or "max_candidates"
+                return
+            if durable is not None and not durable.enqueue(normalized, depth):
                 return
             queued.add((normalized, "GET"))
             queue.append((normalized, depth, "GET"))
@@ -266,6 +269,8 @@ class BrowserDiscovery:
                         if allowed and recorded and not errors:
                             if before_send:
                                 before_send()
+                            if durable is not None:
+                                durable.sending(event, route_window)
                             attempts += 1
                             if on_attempt is not None:
                                 on_attempt(url, method)
@@ -299,6 +304,31 @@ class BrowserDiscovery:
                         except PlaywrightError:
                             pass
 
+                if durable is not None:
+                    cdp.send("Network.enable")
+
+                    def durable_event(callback, event):
+                        try:
+                            callback(event)
+                        except Exception as error:
+                            errors.append(error)
+
+                    cdp.on(
+                        "Network.responseReceived",
+                        lambda event: durable_event(durable.network_response, event),
+                    )
+                    cdp.on(
+                        "Network.requestWillBeSent",
+                        lambda event: (
+                            durable_event(durable.network_response, event)
+                            if event.get("redirectResponse")
+                            else None
+                        ),
+                    )
+                    cdp.on(
+                        "Network.loadingFailed",
+                        lambda event: durable_event(durable.network_failed, event),
+                    )
                 cdp.on("Fetch.requestPaused", guard_request)
                 cdp.send(
                     "Fetch.enable", {"patterns": [{"urlPattern": "*", "requestStage": "Request"}]}
@@ -390,17 +420,27 @@ class BrowserDiscovery:
                     lambda response: pending_responses.__setitem__(response.request, response),
                 )
                 page.on("requestfinished", request_finished)
-                while queue and stopped not in {"max_browser_requests", "max_candidates"}:
+                while (queue or durable is not None) and stopped not in {
+                    "max_browser_requests",
+                    "max_candidates",
+                }:
                     check()
                     if pages >= options.max_pages:
                         stopped = stopped or "max_pages"
                         break
-                    url, depth, document_method = queue.popleft()
+                    if durable is not None:
+                        work = durable.next_navigation()
+                        if work is None:
+                            break
+                        url, depth, document_method = work
+                    else:
+                        url, depth, document_method = queue.popleft()
                     route_window = url
                     pages += 1
                     timeout = min(
                         options.request_timeout_seconds or 15, max(0.001, deadline - monotonic())
                     )
+                    navigation_success = False
                     try:
                         page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
                         remaining = options.render_wait_ms
@@ -425,6 +465,7 @@ class BrowserDiscovery:
                                     "auto_visit": False,
                                 }
                             )
+                        navigation_success = True
                         if document_method == "HEAD":
                             continue
                         _, items = parse_html(
@@ -444,6 +485,8 @@ class BrowserDiscovery:
                         if document_method != "HEAD":
                             stopped = stopped or "navigation_error"
                     finally:
+                        if durable is not None:
+                            durable.navigation_finished(navigation_success, page.url)
                         route_window = None
                 check()
                 for response in list(pending_responses.values()):
