@@ -230,6 +230,8 @@ class BrowserDiscovery:
                             self.policy.normalize_url(x) for x in allowed_urls
                         }:
                             allowed, reason = False, "outside_recovery_scope"
+                        elif durable is not None and not durable.accepts(url, method):
+                            allowed, reason = False, "outside_recovery_scope"
                         elif redirects > options.max_redirects:
                             allowed, reason = False, "max_redirects"
                             stopped = stopped or reason

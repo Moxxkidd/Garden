@@ -25,6 +25,7 @@ from app.schemas.identity import IdentityCollectionRequest, SessionHealthView
 from app.schemas.projects import ProjectSourceRef
 from app.schemas.scan import DiscoveredAsset
 from app.services.browser_discovery import BrowserDiscovery
+from app.services.collection_runtime import CollectionOwnershipLost
 from app.services.coverage_identity import redacted_observed_url
 from app.services.discovery import DiscoveryLedger, origin, safe_route
 from app.services.discovery_js import extract_js
@@ -44,6 +45,7 @@ from app.services.scan_reporting import ScanReportService
 class IdentityCollectionService:
     def __init__(self, *, sessions=None, dispatcher=None, report_service=None):
         self.settings = get_settings()
+        self.collection_executor = None
         self.policy = TargetNetworkPolicy(self.settings)
         self.sessions = sessions or IdentitySessionService(policy=self.policy)
         self.storage = self.sessions.storage
@@ -55,6 +57,22 @@ class IdentityCollectionService:
             gateway=HttpScanGateway(self.policy),
             report_service=report_service or ScanReportService(),
         )
+
+    def ensure_collection_executor(self):
+        if self.collection_executor is None:
+            from app.services.collection_executor import CollectionExecutor
+
+            owner = CollectionExecutor(self.settings.database_url)
+            owner.acquire()
+            self.collection_executor = owner
+
+    def shutdown(self):
+        shutdown = getattr(self.dispatcher, "shutdown", None)
+        if shutdown is not None:
+            shutdown()
+        if self.collection_executor is not None:
+            self.collection_executor.close()
+            self.collection_executor = None
 
     def start(self, session, request: IdentityCollectionRequest, *, recovery=None):
         request = IdentityCollectionRequest.model_validate(request)
@@ -75,6 +93,8 @@ class IdentityCollectionService:
         options = resolve_scan_options(request.options, self.settings).model_copy(
             update={"collection_mode": "browser"}
         )
+        if options.durable is not None:
+            self.ensure_collection_executor()
         if options.seed_input:
             parse_seed_input(options.seed_input, options.seed_format, base_url=entry)
         digest = hashlib.sha256(
@@ -199,6 +219,7 @@ class IdentityCollectionService:
             deadline = time.monotonic() + options.overall_timeout_seconds
             run.status, run.started_at = "running", datetime.now(timezone.utc)
             session.commit()
+            ownership_lost = False
             try:
                 private = self.storage.read_payload(run.discovery_input_ref)
                 entry = private["entry_url"]
@@ -235,6 +256,10 @@ class IdentityCollectionService:
                 run.completeness = "complete" if complete else "incomplete"
                 run.status = "completed" if complete else "completed_with_warnings"
                 run.progress = 100
+            except CollectionOwnershipLost:
+                ownership_lost = True
+                session.rollback()
+                return
             except Exception as error:
                 run.status = "interrupted" if isinstance(error, ScanInterrupted) else "incomplete"
                 run.completeness = "incomplete"
@@ -252,17 +277,18 @@ class IdentityCollectionService:
                     if stage.status in {"pending", "running"} and stage.name != "report":
                         stage.status = "skipped"
             finally:
-                run.active_key = None
-                run.finished_at = datetime.now(timezone.utc)
-                self._stage(session, run, "report", "running")
-                session.commit()
-                try:
-                    run.report_path = self.pipeline.report_service.generate(session, run.id)
-                    self._stage(session, run, "report", "completed")
-                except Exception:
-                    self._stage(session, run, "report", "failed")
-                    run.status, run.error_code = "failed", "report_failed"
-                session.commit()
+                if not ownership_lost:
+                    run.active_key = None
+                    run.finished_at = datetime.now(timezone.utc)
+                    self._stage(session, run, "report", "running")
+                    session.commit()
+                    try:
+                        run.report_path = self.pipeline.report_service.generate(session, run.id)
+                        self._stage(session, run, "report", "completed")
+                    except Exception:
+                        self._stage(session, run, "report", "failed")
+                        run.status, run.error_code = "failed", "report_failed"
+                    session.commit()
 
     def _establish(self, session, context):
         context.started_at = datetime.now(timezone.utc)

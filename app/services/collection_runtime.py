@@ -5,12 +5,16 @@ import time
 
 from sqlalchemy import select
 
-from app.core.errors import ConflictError
+from app.core.errors import ConflictError, ScanInterrupted
 from app.models.collection_queue import CollectionQueue
 from app.models.scan_run import ScanEvidence
 from app.services.collection_admission import CollectionAdmissionService
 from app.services.collection_queue import CollectionQueueService
 from app.services.collection_transactions import atomic_collection
+
+
+class CollectionOwnershipLost(ScanInterrupted):
+    """An expired worker may no longer publish results or finalize its run."""
 
 
 class CollectionStopped(RuntimeError):
@@ -28,6 +32,18 @@ class CollectionRuntime:
         )
         if self.queue_id is None:
             raise ConflictError("collection_queue_missing")
+        queue = self.queues.row(session, self.queue_id)
+        self.allowed_work = None
+        if queue.resume_mode == "known_only":
+            from app.models.collection_queue import CollectionWork
+
+            self.allowed_work = set(
+                session.scalars(
+                    select(CollectionWork.request_key).where(
+                        CollectionWork.queue_id == self.queue_id
+                    )
+                )
+            )
         self.token = None
         self.last_heartbeat = 0
         while self.token is None:
@@ -59,7 +75,15 @@ class CollectionRuntime:
             self.session.commit()
             time.sleep(min(0.05, max(0, timestamp - time.time())))
 
+    def accepts(self, url, method="GET"):
+        from app.services.collection_storage import digest
+        from app.services.projects import project_url
+
+        return self.allowed_work is None or digest([project_url(url), method]) in self.allowed_work
+
     def before_send(self, url, method="GET", kind="http"):
+        if kind != "identity_health" and not self.accepts(url, method):
+            raise CollectionStopped("outside_recovery_scope")
         while True:
             self.check()
             reserved = self.admission.reserve(
@@ -128,13 +152,20 @@ class CollectionRuntime:
             self.admission.charge_evidence(self.session, self.latest_attempt, self.token, size)
             return asset
 
+    def check_ownership(self):
+        try:
+            self.queues.check_lease(self.session, self.queue_id, self.token)
+        except ConflictError as error:
+            self.session.rollback()
+            raise CollectionOwnershipLost("collection_ownership_lost") from error
+
     def close(self):
         try:
             self.queues.close(self.session, self.queue_id, self.token)
             self.session.commit()
-        except ConflictError:
+        except ConflictError as error:
             self.session.rollback()
-            # A lost lease is left for expiration recovery; never overwrite its new owner.
+            raise CollectionOwnershipLost("collection_ownership_lost") from error
 
 
 class IdentityCollectionAdmission:

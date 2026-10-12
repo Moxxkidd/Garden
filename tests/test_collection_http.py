@@ -70,3 +70,32 @@ def test_durable_sitemaps_and_redirects_are_counted_and_retained(tmp_path):
         assert "/hidden" in sent
     finally:
         service.shutdown()
+
+
+def test_expired_worker_cannot_finalize_or_publish_a_report(tmp_path):
+    import time
+
+    def handle(request):
+        with session_scope() as session:
+            CollectionQueueService(clock=lambda: time.time() + 121).recover_expired(session)
+        return httpx.Response(200, headers={"content-type": "text/html"}, text="<p>late</p>")
+
+    service = _service(tmp_path, handle)
+    try:
+        result = service.start_scan(
+            "http://localhost:8123/",
+            ScanOptions(
+                durable=CollectionOptions(min_interval_ms=0),
+            ),
+        )
+        assert result.status == "running"
+        assert result.report_path is None
+        assert result.asset_count == 0
+        with session_scope() as session:
+            queue = CollectionQueueService().for_run(session, result.id)[0]
+            assert queue["status"] == "paused"
+            assert queue["counts"] == {"uncertain": 1}
+        assert service.interrupt_active_scans() == 1
+        assert service.get_scan(result.id).status == "interrupted"
+    finally:
+        service.shutdown()

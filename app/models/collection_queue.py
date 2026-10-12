@@ -23,6 +23,8 @@ class CollectionQueue(TimestampMixin, Base):
     binding: Mapped[str] = mapped_column(String(64))
     private_ref: Mapped[str] = mapped_column(String(80))
     private_digest: Mapped[str] = mapped_column(String(64))
+    resume_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    resume_mode: Mapped[str | None] = mapped_column(String(30), nullable=True)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("collection_queues.id"), nullable=True)
 
 

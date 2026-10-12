@@ -151,3 +151,21 @@ def test_variant_suppression_retains_candidates_and_does_not_claim_coverage(
         assert service.enqueue(session, qid, target.base_url + "/other")["reason"] == "max_work"
         assert service.get(session, qid)["truncated"]
         assert not service.get(session, qid)["coverage_complete"]
+
+
+def test_worker_settling_after_pause_preserves_paused_state(seeded_records, tmp_path):
+    service = CollectionQueueService(storage=CollectionStorage(tmp_path / "private"))
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        run = source_run(session, target)
+        qid = service.create(session, run.id, run.contexts[0].id, CollectionOptions())["id"]
+        first = service.enqueue(session, qid, target.base_url + "/one")
+        service.enqueue(session, qid, target.base_url + "/two")
+        lease = service.lease(session, qid)
+        service.claim(session, qid, lease)
+        service.pause(session, qid)
+        service.complete(session, qid, first["id"], lease)
+        settled = service.close(session, qid, lease)
+        assert settled["status"] == "paused"
+        assert settled["counts"] == {"observed": 1, "pending": 1}
+        assert not settled["coverage_complete"]

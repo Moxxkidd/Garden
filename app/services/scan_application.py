@@ -119,9 +119,18 @@ class ScanApplicationService:
             policy = TargetNetworkPolicy(self.settings)
             pipeline = ScanPipeline(policy=policy, gateway=HttpScanGateway(policy))
         self.pipeline = pipeline
+        self.collection_executor = None
         self.dispatcher = dispatcher or ThreadedScanDispatcher(
             self.settings.scan_max_concurrent_tasks
         )
+
+    def ensure_collection_executor(self):
+        if self.collection_executor is None:
+            from app.services.collection_executor import CollectionExecutor
+
+            owner = CollectionExecutor(self.settings.database_url)
+            owner.acquire()
+            self.collection_executor = owner
 
     def start_scan(
         self, url: str, options: ScanOptions | None = None, *, project_entry_id: int | None = None
@@ -138,6 +147,8 @@ class ScanApplicationService:
 
     def start_assessment(self, request: AssessmentStartRequest) -> AssessmentRunView:
         resolved = self._resolve_options(request.options)
+        if resolved.durable is not None:
+            self.ensure_collection_executor()
         normalized = self.pipeline.policy.normalize_url(request.url)
         from app.services.discovery_sources import parse_seed_input
 
@@ -317,16 +328,27 @@ class ScanApplicationService:
     def interrupt_active_scans(self) -> int:
         """在服务启动时收敛上次异常退出遗留的活动扫描。"""
 
+        from app.models.collection_queue import CollectionQueue
+        from app.services.collection_queue import CollectionQueueService
+
+        self.ensure_collection_executor()
         with session_scope() as session:
+            queues = CollectionQueueService()
+            live_runs = select(CollectionQueue.run_id).where(
+                CollectionQueue.lease_token.is_not(None),
+                CollectionQueue.lease_until > queues.clock(),
+            )
             active_ids = list(
                 session.scalars(
                     select(ScanRun.id).where(
                         ScanRun.status.in_(
                             [ScanRunStatus.QUEUED.value, ScanRunStatus.RUNNING.value]
-                        )
+                        ),
+                        ScanRun.id.not_in(live_runs),
                     )
                 )
             )
+            queues.recover_expired(session)
             for scan_run_id in active_ids:
                 run = self._get(session, scan_run_id)
                 self._mark_interrupted(run)
@@ -460,6 +482,9 @@ class ScanApplicationService:
         shutdown = getattr(self.dispatcher, "shutdown", None)
         if shutdown is not None:
             shutdown()
+        if self.collection_executor is not None:
+            self.collection_executor.close()
+            self.collection_executor = None
 
     def _mark_dispatch_failed(self, scan_run_id: int) -> None:
         with session_scope() as session:

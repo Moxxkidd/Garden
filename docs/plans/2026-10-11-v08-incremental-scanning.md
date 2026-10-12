@@ -156,3 +156,47 @@
 以上测试集合有交集，不累计成独立测试总数。S04 既有 targeted 回归为 43 passed / 14.57s（s04-regression-retry.log）。新的集成回归 `s05-integration-regression.log`：143 passed，2 个依赖弃用 warning，258.69s。命令覆盖 collection_queue/admission/http/browser_e2e/identity_e2e、discovery_browser/pipeline/submission、identity_collection/sessions/health/recovery/review_regressions、scan_preview_pages、migrations、doctor。此为针对性回归，不是完整 pytest。
 
 待完成：浏览器退避重试、身份辅助流量失败状态/证据预算细化、租约失效后的最终写入隔离、真正崩溃/新轮恢复、项目增量规划、API/CLI/Web/导出、万级真实采集、完整 pytest 和包安装验收。版本号保持 0.7.0；不把本检查点描述成可发布的 v0.8。
+
+
+### 2026-10-12 S06 恢复基础与边界修复（仍在实施）
+
+S04/S05 检查点本地提交 `c7f12f4`，未推送。其后 S06 在工作区推进：
+
+- 新增只读恢复预览，绑定 queue revision、原始工作材料、Target 精确地址、身份当前配置/会话与项目入口；默认 known_only，展示脱敏样例和新轮预算。
+- 确认原子建立新 ScanRun/context/queue 与旧工作转交记录，重复确认返回同一轮；旧报告不修改。项目补采新轮独立入库，原快照不变。
+- known_only 同时限制 HTTP 请求、重定向及浏览器子请求；必要身份验证仍遵守固定验证配置/同源限制并使用同一预算，预览明确显示要重验和计费。
+- 源目标在其他 Session 改动后，旧 Session 缓存不能绕过校验；binding 强制刷新 Target/profile。
+- 启动不误中断持有效租约的任务；失效租约回收保留 uncertain。旧工作者失去租约后不保存迟到响应，不生成报告，交由启动恢复标记中断。
+- 暂停后允许已有响应结算，但队列仍为 paused。浏览器 429/502/503/504 使用持久 deferred 工作与 origin 退避重试，不直接算作 observed。
+
+真实命令前缀同前，以下均为本机 Python 3.10.10 新跑：
+
+| 日志 | 验证结果 |
+|---|---|
+| s06-preview-red / green | 缺新服务接口 → 只读/脱敏/精确 Target 绑定 1 passed / 0.47s |
+| s06-linked-red / green | 缺新轮创建接口 → 原报告不变、已知补采、幂等 2 passed / 1.01s |
+| s06-project-red / green | 先修正 fixture 的公开 runs 返回值使用；真实 RED 为仅有 1 个项目轮次，修复关联后含队列/HTTP 12 passed / 4.44s |
+| s06-stale-red / green | 缓存 Target 漏检 → 刷新绑定后 11 passed / 3.92s |
+| s06-startup-red / green | 误中断活 worker → live lease 保护后 12 passed / 4.19s |
+| s06-identity-red / green | 身份补采未通过必要重验 → 3 passed / 27.73s，含真实 Chromium |
+| s06-process-green | 真实子进程在 claimed/sent/acknowledged 后 SIGKILL，3 passed / 3.37s；重启无新增请求。过期时钟通过公共 clock seam 前移 121s，未真实等待租约时长。这是队列/准入协议的实进程证据，acknowledged 分支不是完整扫描证据事务故障实验的替代品 |
+| s05-browser-retry-red / green | 429 仅发送一次 → 持久重试后 5 passed / 13.45s |
+| s06-pause-red / green | 收尾误变 finished → paused 保留，1 passed / 0.37s |
+| s06-browser-scope-red / green | 新 XHR 中断全部补采 → 拦截后继续已选工作，含身份回归 9 passed / 42.76s |
+| s06-fence-red / green | 过期 worker 仍生成完成结果 → 拒绝收尾写入，8 passed / 2.96s |
+
+进程实验初次 sent/acknowledged 失败为子进程继承本机 SOCKS 代理但未安装 socksio；合成 fixture 明确 trust_env=False 后运行成功，无新增依赖。一次编辑/浏览器测试调用因自动审批服务额度不足未执行，用户继续后按相同审批方式成功重试，未绕过审批。
+
+尚未核销 S06：单属主执行器/启动-派发竞态、完整扫描证据事务各崩溃点、派发失败恢复和抑制项重选等仍需落实；当前组合回归 s06-regression 正在执行。S07 项目增量计划及 S08/S09 仍未实施完成。未调高版本号，不发布。
+
+
+#### S06 后续验证与本地检查点
+
+- `s06-regression.log`：110 passed / 235.48s（恢复、崩溃、浏览器、旧身份、迁移、doctor）。
+- 增加本地 SQLite 执行器 flock 所有权，同一进程多个服务引用共享；第二进程可查询，但不能开始持久执行或启动恢复。构造/只读预览不建锁文件。真实进程共享/释放测试 `s06-owner-green.log` 1 passed / 1.11s；入口组合 `s06-owner-entry-green.log` 10 passed / 5.09s。入口测试首轮 fixture 漏初始化数据库，补齐后验证；不把该 fixture 错误描述成产品缺陷。
+- 派发失败子轮保留为 failed/dispatch_failed，工作仍 pending、发送计数为 0，可再次预览。RED 为 dispatcher 异常直接抛出，`s06-dispatch-green.log` 8 passed / 4.36s。
+- 显式 work_ids 可选择 suppressed 工作，默认选择仍排除 suppressed；新变体预算在预览显示。`s06-suppressed-green.log` 6 passed / 2.24s。
+- 所有权接线的 `s06-owner-regression.log` 为 126 passed、1 failed / 206.04s。唯一失败是旧 stop 替身未实现 shutdown 且断言旧顺序；先停止 Web 进程释放执行权、再处理中断、最后关闭服务是新生命周期要求。更新该测试，并新增真正的 Web 子进程 + `python -m app.cli.main stop`，`s06-stop-green.log` 20 passed / 11.28s。
+- 上述为互相重叠的针对性回归，未称完整 pytest。原始报告/快照不可变、known_only XHR 限制、身份复核计费继续通过。当前平台为 macOS；flock 路径尚未在 Linux 实跑，Windows 执行器未验证。
+- S06 不宣称全 AC 完成：完整扫描证据事务的全部进程崩溃点、原始材料清理、所有读写范围与极端输入的最终评审仍待 S09；旧协议实进程实验范围如上表所述。
+- S07 已开始公开项目预览 seam 的 RED/GREEN：旧观察缺原请求材料明确 blocked；现有持久材料可按 recovery/new_candidate/stale_observation 排序。`s07-preview-green.log` 1 passed / 0.40s；`s07-order-green.log` 2 passed / 0.73s。S07 的确认执行、重要入口、老化和范围变更确认尚未完成，代码不混入 S06 检查点。

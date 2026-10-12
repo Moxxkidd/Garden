@@ -35,6 +35,8 @@ def upgrade():
         sa.Column("binding", sa.String(length=64), nullable=False),
         sa.Column("private_ref", sa.String(length=80), nullable=False),
         sa.Column("private_digest", sa.String(length=64), nullable=False),
+        sa.Column("resume_token", sa.String(length=64), nullable=True),
+        sa.Column("resume_mode", sa.String(length=30), nullable=True),
         sa.Column("parent_id", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
@@ -52,6 +54,7 @@ def upgrade():
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("context_id"),
+        sa.UniqueConstraint("resume_token"),
     )
     op.create_index(
         op.f("ix_collection_queues_run_id"), "collection_queues", ["run_id"], unique=False

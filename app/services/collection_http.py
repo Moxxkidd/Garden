@@ -34,6 +34,7 @@ def collect_http(pipeline, session, run, options, deadline):
         accepted = discovery.ledger.add(item)
         if (
             not accepted
+            or not runtime.accepts(item.route_url or item.url, item.method or "GET")
             or not item.auto_visit
             or origin(item.url) != runtime.queues.row(session, runtime.queue_id).origin
         ):
@@ -194,6 +195,7 @@ def collect_http(pipeline, session, run, options, deadline):
         TargetPolicyError,
     ) as error:
         session.rollback()
+        runtime.check_ownership()
         # Safe static codes only; network exceptions containing URLs are never projected.
         reason = (
             str(error)

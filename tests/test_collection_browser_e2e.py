@@ -166,3 +166,88 @@ def test_browser_budget_preserves_observations_and_uncovered_work(tmp_path):
                 assert queue["counts"]["observed"] == 1
         finally:
             service.shutdown()
+
+
+def test_browser_retry_after_retries_the_durable_work(tmp_path):
+    from fastapi import Response
+
+    site = FastAPI()
+    seen = []
+
+    @site.get("/", response_class=HTMLResponse)
+    def home():
+        seen.append("request")
+        if len(seen) == 1:
+            return Response(
+                '<link rel="icon" href="data:,">slow down',
+                status_code=429,
+                media_type="text/html",
+                headers={"Retry-After": "0"},
+            )
+        return '<link rel="icon" href="data:,"><p>ready</p>'
+
+    with _serve(site) as base:
+        service = _service(tmp_path, lambda request: None)
+        try:
+            result = service.start_scan(
+                base,
+                ScanOptions(
+                    collection_mode="browser",
+                    render_wait_ms=100,
+                    durable=CollectionOptions(min_interval_ms=0, retry_attempts=1),
+                ),
+            )
+            assert len(seen) == 2
+            with session_scope() as session:
+                queue = CollectionQueueService().for_run(session, result.id)[0]
+                assert queue["coverage_complete"]
+                assert queue["metrics"]["requests_used"] == 2
+        finally:
+            service.shutdown()
+
+
+def test_known_only_browser_recovery_blocks_new_subrequests_and_continues(tmp_path):
+    from app.schemas.collection_resume import CollectionResumeRequest
+    from app.services.collection_resume import CollectionResumeService
+
+    site = FastAPI()
+    seen = []
+
+    @site.get("/{path:path}", response_class=HTMLResponse)
+    def page(path: str):
+        seen.append(path)
+        body = (
+            '<a href="/one">one</a><a href="/two">two</a>'
+            if not path
+            else '<script>fetch("/new")</script>'
+        )
+        return '<link rel="icon" href="data:,">' + body
+
+    with _serve(site) as base:
+        scans = _service(tmp_path, lambda request: None)
+        try:
+            original = scans.start_scan(
+                base,
+                ScanOptions(
+                    collection_mode="browser",
+                    render_wait_ms=100,
+                    durable=CollectionOptions(max_requests=1, min_interval_ms=0),
+                ),
+            )
+            resume = CollectionResumeService(scans=scans)
+            with session_scope() as session:
+                queue = resume.queues.for_run(session, original.id)[0]
+                request = CollectionResumeRequest(
+                    queue_id=queue["id"], options=CollectionOptions(min_interval_ms=0)
+                )
+                preview = resume.preview(session, request)
+            seen.clear()
+            with session_scope() as session:
+                child_id = resume.start(session, request, preview["token"])
+            assert set(seen) == {"one", "two"}
+            with session_scope() as session:
+                child = resume.queues.for_run(session, child_id)[0]
+                assert child["coverage_complete"]
+                assert child["metrics"]["requests_used"] == 2
+        finally:
+            scans.shutdown()

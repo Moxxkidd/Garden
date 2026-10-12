@@ -22,9 +22,9 @@ from app.services.projects import project_url
 
 
 def binding_for(session, run, context):
-    target = session.get(Target, run.target_id) if run.target_id else None
+    target = session.get(Target, run.target_id, populate_existing=True) if run.target_id else None
     profile = (
-        session.get(CredentialProfile, context.credential_profile_id)
+        session.get(CredentialProfile, context.credential_profile_id, populate_existing=True)
         if context.credential_profile_id
         else None
     )
@@ -389,7 +389,8 @@ class CollectionQueueService:
                 .where(CollectionWork.queue_id == queue_id, CollectionWork.state == "leased")
                 .values(state="uncertain", reason="collection_stopped")
             )
-            queue.status, queue.lease_token = "finished", None
+            queue.status = "paused" if queue.status == "paused" else "finished"
+            queue.lease_token = None
             session.flush()
             return self.get(session, queue_id)
 

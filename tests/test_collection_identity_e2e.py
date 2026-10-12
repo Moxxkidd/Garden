@@ -99,3 +99,22 @@ def test_identity_health_and_business_share_durable_request_budget(
                 assert queues[0]["counts"]["uncertain"] == 1
             else:
                 assert queues[0]["coverage_complete"]
+
+        if budget:
+            from app.schemas.collection_resume import CollectionResumeRequest
+            from app.services.collection_resume import CollectionResumeService
+
+            resume = CollectionResumeService(identities=service)
+            request = CollectionResumeRequest(
+                queue_id=queues[0]["id"],
+                options=CollectionOptions(max_requests=3, min_interval_ms=0),
+            )
+            with session_scope() as session:
+                preview = resume.preview(session, request)
+            seen.clear()
+            with session_scope() as session:
+                child_id = resume.start(session, request, preview["token"])
+            with session_scope() as session:
+                child = resume.queues.for_run(session, child_id)[0]
+                assert child["coverage_complete"]
+                assert child["metrics"]["requests_used"] == len(seen) == 3

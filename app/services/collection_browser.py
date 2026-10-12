@@ -3,7 +3,7 @@
 from sqlalchemy import select
 
 from app.core.errors import ConflictError
-from app.models.collection_queue import CollectionAttempt, CollectionWork
+from app.models.collection_queue import CollectionAttempt, CollectionGate, CollectionWork
 from app.services.collection_runtime import CollectionRuntime, CollectionStopped
 from app.services.collection_storage import digest
 from app.services.discovery import origin
@@ -21,6 +21,8 @@ class CollectionBrowser(CollectionRuntime):
         self.observed_urls = set()
 
     def enqueue(self, url, depth=0, method="GET", asset_type="page", source="browser_navigation"):
+        if not self.accepts(url, method):
+            return False
         work = self.queues.enqueue(
             self.session,
             self.queue_id,
@@ -38,11 +40,25 @@ class CollectionBrowser(CollectionRuntime):
         return work["id"] is not None and work["state"] not in {"suppressed", "failed"}
 
     def next_navigation(self):
-        self.check()
-        self.navigation = self.queues.claim(self.session, self.queue_id, self.token)
-        self.session.commit()
-        if self.navigation is None:
-            return None
+        while True:
+            self.check()
+            self.navigation = self.queues.claim(self.session, self.queue_id, self.token)
+            self.session.commit()
+            if self.navigation is not None:
+                break
+            pending_time = self.session.scalar(
+                select(CollectionWork.not_before)
+                .where(
+                    CollectionWork.queue_id == self.queue_id,
+                    CollectionWork.state == "deferred",
+                )
+                .order_by(CollectionWork.not_before)
+                .limit(1)
+            )
+            if pending_time is None:
+                return None
+            self.session.commit()
+            self.wait_until(pending_time)
         if self.navigation["asset_type"] == "sitemap":
             if (
                 self.sitemap_requests >= self.options.max_sitemap_documents
@@ -137,9 +153,26 @@ class CollectionBrowser(CollectionRuntime):
                 CollectionWork.queue_id == self.queue_id, CollectionWork.request_key == key
             )
         )
+        retryable = result.status_code in {429, 502, 503, 504}
         if work and work.state == "leased":
-            self.queues.complete(self.session, self.queue_id, work.id, self.token)
-        self.observed_urls.add(project_url(result.final_url))
+            if retryable:
+                gate = self.session.get(
+                    CollectionGate, self.queues.row(self.session, self.queue_id).origin
+                )
+                self.queues.stop_work(
+                    self.session,
+                    self.queue_id,
+                    work.id,
+                    self.token,
+                    "retryable_response",
+                    retry_at=gate.cooldown_until
+                    if work.attempts <= self.options.durable.retry_attempts
+                    else None,
+                )
+            else:
+                self.queues.complete(self.session, self.queue_id, work.id, self.token)
+        if not retryable:
+            self.observed_urls.add(project_url(result.final_url))
         return asset
 
     def assess_identity(self, url, method, assessment):
@@ -153,7 +186,7 @@ class CollectionBrowser(CollectionRuntime):
                     CollectionWork.request_key == digest([project_url(url), method]),
                 )
             )
-            if work is None:
+            if work is None or work.state in {"deferred", "failed"}:
                 return
             confirmed = assessment == "confirmed"
             if work.reason == "identity_confirmed" and not confirmed:
