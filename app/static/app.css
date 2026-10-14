@@ -72,3 +72,15 @@ body > header a { color: #244c3d; text-decoration: none; }
 body > header nav a { padding: .35rem .6rem; border: 1px solid #c6d2ca; border-radius: 1rem; }
 body > main { padding: 1.5rem; }
 @media (max-width: 480px) { body > main { padding: .6rem; } body > header > div { padding: .8rem; } }
+
+/* Durable queue forms work without the optional JavaScript/CSS CDN. */
+.collection-page { max-width: 64rem; margin: 1rem auto; padding: 1rem; line-height: 1.6; }
+.collection-page section { padding: 1rem; margin: 1rem 0; border: 1px solid var(--border); border-radius: 1rem; background: white; }
+.collection-page form { display: grid; gap: .8rem; margin: 1rem 0; }
+.collection-page label { display: block; }
+.collection-page input:not([type="hidden"]), .collection-page select { width: 100%; padding: .6rem; font: inherit; }
+.collection-page button { padding: .7rem; border-radius: .4rem; font: inherit; cursor: pointer; }
+.collection-page a { display: inline-block; margin: .3rem .5rem .3rem 0; color: var(--accent); }
+.collection-page table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.collection-page th, .collection-page td { text-align: left; padding: .5rem; overflow-wrap: anywhere; border-bottom: 1px solid var(--border); }
+.collection-page li { overflow-wrap: anywhere; }

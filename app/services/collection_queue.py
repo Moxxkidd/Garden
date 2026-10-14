@@ -1,5 +1,6 @@
 """Persistent known work behind public, redacted query interfaces."""
 
+import math
 import re
 import secrets
 import time
@@ -110,7 +111,7 @@ class CollectionQueueService:
         )
 
     def work_view(self, row):
-        return {
+        result = {
             key: getattr(row, key)
             for key in (
                 "id",
@@ -127,6 +128,11 @@ class CollectionQueueService:
                 "asset_type",
             )
         }
+
+        if not math.isfinite(result["not_before"]):
+            result["not_before"] = None
+            result["retry_time_unrepresentable"] = True
+        return result
 
     def list_work(self, session, queue_id, *, state=None, page=1, page_size=50):
         self.row(session, queue_id)
@@ -163,11 +169,14 @@ class CollectionQueueService:
         depth=0,
         source="entry",
         priority=2,
+        not_before=0.0,
         asset_type="page",
     ):
+        if math.isnan(not_before) or not_before < 0:
+            raise InputValidationError("collection_invalid_retry_time")
         with atomic_collection(session):
             queue = self.row(session, queue_id)
-            if queue.status not in {"pending", "running"}:
+            if queue.status not in {"pending", "running", "paused"}:
                 raise ConflictError("collection_not_accepting_work")
             url = project_url(url)
             method = method.upper()
@@ -226,7 +235,14 @@ class CollectionQueueService:
                 depth=depth,
                 priority=priority,
                 sources=[source],
-                state="suppressed" if variants >= options.max_variants else "pending",
+                state=(
+                    "suppressed"
+                    if variants >= options.max_variants
+                    else "deferred"
+                    if not_before > self.clock()
+                    else "pending"
+                ),
+                not_before=not_before,
                 reason="max_variants" if variants >= options.max_variants else None,
             )
             session.add(work)
@@ -395,7 +411,7 @@ class CollectionQueueService:
             return self.get(session, queue_id)
 
 
-def prepare_queues(session, run, options, entry_url):
+def prepare_queues(session, run, options, entry_url, *, plan=None):
     if options.durable is None:
         return
     service = CollectionQueueService()
@@ -403,6 +419,22 @@ def prepare_queues(session, run, options, entry_url):
     contexts = list(session.scalars(select(ScanContext).where(ScanContext.scan_run_id == run.id)))
     for context in contexts:
         queue = service.create(session, run.id, context.id, options.durable, entry_url=entry_url)
+        if plan is not None:
+            row = service.row(session, queue["id"])
+            row.resume_token, row.resume_mode = plan.token, plan.mode
+            for item in plan.work:
+                service.enqueue(
+                    session,
+                    row.id,
+                    item["url"],
+                    method=item["method"],
+                    priority=item["priority"],
+                    not_before=item["not_before"],
+                    depth=item["depth"],
+                    asset_type=item["asset_type"],
+                    source="recovery",
+                )
+            continue
         service.enqueue(session, queue["id"], entry_url, priority=0)
         from urllib.parse import urljoin
 

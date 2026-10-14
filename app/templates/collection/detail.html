@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="collection-page space-y-6" hx-boost="false">
+<h1 class="text-3xl font-semibold">任务 #{{ run_id }} · 持久采集队列</h1>
+<p>执行结束不代表覆盖完整。队列只描述已发现的工作，未观察不表示不存在。</p>
+<a href="/scans/{{ run_id }}">返回任务</a>
+{% if not queues %}<p>此任务未记录持久队列；旧数据的发送与覆盖指标未记录。</p>{% endif %}
+{% for queue in queues %}
+<section class="rounded-2xl border bg-white p-5 space-y-4">
+<h2 class="text-xl">上下文 #{{ queue.context_id }} · {{ state_labels.get(queue.status, queue.status) }}</h2>
+<p>{{ '已知队列覆盖完成；不代表全站覆盖。' if queue.coverage_complete else '已知队列仍未覆盖完整' }}</p>
+<p>发送尝试 {{ queue.metrics.requests_used }} · 可能已发送 {{ queue.metrics.possibly_sent }} · 响应 {{ queue.metrics.responses }} · 证据 {{ queue.metrics.evidence_bytes }} 字节</p>
+<p>{% for name, count in queue.counts.items() %}{{ state_labels.get(name, name) }}：{{ count }} {% endfor %}</p>
+<form method="post" action="/scans/{{ run_id }}/queue/pause"><input type="hidden" name="queue_id" value="{{ queue.id }}"><button type="submit">暂停新增请求</button></form>
+<details><summary>预览新一轮补采</summary><p>使用新轮预算；原报告与观察保留。已有退避仍然生效。</p>
+<form method="post" action="/scans/{{ run_id }}/queue/preview" class="space-y-3">
+<input type="hidden" name="queue_id" value="{{ queue.id }}">
+<label>工作 ID（选填，以空格分隔）<input name="work_ids" value=""></label>
+<p>留空按默认未完成工作补采；填写可明确重选受抑制项，仍受新轮范围与预算限制。</p>
+<label>范围 <select name="mode"><option value="known_only">仅已知工作</option><option value="continue_discovery">继续同源发现</option></select></label>
+{% for key, value in defaults.items() %}<label class="block">{{ option_labels.get(key, key) }} <input type="number" name="{{ key }}" value="{{ value }}" required></label>{% endfor %}
+<button type="submit">预览预算与范围</button>
+</form></details>
+<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th>工作 ID</th><th>请求</th><th>状态</th><th>原因</th><th>尝试</th></tr></thead><tbody>
+{% for item in work[queue.id]['items'] %}<tr><td>{{ item.id }}</td><td class="break-all">{{ item.method }} {{ item.url }}</td><td>{{ state_labels.get(item.state, item.state) }}</td><td>{{ item.reason or '—' }}</td><td>{{ item.attempts }}</td></tr>{% endfor %}
+</tbody></table></div>
+<p>{% for format in ['json', 'csv', 'markdown'] %}<a href="/api/scans/{{ run_id }}/queue/{{ queue.id }}/export?format={{ format }}&amp;state={{ state|urlencode }}">导出 {{ format }}</a> {% endfor %}</p>
+<p>共 {{ work[queue.id].total }} 项 · 第 {{ page }} 页</p>
+{% if page > 1 %}<a href="?page={{ page - 1 }}&amp;state={{ state|urlencode }}">上一页</a>{% endif %}
+{% if page * work[queue.id].page_size < work[queue.id].total %}<a href="?page={{ page + 1 }}&amp;state={{ state|urlencode }}">下一页</a>{% endif %}
+</section>{% endfor %}
+</section>
+{% endblock %}

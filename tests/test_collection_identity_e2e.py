@@ -64,6 +64,17 @@ def test_identity_health_and_business_share_durable_request_budget(
                 ),
             )
             target_id = target.id
+            from app.schemas.projects import ProjectEntryCreate
+            from app.services.projects import ProjectService
+
+            projects = ProjectService()
+            project = projects.create(session, "Incremental identity")
+            entry = projects.add_entry(
+                session,
+                project.id,
+                ProjectEntryCreate(target_id=target_id, entry_url=base + "/asset", name="Asset"),
+            )
+            project_id, entry_id = project.id, entry.id
         seen.clear()
         service = IdentityCollectionService(
             sessions=states,
@@ -76,6 +87,7 @@ def test_identity_health_and_business_share_durable_request_budget(
                 IdentityCollectionRequest(
                     url=base + "/asset",
                     target_id=target_id,
+                    project_entry_id=entry_id,
                     profile_ids=[profile_id],
                     options=ScanOptions(
                         render_wait_ms=100,
@@ -118,3 +130,30 @@ def test_identity_health_and_business_share_durable_request_budget(
                 child = resume.queues.for_run(session, child_id)[0]
                 assert child["coverage_complete"]
                 assert child["metrics"]["requests_used"] == len(seen) == 3
+
+        if not budget and not redirect_validation:
+            from app.schemas.project_incremental import ProjectIncrementalRequest
+            from app.services.project_incremental import ProjectIncrementalService
+
+            planner = ProjectIncrementalService(identities=service)
+            request = ProjectIncrementalRequest(
+                project_id=project_id,
+                entry_id=entry_id,
+                profile_id=profile_id,
+                stale_after_days=0,
+                options=CollectionOptions(min_interval_ms=0),
+            )
+            with session_scope() as session:
+                preview = planner.preview(session, request)
+                assert preview["work_count"] == 1
+                assert preview["identity_recheck_required"]
+            seen.clear()
+            with session_scope() as session:
+                child_id = planner.start(session, request, preview["token"])
+            assert seen == ["verify", "asset", "verify"]
+            with session_scope() as session:
+                assert planner.start(session, request, preview["token"]) == child_id
+                child = planner.queues.for_run(session, child_id)[0]
+                assert child["coverage_complete"]
+            assert len(seen) == 3
+        service.shutdown()

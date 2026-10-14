@@ -251,3 +251,39 @@ def test_known_only_browser_recovery_blocks_new_subrequests_and_continues(tmp_pa
                 assert child["metrics"]["requests_used"] == 2
         finally:
             scans.shutdown()
+
+
+def test_browser_pause_keeps_inflight_response_and_stops_new_navigation(tmp_path):
+    site = FastAPI()
+    seen = []
+
+    @site.get("/{path:path}", response_class=HTMLResponse)
+    def home(path: str):
+        seen.append(path)
+        run = service.list_scans()[0]
+        with session_scope() as session:
+            queues = CollectionQueueService()
+            queue = queues.for_run(session, run.id)[0]
+            queues.pause(session, queue["id"])
+        return '<link rel="icon" href="data:,"><a href="/next">next</a>'
+
+    with _serve(site) as base:
+        service = _service(tmp_path, lambda request: None)
+        try:
+            result = service.start_scan(
+                base,
+                ScanOptions(
+                    collection_mode="browser",
+                    render_wait_ms=100,
+                    durable=CollectionOptions(min_interval_ms=0),
+                ),
+            )
+            assert len(seen) == 1
+            assert result.asset_count == 1
+            assert result.status != "failed"
+            with session_scope() as session:
+                queue = CollectionQueueService().for_run(session, result.id)[0]
+                assert queue["status"] == "paused"
+                assert not queue["coverage_complete"]
+        finally:
+            service.shutdown()

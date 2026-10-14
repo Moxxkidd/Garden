@@ -223,3 +223,45 @@ def test_suppressed_work_requires_explicit_selection_in_new_budget(seeded_record
         )
         assert explicit["work_ids"] == [suppressed["id"]]
         assert explicit["options"]["max_variants"] == 2
+
+
+def test_new_round_does_not_bypass_work_specific_backoff(seeded_records, tmp_path):
+    import time
+
+    import httpx
+
+    from tests.test_url_scan_pipeline import _service
+
+    queues = CollectionQueueService()
+    when = time.time() + 3600
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        run = source_run(session, target)
+        qid = queues.create(session, run.id, run.contexts[0].id, CollectionOptions())["id"]
+        queues.enqueue(session, qid, target.base_url)
+        lease = queues.lease(session, qid)
+        item = queues.claim(session, qid, lease)
+        queues.stop_work(session, qid, item["id"], lease, "retry_after", retry_at=when)
+        queues.close(session, qid, lease)
+    sent = []
+
+    def handle(request):
+        sent.append(str(request.url))
+        return httpx.Response(200, headers={"content-type": "text/html"}, text="asset")
+
+    scans = _service(tmp_path, handle)
+    try:
+        service = CollectionResumeService(queues=queues, scans=scans)
+        request = CollectionResumeRequest(queue_id=qid)
+        with session_scope() as session:
+            preview = service.preview(session, request)
+            child_id = service.start(session, request, preview["token"])
+        assert sent == []
+        with session_scope() as session:
+            child = queues.for_run(session, child_id)[0]
+            work = queues.list_work(session, child["id"])["items"]
+            assert work[0]["state"] == "deferred"
+            assert work[0]["not_before"] == when
+            assert not child["coverage_complete"]
+    finally:
+        scans.shutdown()

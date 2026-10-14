@@ -50,7 +50,7 @@ class IdentityCollectionService:
         self.sessions = sessions or IdentitySessionService(policy=self.policy)
         self.storage = self.sessions.storage
         self.dispatcher = dispatcher or ThreadedScanDispatcher(
-            self.settings.scan_max_concurrent_tasks
+            self.settings.scan_max_concurrent_tasks, database_url=self.settings.database_url
         )
         self.pipeline = ScanPipeline(
             policy=self.policy,
@@ -74,8 +74,19 @@ class IdentityCollectionService:
             self.collection_executor.close()
             self.collection_executor = None
 
-    def start(self, session, request: IdentityCollectionRequest, *, recovery=None):
+    def start(
+        self, session, request: IdentityCollectionRequest, *, recovery=None, collection_plan=None
+    ):
         request = IdentityCollectionRequest.model_validate(request)
+        if collection_plan is not None:
+            collection_plan.validate(session)
+            from app.models.collection_queue import CollectionQueue
+
+            previous = session.scalar(
+                select(CollectionQueue).where(CollectionQueue.resume_token == collection_plan.token)
+            )
+            if previous is not None:
+                return previous.run_id
         target = session.get(Target, request.target_id)
         if not target or target.status != "active":
             raise InputValidationError("目标不可用于采集。")
@@ -99,7 +110,12 @@ class IdentityCollectionService:
             parse_seed_input(options.seed_input, options.seed_format, base_url=entry)
         digest = hashlib.sha256(
             json.dumps(
-                {"request": request.model_dump(), "recovery": recovery}, sort_keys=True
+                {
+                    "request": request.model_dump(),
+                    "recovery": recovery,
+                    **({"collection_plan": collection_plan.token} if collection_plan else {}),
+                },
+                sort_keys=True,
             ).encode()
         ).hexdigest()
         existing = session.scalar(select(ScanRun).where(ScanRun.active_key == digest))
@@ -134,7 +150,13 @@ class IdentityCollectionService:
             0,
             {
                 "entry_url": entry,
-                "recovery_work": recovery["work"] if recovery else None,
+                "recovery_work": (
+                    collection_plan.work
+                    if collection_plan and collection_plan.mode == "known_only"
+                    else recovery["work"]
+                    if recovery
+                    else None
+                ),
                 "seed_input": options.seed_input,
                 "sitemap_url": options.sitemap_url,
             },
@@ -177,7 +199,7 @@ class IdentityCollectionService:
             )
         from app.services.collection_queue import prepare_queues
 
-        prepare_queues(session, run, options, entry)
+        prepare_queues(session, run, options, entry, plan=collection_plan)
         session.commit()
         try:
             self.dispatcher.submit(run.id, self.execute)

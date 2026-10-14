@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}<section class="collection-page" hx-boost="false">
+<h1>预览增量计划</h1><p>仅使用保存的原始请求材料；缺失材料的历史观察会说明无法复查原因。不会从脱敏 URL 构造请求。</p>
+<form method="post" action="/projects/{{ project_id }}/entries/{{ entry_id }}/incremental-preview">
+<label>采集身份<select name="profile_id"><option value="">匿名</option>{% for p in profiles %}<option value="{{ p.id }}">{{ p.name }} · #{{ p.id }}</option>{% endfor %}</select></label>
+<label>历史观察超过多少天后复查<input type="number" name="stale_after_days" value="30" min="0" max="3650"></label>
+<label>优先复查的资产 ID（选填，以空格分隔）<input name="important_asset_ids"></label>
+<label>范围<select name="mode"><option value="known_only">仅已知工作</option><option value="continue_discovery">继续同源发现</option></select></label>
+{% for key, value in defaults.items() %}<label>{{ option_labels.get(key, key) }}<input type="number" name="{{ key }}" value="{{ value }}" required></label>{% endfor %}
+<button>预览增量计划</button><a href="/projects/{{ project_id }}">返回项目</a>
+</form></section>{% endblock %}

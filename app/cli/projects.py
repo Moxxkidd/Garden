@@ -3,6 +3,7 @@
 import json
 from functools import wraps
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from pydantic import ValidationError
@@ -343,3 +344,66 @@ def export(
     else:
         output.write_text(content, encoding="utf-8")
         console.print(f"已导出：{output}", markup=False)
+
+
+@app.command("incremental")
+@guarded
+def incremental(
+    project_id: int,
+    entry_id: int = typer.Option(..., min=1),
+    profile_id: int | None = typer.Option(None, min=1),
+    important_asset_id: Annotated[list[str] | None, typer.Option("--important-asset-id")] = None,
+    stale_after_days: int = 30,
+    mode: str = "known_only",
+    max_requests: int = 1000,
+    max_work: int = 2000,
+    max_evidence_bytes: int = 32 * 1024 * 1024,
+    max_variants: int = 20,
+    origin_concurrency: int = 1,
+    retry_attempts: int = 1,
+    min_interval_ms: int = 250,
+    preview_only: bool = typer.Option(False, "--preview-only"),
+    yes: bool = typer.Option(False, "--yes"),
+):
+    from app.schemas.collection_queue import CollectionOptions
+    from app.schemas.project_incremental import ProjectIncrementalRequest
+    from app.services.project_incremental import ProjectIncrementalService
+
+    request = ProjectIncrementalRequest(
+        project_id=project_id,
+        entry_id=entry_id,
+        profile_id=profile_id,
+        important_asset_ids=important_asset_id or [],
+        stale_after_days=stale_after_days,
+        mode=mode,
+        options=CollectionOptions(
+            max_requests=max_requests,
+            max_work=max_work,
+            min_interval_ms=min_interval_ms,
+            max_evidence_bytes=max_evidence_bytes,
+            max_variants=max_variants,
+            origin_concurrency=origin_concurrency,
+            retry_attempts=retry_attempts,
+        ),
+    )
+    planner = ProjectIncrementalService()
+    with session_scope() as session:
+        preview = planner.preview(session, request)
+    emit(preview)
+    if preview_only:
+        return
+    if not yes and not typer.confirm("按上述范围与预算创建增量采集？", default=False):
+        typer.echo("已取消；未创建任务。")
+        return
+    from app.services.identity_collection import IdentityCollectionService
+    from app.services.scan_application import InlineScanDispatcher, ScanApplicationService
+
+    scans = ScanApplicationService(dispatcher=InlineScanDispatcher())
+    identities = IdentityCollectionService(dispatcher=InlineScanDispatcher())
+    try:
+        planner.scans, planner.identities = scans, identities
+        with session_scope() as session:
+            emit({"run_id": planner.start(session, request, preview["token"])})
+    finally:
+        identities.shutdown()
+        scans.shutdown()

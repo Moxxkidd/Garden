@@ -175,6 +175,10 @@ class ScanDiscovery:
             if item.get("attempt_only"):
                 self.ledger.attempted(item["url"], item.get("method", "GET"))
                 self.save()
+                if runtime is not None:
+                    # Release the attempt projection before Chromium sends: pause and
+                    # other contexts must not wait behind a network-length write lock.
+                    self.session.commit()
                 return
             route = safe_route(item.get("route_url"))
             if item.get("route_observed") and route:
@@ -296,6 +300,7 @@ class ScanDiscovery:
                 "collection_request_budget",
                 "collection_evidence_budget",
                 "collection_max_work",
+                "collection_paused",
             }
             if runtime is not None:
                 runtime.close()

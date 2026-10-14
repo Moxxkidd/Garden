@@ -169,3 +169,20 @@ def test_worker_settling_after_pause_preserves_paused_state(seeded_records, tmp_
         assert settled["status"] == "paused"
         assert settled["counts"] == {"observed": 1, "pending": 1}
         assert not settled["coverage_complete"]
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_private_payload_does_not_follow_directory_symlinks(tmp_path, nested):
+    external = tmp_path / "external"
+    external.mkdir(mode=0o755)
+    storage = CollectionStorage(external / "nested" if nested else external)
+    ref, proof = storage.write({"url": "http://localhost/?token=synthetic"})
+    link = tmp_path / "linked"
+    link.symlink_to(external, target_is_directory=True)
+    linked = CollectionStorage(link / "nested" if nested else link)
+    with pytest.raises(InputValidationError, match="collection_payload_unavailable"):
+        linked.read(ref, proof)
+    before = sorted(path.name for path in storage.directory.iterdir())
+    with pytest.raises(InputValidationError, match="collection_storage_unavailable"):
+        linked.write({"url": "http://localhost/another"})
+    assert sorted(path.name for path in storage.directory.iterdir()) == before

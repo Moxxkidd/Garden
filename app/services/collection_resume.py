@@ -232,6 +232,7 @@ class CollectionResumeService:
                     source="recovery",
                     asset_type=old.asset_type,
                     priority=old.priority,
+                    not_before=old.not_before,
                 )
             self.queues._bump(session, parent)
             for wid in preview["work_ids"]:
