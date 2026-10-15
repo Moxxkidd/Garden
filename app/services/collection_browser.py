@@ -15,7 +15,6 @@ class CollectionBrowser(CollectionRuntime):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.network_attempts = {}
-        self.url_attempts = {}
         self.navigation = None
         self.sitemap_requests = 0
         self.observed_urls = set()
@@ -94,7 +93,8 @@ class CollectionBrowser(CollectionRuntime):
     def sending(self, event, route_url):
         request = event["request"]
         url, method = project_url(request["url"]), request["method"].upper()
-        key = digest([url, method])
+        if not event.get("networkId"):
+            raise ConflictError("collection_request_unattributed")
         work = self.queues.enqueue(
             self.session,
             self.queue_id,
@@ -115,7 +115,7 @@ class CollectionBrowser(CollectionRuntime):
         network_id = event.get("networkId")
         if network_id:
             self.network_attempts[network_id] = attempt
-        self.url_attempts[key] = attempt
+        return attempt
 
     def network_response(self, event):
         attempt = self.network_attempts.get(event["requestId"])
@@ -157,11 +157,13 @@ class CollectionBrowser(CollectionRuntime):
 
     def persist(self, result, depth=0, asset_type=None):
         key = digest([project_url(result.final_url), result.method])
-        self.latest_attempt = self.url_attempts.get(key)
+        self.latest_attempt = result._collection_attempt_id
         if self.latest_attempt is None:
             # A cached/unattributed response cannot be invented as a sent request.
             raise ConflictError("collection_response_unattributed")
         attempt = self.session.get(CollectionAttempt, self.latest_attempt)
+        if attempt.queue_id != self.queue_id or attempt.request_key != key:
+            raise ConflictError("collection_response_unattributed")
         if attempt.state == "possibly_sent":
             self.response(result.status_code, result.headers.get("retry-after"))
         asset = super().persist(result, depth, asset_type)
@@ -171,6 +173,14 @@ class CollectionBrowser(CollectionRuntime):
             )
         )
         retryable = result.status_code in {429, 502, 503, 504}
+        if (
+            work
+            and not retryable
+            and attempt.work_id == work.id
+            and work.state in {"failed", "deferred"}
+        ):
+            # Another in-flight attempt can succeed after its sibling failed.
+            work.state = "leased"
         if work and work.state == "leased":
             if retryable:
                 gate = self.session.get(

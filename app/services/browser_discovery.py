@@ -276,7 +276,7 @@ class BrowserDiscovery:
                             if before_send:
                                 before_send()
                             if durable is not None:
-                                durable.sending(event, route_window)
+                                durable_responses.sent(event, route_window, method)
                             attempts += 1
                             if on_attempt is not None:
                                 on_attempt(url, method)
@@ -310,30 +310,19 @@ class BrowserDiscovery:
                         except PlaywrightError:
                             pass
 
+                durable_responses = None
                 if durable is not None:
-                    cdp.send("Network.enable")
+                    from app.services.collection_browser_responses import CollectionBrowserResponses
 
-                    def durable_event(callback, event):
-                        try:
-                            callback(event)
-                        except Exception as error:
-                            errors.append(error)
+                    def collected_response(result, route):
+                        on_response(result, route)
+                        if response_candidates:
+                            for item in response_candidates(result):
+                                if candidate(item) and item.get("auto_visit", True):
+                                    enqueue(item.get("route_url") or item["url"], 0)
 
-                    cdp.on(
-                        "Network.responseReceived",
-                        lambda event: durable_event(durable.network_response, event),
-                    )
-                    cdp.on(
-                        "Network.requestWillBeSent",
-                        lambda event: (
-                            durable_event(durable.network_response, event)
-                            if event.get("redirectResponse")
-                            else None
-                        ),
-                    )
-                    cdp.on(
-                        "Network.loadingFailed",
-                        lambda event: durable_event(durable.network_failed, event),
+                    durable_responses = CollectionBrowserResponses(
+                        cdp, durable, collected_response, errors.append
                     )
                 cdp.on("Fetch.requestPaused", guard_request)
                 cdp.send(
@@ -426,7 +415,8 @@ class BrowserDiscovery:
                         request_routes.pop(request, None)
 
                 def response_started(response):
-                    pending_responses[response.request] = response
+                    if durable_responses is None:
+                        pending_responses[response.request] = response
 
                 def request_failed(request):
                     active_requests.discard(request)
@@ -510,11 +500,13 @@ class BrowserDiscovery:
                 settle_deadline = min(
                     deadline, monotonic() + (options.request_timeout_seconds or 15)
                 )
-                while active_requests and monotonic() < settle_deadline:
+                while (
+                    active_requests or (durable_responses and durable_responses.pending)
+                ) and monotonic() < settle_deadline:
                     check()
                     page.wait_for_timeout(25)
                 check()
-                if active_requests:
+                if active_requests or (durable_responses and durable_responses.pending):
                     stopped = stopped or "response_settle_timeout"
                 page.remove_listener("response", response_started)
                 page.remove_listener("requestfinished", request_finished)
@@ -523,6 +515,8 @@ class BrowserDiscovery:
                 for response in list(pending_responses.values()):
                     response_observed(response, finished=False)
                 pending_responses.clear()
+                if durable_responses is not None:
+                    durable_responses.close()
                 check()
                 if on_finish:
                     on_finish()

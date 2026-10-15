@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from app.models.enums import AssessmentMode, CompletenessStatus, ContextKind
 from app.schemas.collection_queue import CollectionOptions
@@ -155,6 +155,7 @@ class ScanRunView(BaseModel):
 
 
 class FetchResult(BaseModel):
+    _collection_attempt_id: int | None = PrivateAttr(default=None)
     method: str = "GET"
     route_url: str | None = None
     requested_url: str

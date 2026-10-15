@@ -368,3 +368,19 @@ BrowserDiscovery 现在进入收尾后拒绝新增发送，按请求超时与总
 本片干净安装完成：全新 `/private/tmp/garden-v08-finalization-smoke`，Python 3.12.14，安装 package-finalization wheel 并重新解析依赖（清单 package-finalization-dependencies.txt，含 Playwright 1.64.0 / FastAPI 0.143.1）。从 /private/tmp 调用已安装模块，确认 site-packages 来源、新 CLI 参数、模板与迁移；0009→0010 成功，doctor 前后数据库 SHA-256 相同、数据库检查 ok。doctor **退出 1**，新 Playwright 对应 Chromium 缺失，部分目录尚未创建；未在此环境跑浏览器。未为了安装修改用户代理/缓存配置。wheel 288 项、sdist 478 项，修复源码逐字节匹配；运行产物未打包，完整摘要见 package-finalization/inventory.json。仍为 0.7.0 开发检查点，不是 v0.8 发布。
 
 后续规模实验计划使用独立合成数据库/本机 loopback：10,000 工作去重分页及新进程读回；真实 HTTP/浏览器各分轮采集，保留每轮旧 max_pages/max_browser_requests 上限。实验未执行前不计 V08-AC11 通过。
+
+### 2026-10-16 规模实验基线（持续验收）
+
+冻结产品代码 `1984ac2`，macOS、Python 3.10.10；独立合成数据库，主工作区未改动。下列实验不是发布或生产 SLA。
+
+10,000 工作队列实验：`.verification/queue_scale_experiment.py` / `queue-scale-experiment.log` / `queue-scale-result.json`。插入 21.860s，重复入队去重 3.288s；新 Python 进程分页读取 50 × 200 条、核对顺序/唯一 ID/私有请求样本和上限抑制，0.855s。10,000 条 pending、0 次发送，coverage_complete=false；数据库 6,963,200 字节，私有文件 10,001 个，父 Python 进程峰值 RSS 96,501,760 字节。新进程只读验证不是服务自动恢复执行证明，也不将 pending 解释为已覆盖。
+
+真实 HTTP 预跑：1 × 100 URL，100 次实际请求、100 条 observed，3.769s（包含收尾），26.53 请求/秒；数据库 1,396,736 字节，Python 峰值 RSS 115,752,960 字节。使用真实 loopback HTTP 服务，显式 min_interval_ms=0，重试为 0；预跑结果单独保留于 http-scale-pilot-result.json。正式 20 × 500 URL 实验另记，保留旧每轮 max_pages=500 等上限，不改成单轮无限采集。
+
+HTTP 正式结果（同一冻结产品 SHA）：`PYTHONPATH=. /Users/an/Documents/Garden/.venv/bin/python .verification/transport_scale_experiment.py --transport http --rounds 20 --per-round 500`，http-scale-10000.log / http-scale-result.json。20 轮全部 completed，每轮 500 次实际请求、500 条 observed、coverage_complete=true；共 10,000 个不同 URL 和 10,000 次实际请求，总耗时 826.957s，12.093 请求/秒，Python 进程峰值 RSS 140,787,712 字节，数据库 43,614,208 字节。HTTP loopback 服务与持久队列真实执行，无目标 MockTransport。等待/冷却耗时尚未单独测量，浏览器基线尚待执行，因此仍不整体核销 AC11。
+
+并发响应 RED：新增 tests/test_browser_concurrent_response.py，通过公开 ScanApplicationService + CollectionQueueService，合成站点并发请求同一 /api，先返回 503、后返回 200。首次夹具漏传 ScanPipeline 的 policy/gateway，TypeError 不计产品 RED；纠正后 browser-concurrent-valid-red.log 为 1 failed / 2 warnings / 3.75s，队列为 failed:1/observed:1，预期 observed:2。重复 trace 同样失败：第一次响应属于 attempt 2，但 persist 把 503 计到 still possibly_sent 的 attempt 3；随后真实 attempt 3 的 200 被 finish 幂等分支忽略，工作也仍停留 failed。两个独立问题均有事件证据，不归因于收尾漏收。临时 DEBUG-v08concurrent 探针已移除，原型保留于忽略目录。
+
+修复与初步 GREEN：持久浏览器改用 CDP requestId 将响应、正文与 attempt 精确关联；内部关联号是 FetchResult 的非序列化私有属性，不进入公开 DTO。正文缓冲有界，未知长度/编码/超限响应不读取完整正文；已发送的同工作兄弟请求成功时可收敛先前失败状态。普通非持久浏览器路径保持既有实现。browser-attribution-green.log **16 passed / 2 warnings / 76.25s**，覆盖原并发 RED、持久浏览器重定向/暂停/预算/重试、身份收尾等。随后增加相反返回顺序和四种正文边界，browser-attribution-boundaries-green.log **11 passed / 2 warnings / 27.89s**（含旧 discovery_browser）；与上一组合重叠，不相加。正文测试首轮把额外未发送资源误排除，4 failed / 7 passed，正文判断断言已通过；修正为核对观察数和请求预算，不将未知资源伪造为已覆盖。
+
+浏览器 100 URL 预跑：browser-scale-pilot-result.json，100 实际请求/100 observed、队列覆盖完整，8.823s；任务 completed_with_warnings（达到页面上限），不混同任务状态与队列覆盖。正式可复现脚本已加入 scripts/benchmark_collection_queue.py 和 benchmark_collection_transport.py，说明见 docs/benchmarks/v08-collection.md。新脚本新进程复核已有 10,000 工作成功；浏览器 20 URL 冒烟 20 实际发送/20 observed，2.957s，源代码摘要 6e462a4a75072b23f1e55bec5f51f9e6dcdbfa2b17e3c452aeb458c5f091ee68。脚本采用独立临时 GARDEN_HOME，输出不入库，RSS 只计父 Python。全仓 Ruff check、改动格式检查及 git diff --check 通过；本片尚未运行新的全量 pytest，先前 888 passed 不计本片最终验证。浏览器万级、完整效率指标及其余既列 AC 缺口仍在。
