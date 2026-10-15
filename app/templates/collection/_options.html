@@ -1,0 +1,9 @@
+{% set values = values | default({}) %}
+<details class="collection-page rounded-2xl border p-4">
+<summary>可恢复增量采集（选填）</summary>
+<label>持久采集<select name="durable_enabled"><option value="false">关闭，沿用普通采集</option><option value="true" {% if values.get('durable_enabled', '')|lower in ['true', 'on', '1'] %}selected{% endif %}>开启，保留已知队列供新轮补采</option></select></label>
+<p>开启后逐请求计费；任务结束不代表覆盖完整。下列预算按上下文计量，原页面、资源和超时限制继续生效。补采须另行预览确认。</p>
+{% for field in collection_fields %}
+<label>{{ field.label }}<input type="number" name="durable_{{ field.name }}" min="{{ field.minimum }}" max="{{ field.maximum }}" value="{{ values.get('durable_' + field.name) or field.default }}" required></label>
+{% endfor %}
+</details>

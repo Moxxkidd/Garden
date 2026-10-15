@@ -60,6 +60,8 @@ class BrowserDiscovery:
         pages = 0
         request_routes: dict[object, str | None] = {}
         pending_responses: dict[object, object] = {}
+        active_requests: set[object] = set()
+        settling = False
         redirect_depths: dict[str, int] = {}
 
         def check() -> None:
@@ -226,7 +228,9 @@ class BrowserDiscovery:
                     try:
                         check()
                         self.guard.ensure_allowed(base, url)
-                        if allowed_urls is not None and self.policy.normalize_url(url) not in {
+                        if settling:
+                            allowed, reason = False, "collection_finishing"
+                        elif allowed_urls is not None and self.policy.normalize_url(url) not in {
                             self.policy.normalize_url(x) for x in allowed_urls
                         }:
                             allowed, reason = False, "outside_recovery_scope"
@@ -351,9 +355,12 @@ class BrowserDiscovery:
                     route.continue_()
 
                 context.route("**/*", context_guard)
-                page.on(
-                    "request", lambda request: request_routes.__setitem__(request, route_window)
-                )
+
+                def request_started(request):
+                    request_routes[request] = route_window
+                    active_requests.add(request)
+
+                page.on("request", request_started)
 
                 def response_observed(response, *, finished: bool) -> None:
                     try:
@@ -411,16 +418,22 @@ class BrowserDiscovery:
                         errors.append(error)
 
                 def request_finished(request) -> None:
+                    active_requests.discard(request)
                     response = pending_responses.pop(request, None)
                     if response is not None:
                         response_observed(response, finished=True)
                     else:
                         request_routes.pop(request, None)
 
-                page.on(
-                    "response",
-                    lambda response: pending_responses.__setitem__(response.request, response),
-                )
+                def response_started(response):
+                    pending_responses[response.request] = response
+
+                def request_failed(request):
+                    active_requests.discard(request)
+                    request_routes.pop(request, None)
+
+                page.on("response", response_started)
+                page.on("requestfailed", request_failed)
                 page.on("requestfinished", request_finished)
                 while (queue or durable is not None) and stopped not in {
                     "max_browser_requests",
@@ -491,8 +504,25 @@ class BrowserDiscovery:
                             durable.navigation_finished(navigation_success, page.url)
                         route_window = None
                 check()
+                # Freeze new sends before proving the last batch. Playwright may deliver
+                # response callbacks while context.close() pumps its event loop.
+                settling = True
+                settle_deadline = min(
+                    deadline, monotonic() + (options.request_timeout_seconds or 15)
+                )
+                while active_requests and monotonic() < settle_deadline:
+                    check()
+                    page.wait_for_timeout(25)
+                check()
+                if active_requests:
+                    stopped = stopped or "response_settle_timeout"
+                page.remove_listener("response", response_started)
+                page.remove_listener("requestfinished", request_finished)
+                page.remove_listener("requestfailed", request_failed)
+                page.remove_listener("request", request_started)
                 for response in list(pending_responses.values()):
                     response_observed(response, finished=False)
+                pending_responses.clear()
                 check()
                 if on_finish:
                     on_finish()

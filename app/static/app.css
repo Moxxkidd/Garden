@@ -84,3 +84,13 @@ body > main { padding: 1.5rem; }
 .collection-page table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .collection-page th, .collection-page td { text-align: left; padding: .5rem; overflow-wrap: anywhere; border-bottom: 1px solid var(--border); }
 .collection-page li { overflow-wrap: anywhere; }
+
+.collection-page .overflow-x-auto { overflow-x: auto; max-width: 100%; }
+.collection-page th:nth-child(2) { width: 50%; }
+@media (max-width: 640px) {
+  .collection-page table, .collection-page tbody, .collection-page tr { display: block; }
+  .collection-page thead { display: none; }
+  .collection-page tr { padding: .5rem 0; border-bottom: 1px solid var(--border); }
+  .collection-page td { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: .5rem; border: 0; padding: .3rem 0; }
+  .collection-page td::before { content: attr(data-label); font-weight: 600; }
+}

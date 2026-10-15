@@ -11,7 +11,7 @@
 <p>{{ '已知队列覆盖完成；不代表全站覆盖。' if queue.coverage_complete else '已知队列仍未覆盖完整' }}</p>
 <p>发送尝试 {{ queue.metrics.requests_used }} · 可能已发送 {{ queue.metrics.possibly_sent }} · 响应 {{ queue.metrics.responses }} · 证据 {{ queue.metrics.evidence_bytes }} 字节</p>
 <p>{% for name, count in queue.counts.items() %}{{ state_labels.get(name, name) }}：{{ count }} {% endfor %}</p>
-<form method="post" action="/scans/{{ run_id }}/queue/pause"><input type="hidden" name="queue_id" value="{{ queue.id }}"><button type="submit">暂停新增请求</button></form>
+{% if queue.status in ["pending", "running"] %}<form method="post" action="/scans/{{ run_id }}/queue/pause"><input type="hidden" name="queue_id" value="{{ queue.id }}"><button type="submit">暂停新增请求</button></form>{% endif %}
 <details><summary>预览新一轮补采</summary><p>使用新轮预算；原报告与观察保留。已有退避仍然生效。</p>
 <form method="post" action="/scans/{{ run_id }}/queue/preview" class="space-y-3">
 <input type="hidden" name="queue_id" value="{{ queue.id }}">
@@ -22,7 +22,7 @@
 <button type="submit">预览预算与范围</button>
 </form></details>
 <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th>工作 ID</th><th>请求</th><th>状态</th><th>原因</th><th>尝试</th></tr></thead><tbody>
-{% for item in work[queue.id]['items'] %}<tr><td>{{ item.id }}</td><td class="break-all">{{ item.method }} {{ item.url }}</td><td>{{ state_labels.get(item.state, item.state) }}</td><td>{{ item.reason or '—' }}</td><td>{{ item.attempts }}</td></tr>{% endfor %}
+{% for item in work[queue.id]['items'] %}<tr><td data-label="工作 ID">{{ item.id }}</td><td data-label="请求" class="break-all">{{ item.method }} {{ item.url }}</td><td data-label="状态">{{ state_labels.get(item.state, item.state) }}</td><td data-label="原因">{{ item.reason or '—' }}</td><td data-label="尝试">{{ item.attempts }}</td></tr>{% endfor %}
 </tbody></table></div>
 <p>{% for format in ['json', 'csv', 'markdown'] %}<a href="/api/scans/{{ run_id }}/queue/{{ queue.id }}/export?format={{ format }}&amp;state={{ state|urlencode }}">导出 {{ format }}</a> {% endfor %}</p>
 <p>共 {{ work[queue.id].total }} 项 · 第 {{ page }} 页</p>

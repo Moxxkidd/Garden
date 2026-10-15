@@ -157,3 +157,88 @@ def test_identity_health_and_business_share_durable_request_budget(
                 assert child["coverage_complete"]
             assert len(seen) == 3
         service.shutdown()
+
+
+@pytest.mark.parametrize("change", ["replace", "revoke"])
+def test_queued_identity_change_requires_new_confirmation(seeded_records, tmp_path, change):
+    from app.services.scan_application import ScanApplicationService
+
+    class HoldingDispatcher:
+        def submit(self, run_id, callback):
+            self.pending = lambda: callback(run_id)
+
+        def shutdown(self):
+            pass
+
+    site = FastAPI()
+    seen = []
+
+    @site.get("/{path:path}", response_class=HTMLResponse)
+    def page(path: str):
+        seen.append(path)
+        return '<link rel="icon" href="data:,"><p id="identity">fixture</p>'
+
+    with _serve(site) as base:
+        states = IdentitySessionService(storage=SessionStorageService(tmp_path / "states"))
+        profile_id = seeded_records["credential"].id
+        config = ManualLoginRequest(
+            profile_id=profile_id,
+            login_url=base + "/login",
+            validate_url=base + "/verify",
+            success_selector="#identity",
+        )
+        raw = json.dumps({"cookies": [], "origins": []})
+        with session_scope() as session:
+            target = session.get(Target, seeded_records["target"].id)
+            target.base_url = base
+            target_id = target.id
+            imported = states.import_state(session, profile_id, raw, config)
+            assert imported.status == "ready"
+        dispatcher = HoldingDispatcher()
+        service = IdentityCollectionService(
+            sessions=states,
+            dispatcher=dispatcher,
+            report_service=ScanReportService(tmp_path / "reports"),
+        )
+        try:
+            with session_scope() as session:
+                run_id = service.start(
+                    session,
+                    IdentityCollectionRequest(
+                        url=base + "/asset",
+                        target_id=target_id,
+                        profile_ids=[profile_id],
+                        options=ScanOptions(
+                            render_wait_ms=0, durable=CollectionOptions(min_interval_ms=0)
+                        ),
+                    ),
+                )
+            with session_scope() as session:
+                if change == "replace":
+                    assert states.import_state(session, profile_id, raw, config).status == "ready"
+                else:
+                    states.revoke(session, imported.session_id)
+            seen.clear()
+            dispatcher.pending()
+            assert seen == [], "A queued run must not silently select a changed identity state"
+            reader = ScanApplicationService(dispatcher=InlineScanDispatcher())
+            try:
+                result = reader.get_scan(run_id)
+                assert result.completeness == "incomplete"
+                assert result.contexts[0].error_code == "identity_binding_changed"
+            finally:
+                reader.shutdown()
+            with session_scope() as session:
+                queue = CollectionQueueService().for_run(session, run_id)[0]
+                assert queue["metrics"]["requests_used"] == 0
+                assert not queue["coverage_complete"]
+                if change == "replace":
+                    from app.schemas.collection_resume import CollectionResumeRequest
+                    from app.services.collection_resume import CollectionResumeService
+
+                    resume = CollectionResumeService(identities=service)
+                    preview = resume.preview(session, CollectionResumeRequest(queue_id=queue["id"]))
+                    assert preview["identity_recheck_required"]
+                    assert preview["work_count"] == 1
+        finally:
+            service.shutdown()

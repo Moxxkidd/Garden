@@ -287,3 +287,44 @@ def test_browser_pause_keeps_inflight_response_and_stops_new_navigation(tmp_path
                 assert not queue["coverage_complete"]
         finally:
             service.shutdown()
+
+
+def test_browser_transport_failure_retries_within_durable_budget(tmp_path):
+    import socketserver
+    import threading
+
+    received = []
+
+    class InvalidHTTP(socketserver.BaseRequestHandler):
+        def handle(self):
+            data = self.request.recv(4096)
+            if data:
+                received.append(data)
+                self.request.sendall(b"not-an-http-response\r\n\r\n")
+
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), InvalidHTTP) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        service = _service(tmp_path, lambda request: None)
+        try:
+            result = service.start_scan(
+                f"http://127.0.0.1:{server.server_address[1]}/",
+                ScanOptions(
+                    collection_mode="browser",
+                    render_wait_ms=0,
+                    durable=CollectionOptions(max_requests=2, retry_attempts=1, min_interval_ms=0),
+                ),
+            )
+            with session_scope() as session:
+                queues = CollectionQueueService()
+                queue = queues.for_run(session, result.id)[0]
+                assert queue["metrics"]["requests_used"] == 2
+                assert queue["metrics"]["responses"] == 0
+                assert len(received) == 2
+                assert not queue["coverage_complete"]
+                work = queues.list_work(session, queue["id"])["items"]
+                assert len(work) == 1 and work[0]["state"] == "failed"
+        finally:
+            service.shutdown()
+            server.shutdown()
+            thread.join(timeout=5)

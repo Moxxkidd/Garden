@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from app.core.errors import ConflictError, GardenError, ResourceNotFoundError
 from app.schemas.scan import ScanOptions, ScanRunView, ScanStartRequest
 from app.schemas.scan_comparison import ScanComparison
+from app.services.collection_presentation import COLLECTION_FIELDS
 from app.services.coverage_gaps import COVERAGE_GAP_NOTE
 from app.services.discovery import SOURCE_KINDS
 from app.services.scan_result_presentation import (
@@ -23,6 +24,7 @@ from app.services.scan_result_presentation import (
 )
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[2] / "templates"))
+templates.env.globals["collection_fields"] = COLLECTION_FIELDS
 
 templates.env.globals["source_kinds"] = SOURCE_KINDS
 templates.env.globals.update(

@@ -145,6 +145,8 @@ class IdentityCollectionService:
         )
         session.add(run)
         session.flush()
+        if collection_plan is not None:
+            collection_plan.validate(session)
         run.discovery_input_ref = self.storage.write_request_payload(
             run.id,
             0,
@@ -318,6 +320,25 @@ class IdentityCollectionService:
             context.status, context.health_status = "ready", "ready"
             context.login_status = "not_required"
             context.session_validation_status = "not_required"
+            return
+        from app.models.collection_queue import CollectionQueue
+        from app.services.collection_queue import binding_for, identity_binding_for
+
+        queue = session.scalar(
+            select(CollectionQueue).where(CollectionQueue.context_id == context.id)
+        )
+        if queue is not None and (
+            binding_for(session, context.scan_run, context) != queue.binding
+            or identity_binding_for(session, context)
+            != (context.identity_snapshot or {}).get("collection_identity_binding")
+        ):
+            context.status = context.collection_status = "failed"
+            context.health_status = "unknown"
+            context.login_status = "failed"
+            context.completeness, context.error_code = "incomplete", "identity_binding_changed"
+            context.error_message = "登录状态或采集配置已变化，请重新预览确认后补采。"
+            context.finished_at = datetime.now(timezone.utc)
+            queue.status = "finished"
             return
         stored = session.scalar(
             select(AuthSession)

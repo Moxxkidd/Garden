@@ -24,9 +24,11 @@ from app.schemas.identity import (
     RecoveryRequest,
 )
 from app.schemas.scan import ScanOptions
+from app.services.collection_presentation import COLLECTION_FIELDS, collection_form_options
 
 router = APIRouter(tags=["identities"])
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[2] / "templates"))
+templates.env.globals["collection_fields"] = COLLECTION_FIELDS
 _HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
 
 
@@ -242,7 +244,10 @@ async def form_preview(request: Request):
             project_entry_id=one(form, "project_entry_id") or None,
             profile_ids=form.get("profile_ids", []),
             include_anonymous="anonymous" in form,
-            options=ScanOptions(max_pages=one(form, "max_pages", "50")),
+            options=ScanOptions(
+                max_pages=one(form, "max_pages", "50"),
+                durable=collection_form_options({key: one(form, key) for key in form}),
+            ),
         )
     except (ValidationError, ValueError):
         raise InputValidationError("请填写目标、入口，并选择身份或匿名。") from None

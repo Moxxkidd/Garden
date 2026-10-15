@@ -303,6 +303,9 @@ class ScanApplicationService:
                         session.refresh(existing)
                     return self._assessment_view(existing)
                 raise
+            if collection_plan is not None:
+                # The flush acquired the SQLite writer lock; recheck before publishing work.
+                collection_plan.validate(session)
             if resolved.seed_input or resolved.sitemap_url:
                 from app.services.session_storage import SessionStorageService
 

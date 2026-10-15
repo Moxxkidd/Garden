@@ -233,3 +233,66 @@ def test_incremental_preview_rejects_unknown_important_assets(seeded_records):
         with pytest.raises(InputValidationError, match="important_asset_not_in_context"):
             ProjectIncrementalService().preview(session, request)
         assert not session.new and not session.dirty
+
+
+def test_confirmation_rechecks_target_after_waiting_for_database_writer(seeded_records, tmp_path):
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    import httpx
+    import pytest
+
+    from app.core.errors import ConflictError
+    from app.schemas.assessment import AssessmentStartRequest
+    from app.schemas.collection_queue import CollectionOptions
+    from app.schemas.scan import ScanOptions
+    from tests.test_url_scan_pipeline import _service
+
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        pid, eid, tid, url = project.id, entry.id, target.id, entry.entry_url
+    sent = []
+
+    def respond(request):
+        sent.append(request.url.path)
+        return httpx.Response(200, headers={"content-type": "text/html"}, text="asset")
+
+    scans = _service(tmp_path, respond)
+    try:
+        scans.start_assessment(
+            AssessmentStartRequest(
+                url=url,
+                target_id=tid,
+                project_entry_id=eid,
+                options=ScanOptions(durable=CollectionOptions(min_interval_ms=0)),
+            )
+        )
+        planner = ProjectIncrementalService(scans=scans)
+        request = ProjectIncrementalRequest(project_id=pid, entry_id=eid, stale_after_days=0)
+        with session_scope() as session:
+            preview = planner.preview(session, request)
+        started = Event()
+
+        def confirm():
+            started.set()
+            with session_scope() as session:
+                return planner.start(session, request, preview["token"])
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with session_scope() as writer:
+                writer.get(Target, tid).type = "changed-during-confirmation"
+                writer.flush()
+                future = pool.submit(confirm)
+                assert started.wait(5)
+                # SQLite's reserved writer lock permits the preview's reads but
+                # blocks task creation until the configuration commit below.
+                time.sleep(0.3)
+                assert not future.done()
+            with pytest.raises(ConflictError):
+                future.result(timeout=10)
+        assert sent == ["/"]
+        assert len(scans.list_scans()) == 1
+    finally:
+        scans.shutdown()

@@ -136,6 +136,23 @@ class CollectionBrowser(CollectionRuntime):
         attempt = self.network_attempts.get(event["requestId"])
         if attempt:
             self.admission.finish(self.session, attempt, self.token)
+            record = self.session.get(CollectionAttempt, attempt)
+            work = self.session.get(CollectionWork, record.work_id) if record.work_id else None
+            if record.state == "failed" and work is not None and work.state == "leased":
+                gate = self.session.get(
+                    CollectionGate, self.queues.row(self.session, self.queue_id).origin
+                )
+                self.queues.stop_work(
+                    self.session,
+                    self.queue_id,
+                    work.id,
+                    self.token,
+                    "transport_error",
+                    retry_at=gate.cooldown_until
+                    if not event.get("canceled")
+                    and work.attempts <= self.options.durable.retry_attempts
+                    else None,
+                )
             self.session.commit()
 
     def persist(self, result, depth=0, asset_type=None):

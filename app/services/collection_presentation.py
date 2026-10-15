@@ -1,5 +1,9 @@
 """Shared user-facing names; values continue to come from queue projections."""
 
+from pydantic import TypeAdapter
+
+from app.schemas.collection_queue import CollectionOptions
+
 OPTION_LABELS = {
     "max_requests": "实际发送上限（含验证、重定向和重试）",
     "max_work": "工作项上限",
@@ -23,3 +27,24 @@ STATE_LABELS = {
     "finished": "执行结束",
     "ready": "待执行",
 }
+
+
+# Generate native form limits from the same schema used by API and execution.
+
+COLLECTION_FIELDS = tuple(
+    {"name": name, "label": OPTION_LABELS[name], **field}
+    for name, field in CollectionOptions.model_json_schema()["properties"].items()
+)
+COLLECTION_FORM_KEYS = ("durable_enabled", *("durable_" + f["name"] for f in COLLECTION_FIELDS))
+
+
+def collection_form_options(values):
+    if not TypeAdapter(bool).validate_python(values.get("durable_enabled") or False):
+        return None
+    return CollectionOptions.model_validate(
+        {
+            field["name"]: values["durable_" + field["name"]]
+            for field in COLLECTION_FIELDS
+            if values.get("durable_" + field["name"], "") != ""
+        }
+    )

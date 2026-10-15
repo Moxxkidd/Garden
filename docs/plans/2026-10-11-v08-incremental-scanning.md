@@ -2,7 +2,7 @@
 
 设计：[增量采集与持久调度](../specs/2026-10-11-v08-incremental-scanning.md)。
 基线：`8c7de9bcac3f0c7b9ce0dfcd107a6725607c1896`，隔离分支 `codex/incremental-scanning-v08`。
-状态（2026-10-14）：TDD 公开接口已确认；S01–S06 已有本地检查点，S07/S08 仍在实施，S09 验收未完成。版本仍为 0.7.0。
+状态（2026-10-15）：TDD 公开接口已确认；S01–S06 已有本地检查点，S07/S08 仍在实施，S09 验收未完成。版本仍为 0.7.0。
 
 ## 执行约定
 
@@ -297,3 +297,74 @@ S04/S05 检查点本地提交 `c7f12f4`，未推送。其后 S06 在工作区推
 其余包括：确认最后写入前绑定复核、实际执行 AuthSession 绑定；浏览器传输失败重试与同 URL 并发响应归属；身份后处理附加证据预算；完整指标与报告一致性；全扫描事务崩溃和万级实测；最终双评审/版本/安装与文档。Linux 仍无可用 Docker daemon，未验证。此前 AC 差额表中已补的并发确认、not_before、全局池和父目录链接以上述新证据为准，其余不能自动核销。
 
 第二轮全量实际完成：`.verification/v08-full-pytest-second.log`，**878 passed / 2 warnings，801.27s**，退出 0。两条为 websockets/uvicorn 弃用提示。该轮冻结代码包含本节预算传递、选择校验、共享线程池及目录保护修复；不包含运行期间新写的下一片入口 RED 测试 `test_collection_entrypoints.py`，不代表新建入口已完成。Ruff check 与已改 Python 文件格式检查、git diff --check 均通过。首次身份旅程偶发失败仍无已确认根因。
+
+### 2026-10-15 新建入口与执行绑定补齐（仍非版本完成）
+
+环境：macOS、Python 3.10.10，隔离分支 `codex/incremental-scanning-v08`，本节修改基于本地 `fac186b`。主工作区改动保留；本次没有推送/PR/发布授权。
+
+- 新建匿名与独立身份的原生表单、预览确认及正式 `garden scan --durable` 入口接入同一 CollectionOptions。预算未显式开启时 CLI 拒绝孤立预算参数；固定三身份预览明确拒绝 durable。复用配置保留旧 None 语义及新预算。
+- 表单预算约束由 schema 提供；确认页显示实际生效值。队列窄屏改为带字段标签的卡片，已结束任务不再显示暂停按钮。
+- 确认竞态：SQLite 写锁被另一事务占用期间修改 Target，原先过期预览仍创建任务。RED 实际未抛 ConflictError；现在匿名/身份创建获得写锁（run flush）后再次 validate，失败回滚且不发布工作。
+- 登录绑定：原先排队后导入新 AuthSession，会自动改用新状态并发送 verify/asset/verify 三次请求。上下文执行绑定现包含所选恢复会话 ID、目标、私有材料引用、身份格式元数据及到期配置，排除正常健康校验会变化的状态/时间；执行前与每次发送门检查绑定。排队期间替换/撤销返回 identity_binding_changed、零发送、不完整；不会匿名降级。已结束历史报告不重写。
+- 浏览器传输失败：非法 HTTP 合成站点原先只有一次发送，不执行已授权重试。CDP loadingFailed 现将关联工作按持久 cooldown/重试额度延期，额度耗尽为 failed；显式 canceled 不自动重试。真实 Chromium 两次发送、零响应、工作 failed，预算和未知覆盖保留。
+
+本节 TDD/回归均使用已确认公开边界；命令前缀 `PYTHONPATH=. /Users/an/Documents/Garden/.venv/bin/python -m pytest`，参数 `-q -o addopts=''`。组合有重叠，不累加。
+
+| 日志（忽略目录 .verification） | 实际证据 |
+|---|---|
+| s08-new-entry-green.log | 新建原生入口与旧预览页：14 passed / 4.49s |
+| s08-identity-entry-green.log | 身份原生入口/适配器：8 passed / 2 warnings / 8.61s |
+| s08-new-cli-green.log | 正式 CLI 真实子进程/本地服务及旧 CLI：15 passed / 2 warnings / 7.08s |
+| s08-mode-preview-green.log | 不支持模式早期拒绝与预览：17 passed / 4.42s |
+| s08-entry-regression.log | 入口、无 JS 旅程、身份、队列、CLI、预览组合：61 passed / 2 warnings / 98.99s；早于本节执行绑定修复 |
+| s07-write-binding-green.log | 写锁竞态、项目增量、API、恢复：16 passed / 7.38s |
+| s08-identity-binding-red.log | 替换状态实际发送 3 次；撤销未返回绑定变化的专用说明；2 failed / 12.22s |
+| s08-identity-binding-green.log | 替换/撤销零发送、原身份健康预算、恢复与项目增量真实浏览器：5 passed / 2 warnings / 38.15s |
+| s04-browser-transport-red.log | 传输失败未重试：1 failed / 2.64s |
+| s04-browser-transport-green.log | 包含暂停/重定向/站点地图的浏览器回归：8 passed / 2 warnings / 22.11s |
+
+测试环境说明：身份入口初轮未获得浏览器运行权限时出现验证失败，获得权限重跑通过；不将环境差异描述为已修复产品缺陷。身份绑定测试初版误用仅支持固定三身份的 get_assessment，改为公开 get_scan 后重新执行并保留有效 RED。两条 warnings 为既有 websockets/uvicorn 弃用提示。
+
+#### 实际原生页面验收
+
+Playwright CLI 使用本机 Chromium 1208，关闭 JavaScript，390×844。从首页开启持久队列、将发送预算设为 2，经预览确认到队列页；观察到 2 次发送、2 个响应、1151 证据字节、2 条 observed。页面服务是真实 FastAPI，目标业务响应由合成 MockTransport 提供，不能当万级真实 HTTP 验收。
+
+`output/playwright/v08-new-queue-mobile-final.png` 已实际查看，卡片 URL 可读；`.verification/v08-entry-mobile-width.txt` 实测 document width 与 viewport 均为 390。移动预览截图与提交/队列文本快照留于本地忽略目录。桌面截图本轮已查看，但采集于最终按钮/窄屏样式修复前，只作为旧界面参考，不计最终桌面验收。两次 Playwright 会话已关闭，UI fixture PID 78470 已停止并经 ps 核实不存在。
+
+第三轮 `.verification/v08-full-pytest-third.log`（`--basetemp=.verification/full-third-temp`）因发现新身份绑定误阻重新登录后的新轮预览而主动中断，进程最终退出 143，不记为通过。中断前另有三身份真实浏览器失败；保留数据库显示 run incomplete / overall_timeout，阶段 establish_contexts，三个上下文 ready 但 completeness pending。独立复测另记，不据此认定环境原因。该轮浏览器与后续 RED 曾有短暂重叠：SIGINT 未及时终止 pytest，随后 SIGTERM 确认退出；不把这段测试作为干净串行全量证据。
+
+新轮兼容修正：稳定范围 binding 保持原语义；身份材料摘要放在上下文 identity_snapshot.collection_identity_binding，由新队列创建时绑定，发送时校验。历史身份改变不阻止恢复/项目增量的新预览；确认令牌仍绑定当前会话，新轮重新验证身份。`s08-identity-reconfirm-red.log` 为 1 failed / 1 passed / 8.97s，GREEN `s08-identity-reconfirm-green.log` 为 18 passed / 2 warnings / 46.26s（身份、恢复、项目增量）。早期 5 passed 不能代替这次兼容回归。
+
+包装中间检查：`.verification/package-entry-binding` wheel 288 项/sdist 477 项，新增表单、服务、CLI 及 0010 迁移包含在包内，运行产物不入包。wheel 的迁移按既有 force-include 位于 app/db/migration_assets 下；初次清单脚本按源码路径检查失败，纠正检查路径后通过，没有修改打包配置。将 wheel 安装至既有 Python 3.12.14 冒烟环境（不是新建的全新环境），从 /private/tmp 验证 site-packages 来源、CLI 新参数、模板与迁移，日志 package-entry-binding-smoke.log。80 列 help 会省略长选项，检查改用 COLUMNS=180 后通过。产物早于最终身份绑定分离修正，仍不是最终验收包。
+
+#### 保留的验收缺口
+
+首次全量身份旅程偶发失败仍无确认根因。登录绑定已补，但并发同 URL 浏览器响应归属、身份后处理证据字节预算、完整统一效率指标仍待实现/验收。完整扫描资产/证据事务崩溃实验、万级真实 HTTP/浏览器、最终双评审、最终包与干净安装、版本与展示文档尚未完成；Linux 无可用 Docker daemon，未验证。旧 v0.8 开发队列若缺少新身份绑定，将保守拒绝继续执行，需重新预览创建新轮；不回填伪造历史绑定。版本仍为 0.7.0。
+
+三身份超时独立复测：`PYTHONPATH=. /Users/an/Documents/Garden/.venv/bin/python -m pytest tests/test_authenticated_coverage_e2e.py -q -o addopts='' --basetemp=.verification/auth-coverage-repro-temp`，日志 `v08-auth-coverage-repro.log`：1 passed / 2 warnings / 13.61s。没有调整 60 秒预算或放宽断言；一次复测通过不视为根因已解决。身份分离修正后启动第四轮完整回归，日志 `v08-full-pytest-fourth.log`，现场 `full-fourth-temp`。
+
+最终身份分离修正后的本片包重建于 `.verification/package-identity-binding-final`（“final”只指本片冻结点，不代表 v0.8 最终交付）。wheel/sdist 中 collection_queue.py、identity_collection.py、新表单逐字节匹配当前工作区；wheel 包含迁移资源。SHA-256 见该目录 sha256.json。新 wheel 已覆盖安装至既有 Python 3.12 冒烟环境；没有把重复安装称作新的干净安装或浏览器验收。
+
+第四轮全量真实结果：**885 passed / 1 failed / 2 warnings，736.39s，退出 1**。唯一失败 `tests/test_identity_collection.py::test_single_user_and_two_same_role_identities_are_isolated`，断言资产全部 confirmed 不成立。保留现场 full-fourth-temp/test_single_user_and_two_same_0/garden-test.db：两个 run 均 completed/complete，但第二轮 profile:1 的 /asset 为 identity_uncertain；相关证据采集时间比该身份最后一次校验晚约 6ms。此时间差是观察，不是已经确认的因果。该轮不包含运行中新增、随后移到忽略目录的 finalization 原型测试。
+
+公开服务延迟响应原型 `.verification/test_identity_finalization_prototype.py` 首次运行 1 passed / 3.75s，未复现目标失败，不当作 RED 或修复证据。原失败用例六次独立串行复测 `.verification/identity-isolation-loop.log` 全部通过（各 6.27–6.55s）；仍未确认根因，不放宽断言。扩大串行复测另存 identity-isolation-stress.log，首个失败停止。当前不得声明完整回归通过或本条已最终验证。
+
+#### 身份收尾竞态：复现、根因与修复
+
+扩大串行复测在第 15 轮再次捕获相同断言失败（identity-isolation-stress.log，5.90s）。最小用例通过公开 IdentityCollectionService + AssetCatalogService，使用本地合成站点延迟响应头；身份 verifier 为可控合成适配器，不声称该最小用例独立验证真实登录健康。`identity-finalization-headers-red.log` 1 failed / 3.03s，重复 `identity-finalization-repeat-red.log` 1 failed / 3.14s。
+
+临时仅记录事件名称的 trace（identity-finalization-trace.log，1 failed / 3.76s）顺序为 response → proof begin → proof end → close begin → response → close end。确认 Playwright 在 context.close() 泵事件时仍调用响应落库，导致末批身份验证后出现新观察。此前单看数据库的 6ms 时间差并不足以确定因果，本次事件顺序提供了实际证据。
+
+BrowserDiscovery 现在进入收尾后拒绝新增发送，按请求超时与总超时中更短者等待已发送请求完成；超时设置 response_settle_timeout。随后移除响应/请求完成监听器、保存已有响应元数据，最后验证身份，关闭期间不再追加未确认观察。全部 DEBUG-v08finish 探针已移除。不是简单把 identity_uncertain 改成 confirmed，也未放宽原测试断言。
+
+修复初轮 `identity-finalization-green.log`：最小用例与原 identity_collection 全文件 **8 passed / 2 warnings / 140.41s**。原型仍留在忽略目录作为实验记录；正式回归位于 tests/test_identity_finalization.py。新增超时场景与匿名/身份持久浏览器组合结果另记，最终全量仍待新代码冻结后执行。早先包产物不包含本次 BrowserDiscovery 修复，不代表最终代码。
+
+收尾覆盖回归：`tests/test_identity_finalization.py tests/test_collection_browser_e2e.py tests/test_collection_identity_e2e.py`，日志 browser-finalization-regression.log：**15 passed / 2 warnings / 73.18s**。新增收尾超时场景验证：迟到响应不会在最终证明后进入资产记录，context.error_code=response_settle_timeout、completeness=incomplete；正常收齐则 confirmed/complete。初次组合命令误写不存在的 test_browser_discovery.py，未执行测试，纠正后上述文件的结果才计入证据。
+
+第五轮完整回归启动：v08-full-pytest-fifth.log / full-fifth-temp。代码冻结，Ruff check 全仓、当前改动格式检查与 git diff --check 通过。新的包产物 package-finalization 包含收尾修复；创建 /private/tmp/garden-v08-finalization-smoke Python 3.12 新环境进行独立安装，尚待结果。既有环境的浏览器测试与新环境安装不混记。
+
+第五轮完整回归最终结果：**888 passed / 2 warnings / 820.13s，退出 0**。命令 `PYTHONPATH=. /Users/an/Documents/Garden/.venv/bin/python -m pytest -q -o addopts='' --basetemp=.verification/full-fifth-temp`。包含本节新建入口、最终写锁绑定、身份执行绑定/新轮兼容、传输重试、浏览器收尾及两个正式收尾回归；两条为既有 websockets/uvicorn 弃用提示。第四轮 confirmed 断言失败已有稳定最小 RED、事件顺序根因和修复证据；更早三身份建立超时及首轮旅程警告仍不冒称同一根因已修复。
+
+本片干净安装完成：全新 `/private/tmp/garden-v08-finalization-smoke`，Python 3.12.14，安装 package-finalization wheel 并重新解析依赖（清单 package-finalization-dependencies.txt，含 Playwright 1.64.0 / FastAPI 0.143.1）。从 /private/tmp 调用已安装模块，确认 site-packages 来源、新 CLI 参数、模板与迁移；0009→0010 成功，doctor 前后数据库 SHA-256 相同、数据库检查 ok。doctor **退出 1**，新 Playwright 对应 Chromium 缺失，部分目录尚未创建；未在此环境跑浏览器。未为了安装修改用户代理/缓存配置。wheel 288 项、sdist 478 项，修复源码逐字节匹配；运行产物未打包，完整摘要见 package-finalization/inventory.json。仍为 0.7.0 开发检查点，不是 v0.8 发布。
+
+后续规模实验计划使用独立合成数据库/本机 loopback：10,000 工作去重分页及新进程读回；真实 HTTP/浏览器各分轮采集，保留每轮旧 max_pages/max_browser_requests 上限。实验未执行前不计 V08-AC11 通过。

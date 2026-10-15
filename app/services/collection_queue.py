@@ -9,6 +9,7 @@ from urllib.parse import parse_qsl, urlsplit
 from sqlalchemy import func, select, update
 
 from app.core.errors import ConflictError, InputValidationError, ResourceNotFoundError
+from app.models.auth_session import AuthSession
 from app.models.collection_queue import CollectionQueue, CollectionWork
 from app.models.credential_profile import CredentialProfile
 from app.models.scan_context import ScanContext
@@ -40,6 +41,34 @@ def binding_for(session, run, context):
     )
 
 
+def identity_binding_for(session, context):
+    identity_binding = {}
+    if context.kind == "identity":
+        stored = session.scalar(
+            select(AuthSession)
+            .where(
+                AuthSession.credential_profile_id == context.credential_profile_id,
+                AuthSession.identity_metadata.is_not(None),
+                AuthSession.revoked_at.is_(None),
+            )
+            .order_by(AuthSession.id.desc())
+            .execution_options(populate_existing=True)
+        )
+        # Validation timestamps/status change during collection and are not identity material.
+        identity_binding["restored_identity"] = (
+            [
+                stored.id,
+                stored.target_id,
+                stored.storage_ref,
+                stored.identity_metadata,
+                stored.expires_at.isoformat() if stored.expires_at else None,
+            ]
+            if stored
+            else None
+        )
+    return digest(identity_binding)
+
+
 class CollectionQueueService:
     def __init__(self, *, storage=None, clock=time.time):
         self.storage = storage or CollectionStorage()
@@ -62,6 +91,11 @@ class CollectionQueueService:
             )
             if existing:
                 return self.get(session, existing.id)
+            if context.kind == "identity":
+                context.identity_snapshot = {
+                    **(context.identity_snapshot or {}),
+                    "collection_identity_binding": identity_binding_for(session, context),
+                }
             entry = project_url(entry_url or run.normalized_url)
             ref, proof = self.storage.write({"version": 1, "entry_url": entry})
             queue = CollectionQueue(
@@ -301,6 +335,10 @@ class CollectionQueueService:
         context = session.get(ScanContext, queue.context_id, populate_existing=True)
         if binding_for(session, run, context) != queue.binding:
             raise ConflictError("collection_binding_changed")
+        if context.kind == "identity" and identity_binding_for(session, context) != (
+            context.identity_snapshot or {}
+        ).get("collection_identity_binding"):
+            raise ConflictError("collection_identity_binding_changed")
         return queue
 
     def heartbeat(self, session, queue_id, token):

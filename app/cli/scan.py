@@ -18,6 +18,7 @@ from app.cli.web_runtime import WebRuntimeError, WebRuntimeManager
 from app.core.errors import GardenError, InputValidationError
 from app.core.settings import get_settings
 from app.models.scan_run import TERMINAL_SCAN_RUN_STATUSES
+from app.schemas.collection_queue import CollectionOptions
 from app.schemas.scan import ScanFailureView, ScanOptions, ScanRunView
 from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_result_presentation import (
@@ -49,6 +50,15 @@ def scan(
         str | None, typer.Option("--seed-file", help="显式读取 UTF-8 种子文件（最多 1 MiB）。")
     ] = None,
     project_entry_id: Annotated[int | None, typer.Option("--project-entry-id", min=1)] = None,
+    durable: Annotated[
+        bool, typer.Option("--durable", help="保留持久队列，允许预览后新轮补采。")
+    ] = False,
+    max_requests: Annotated[int | None, typer.Option("--max-requests")] = None,
+    max_work: Annotated[int | None, typer.Option("--max-work")] = None,
+    max_evidence_bytes: Annotated[int | None, typer.Option("--max-evidence-bytes")] = None,
+    max_variants: Annotated[int | None, typer.Option("--max-variants")] = None,
+    origin_concurrency: Annotated[int | None, typer.Option("--origin-concurrency")] = None,
+    min_interval_ms: Annotated[int | None, typer.Option("--min-interval-ms")] = None,
     detach: Annotated[bool, typer.Option("--detach", help="提交后立即返回。")] = False,
     ui_port: Annotated[int | None, typer.Option("--ui-port", min=1, max=65535)] = None,
 ) -> None:
@@ -59,7 +69,24 @@ def scan(
     result = None
     try:
         url = _resolve_url(entry_url, legacy_url)
+        collection_limits = {
+            key: value
+            for key, value in {
+                "max_requests": max_requests,
+                "max_work": max_work,
+                "max_evidence_bytes": max_evidence_bytes,
+                "max_variants": max_variants,
+                "origin_concurrency": origin_concurrency,
+                "min_interval_ms": min_interval_ms,
+            }.items()
+            if value is not None
+        }
+        if collection_limits and not durable:
+            raise InputValidationError("持久采集预算需要显式 --durable；未创建任务。")
+        if durable and retry_attempts is not None:
+            collection_limits["retry_attempts"] = retry_attempts
         options = ScanOptions(
+            durable=CollectionOptions(**collection_limits) if durable else None,
             collection_mode=collection_mode,
             sitemap_enabled=sitemap_enabled,
             sitemap_url=sitemap_url,
