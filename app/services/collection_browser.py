@@ -110,6 +110,11 @@ class CollectionBrowser(CollectionRuntime):
             row.state = "leased"
         self.session.commit()
         self.work_id = row.id if row.state == "leased" else None
+        self.retrying = bool(
+            self.navigation
+            and self.navigation["id"] == row.id
+            and self.navigation["not_before"] > 0
+        )
         attempt = self.before_send(url, method, kind="browser")
         self.work_id = None
         network_id = event.get("networkId")
@@ -155,7 +160,7 @@ class CollectionBrowser(CollectionRuntime):
                 )
             self.session.commit()
 
-    def persist(self, result, depth=0, asset_type=None):
+    def persist(self, result, depth=0, asset_type=None, **evidence_options):
         key = digest([project_url(result.final_url), result.method])
         self.latest_attempt = result._collection_attempt_id
         if self.latest_attempt is None:
@@ -166,7 +171,7 @@ class CollectionBrowser(CollectionRuntime):
             raise ConflictError("collection_response_unattributed")
         if attempt.state == "possibly_sent":
             self.response(result.status_code, result.headers.get("retry-after"))
-        asset = super().persist(result, depth, asset_type)
+        asset = super().persist(result, depth, asset_type, **evidence_options)
         work = self.session.scalar(
             select(CollectionWork).where(
                 CollectionWork.queue_id == self.queue_id, CollectionWork.request_key == key

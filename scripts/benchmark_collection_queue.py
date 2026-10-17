@@ -50,7 +50,7 @@ else:
         tempfile.mkdtemp(
             prefix="garden-v08-queue-scale-",
         )
-    )
+    ).resolve()
     url = "sqlite:///" + str(root / "queue.db")
     upgrade_database(url)
     init_database(url)

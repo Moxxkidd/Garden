@@ -12,7 +12,7 @@ from urllib.parse import urljoin
 
 from sqlalchemy import select
 
-from app.core.errors import InputValidationError, OverallScanTimeout, ScanInterrupted
+from app.core.errors import ConflictError, InputValidationError, OverallScanTimeout, ScanInterrupted
 from app.core.settings import get_settings
 from app.db.bootstrap import session_scope
 from app.models.auth_session import AuthSession
@@ -263,13 +263,25 @@ class IdentityCollectionService:
                         self._collect(session, run, context, entry, options, private, deadline)
                     except (ScanInterrupted, OverallScanTimeout):
                         raise
-                    except Exception:
-                        context.status = context.collection_status = "failed"
+                    except Exception as error:
+                        evidence_limit = (
+                            isinstance(error, ConflictError)
+                            and str(error) == "collection_evidence_budget"
+                        )
+                        context.status = context.collection_status = (
+                            "incomplete" if evidence_limit else "failed"
+                        )
                         context.completeness, context.error_code = (
                             "incomplete",
-                            "identity_collection_failed",
+                            "collection_evidence_budget"
+                            if evidence_limit
+                            else "identity_collection_failed",
                         )
-                        context.error_message = "此身份采集未完成，已取得的观察保留。"
+                        context.error_message = (
+                            "已达到证据预算；本次超额观察和请求材料未保存，已有观察保留。"
+                            if evidence_limit
+                            else "此身份采集未完成，已取得的观察保留。"
+                        )
                         context.finished_at = datetime.now(timezone.utc)
                         session.commit()
                 self._stage(session, run, "collect", "completed")
@@ -572,12 +584,45 @@ class IdentityCollectionService:
                         source_kind="browser_request",
                     )
                 )
-            ledger.observed(result.final_url, result.method)
+            request_payload = {"url": result.final_url, "method": result.method}
+            capture = ScanRequest.from_capture(
+                scan_run_id=run.id,
+                source_context_id=context.id,
+                method=result.method,
+                raw_url=result.final_url,
+                header_names=[],
+                fingerprint="identity-observed-v1",
+                protected_storage_ref="",
+            )
+            # Count serialized evidence content and protected request material, not
+            # database pages/indexes, row IDs, timestamps or storage path overhead.
+            request_bytes = len(json.dumps(request_payload, indent=2).encode()) + len(
+                json.dumps(
+                    {
+                        "method": capture.method,
+                        "normalized_redacted_url": capture.normalized_redacted_url,
+                        "header_names": capture.header_names,
+                        "fingerprint": capture.fingerprint,
+                        "replay_allowed": False,
+                        "replay_status": "pending",
+                        "replay_reason": None,
+                    }
+                ).encode()
+            )
             asset = (
-                runtime.persist(result, 0, None)
+                runtime.persist(
+                    result,
+                    0,
+                    None,
+                    evidence_data={
+                        "identity_assessment": "identity_uncertain" if state else "confirmed"
+                    },
+                    additional_evidence_bytes=request_bytes,
+                )
                 if runtime is not None
                 else self.pipeline._persist_fetch(session, run, result, depth=0, context=context)
             )
+            ledger.observed(result.final_url, result.method)
             item = ledger.items.get(key, {})
             asset.attributes = {
                 **asset.attributes,
@@ -592,21 +637,10 @@ class IdentityCollectionService:
                     "source_count": item.get("source_count"),
                 },
             }
-            ref = self.storage.write_request_payload(
-                run.id, context.id, {"url": result.final_url, "method": result.method}
-            )
-            session.add(
-                ScanRequest.from_capture(
-                    scan_run_id=run.id,
-                    source_context_id=context.id,
-                    asset_id=asset.id,
-                    method=result.method,
-                    raw_url=result.final_url,
-                    header_names=[],
-                    fingerprint="identity-observed-v1",
-                    protected_storage_ref=ref,
-                )
-            )
+            ref = self.storage.write_request_payload(run.id, context.id, request_payload)
+            capture.asset_id = asset.id
+            capture.protected_storage_ref = ref
+            session.add(capture)
             session.flush()
             evidence = session.scalar(
                 select(ScanEvidence)

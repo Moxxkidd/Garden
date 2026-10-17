@@ -107,6 +107,7 @@ class ProjectIngestionService:
 
     def _index(self, session, run, snapshot):
         run.status = "importing"
+        metrics = {"version": 1, "new_subjects": 0, "new_observations": 0, "contexts": {}}
         assets = {
             a.natural_key: a
             for a in session.scalars(
@@ -116,6 +117,9 @@ class ProjectIngestionService:
             )
         }
         for row in snapshot.records:
+            context_metrics = metrics["contexts"].setdefault(
+                str(row.context_id), {"new_subjects": 0, "new_observations": 0}
+            )
             key = project_asset_key(row)
             asset = assets.get(key)
             if asset is None:
@@ -131,6 +135,10 @@ class ProjectIngestionService:
                 session.add(asset)
                 session.flush()
                 assets[key] = asset
+                metrics["new_subjects"] += 1
+                context_metrics["new_subjects"] += 1
+            metrics["new_observations"] += 1
+            context_metrics["new_observations"] += 1
             session.add(
                 ProjectObservation(
                     project_id=run.project_id,
@@ -175,6 +183,7 @@ class ProjectIngestionService:
             "scope": snapshot.scope.model_dump(mode="json"),
             "comparison_metadata": snapshot.comparison_metadata,
             "relations": snapshot.relations,
+            "ingestion_metrics": metrics,
         }
         from app.services.project_relations import ProjectRelationService
 

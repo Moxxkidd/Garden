@@ -10,6 +10,7 @@
 <h2 class="text-xl">上下文 #{{ queue.context_id }} · {{ state_labels.get(queue.status, queue.status) }}</h2>
 <p>{{ '已知队列覆盖完成；不代表全站覆盖。' if queue.coverage_complete else '已知队列仍未覆盖完整' }}</p>
 <p>发送尝试 {{ queue.metrics.requests_used }} · 可能已发送 {{ queue.metrics.possibly_sent }} · 响应 {{ queue.metrics.responses }} · 证据 {{ queue.metrics.evidence_bytes }} 字节</p>
+<details><summary>观察效率与重复候选</summary>{% for line in metric_lines(queue.metrics) %}<p>{{ line }}</p>{% endfor %}</details>
 <p>{% for name, count in queue.counts.items() %}{{ state_labels.get(name, name) }}：{{ count }} {% endfor %}</p>
 {% if queue.status in ["pending", "running"] %}<form method="post" action="/scans/{{ run_id }}/queue/pause"><input type="hidden" name="queue_id" value="{{ queue.id }}"><button type="submit">暂停新增请求</button></form>{% endif %}
 <details><summary>预览新一轮补采</summary><p>使用新轮预算；原报告与观察保留。已有退避仍然生效。</p>

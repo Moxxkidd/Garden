@@ -85,6 +85,7 @@ def collect_http(pipeline, session, run, options, deadline):
                     continue
                 break
             runtime.work_id = active_work["id"]
+            runtime.retrying = active_work["not_before"] > 0
             request = runtime.queues.request(session, runtime.queue_id, active_work["id"])
             is_map = active_work["asset_type"] == "sitemap"
             is_page = active_work["asset_type"] == "page"

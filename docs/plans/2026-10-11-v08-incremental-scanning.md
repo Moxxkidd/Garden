@@ -2,7 +2,7 @@
 
 设计：[增量采集与持久调度](../specs/2026-10-11-v08-incremental-scanning.md)。
 基线：`8c7de9bcac3f0c7b9ce0dfcd107a6725607c1896`，隔离分支 `codex/incremental-scanning-v08`。
-状态（2026-10-15）：TDD 公开接口已确认；S01–S06 已有本地检查点，S07/S08 仍在实施，S09 验收未完成。版本仍为 0.7.0。
+状态（2026-10-16）：TDD 公开接口已确认；S01–S06 已有本地检查点，S07/S08 仍在实施，S09 验收未完成。版本仍为 0.7.0。
 
 ## 执行约定
 
@@ -384,3 +384,76 @@ HTTP 正式结果（同一冻结产品 SHA）：`PYTHONPATH=. /Users/an/Document
 修复与初步 GREEN：持久浏览器改用 CDP requestId 将响应、正文与 attempt 精确关联；内部关联号是 FetchResult 的非序列化私有属性，不进入公开 DTO。正文缓冲有界，未知长度/编码/超限响应不读取完整正文；已发送的同工作兄弟请求成功时可收敛先前失败状态。普通非持久浏览器路径保持既有实现。browser-attribution-green.log **16 passed / 2 warnings / 76.25s**，覆盖原并发 RED、持久浏览器重定向/暂停/预算/重试、身份收尾等。随后增加相反返回顺序和四种正文边界，browser-attribution-boundaries-green.log **11 passed / 2 warnings / 27.89s**（含旧 discovery_browser）；与上一组合重叠，不相加。正文测试首轮把额外未发送资源误排除，4 failed / 7 passed，正文判断断言已通过；修正为核对观察数和请求预算，不将未知资源伪造为已覆盖。
 
 浏览器 100 URL 预跑：browser-scale-pilot-result.json，100 实际请求/100 observed、队列覆盖完整，8.823s；任务 completed_with_warnings（达到页面上限），不混同任务状态与队列覆盖。正式可复现脚本已加入 scripts/benchmark_collection_queue.py 和 benchmark_collection_transport.py，说明见 docs/benchmarks/v08-collection.md。新脚本新进程复核已有 10,000 工作成功；浏览器 20 URL 冒烟 20 实际发送/20 observed，2.957s，源代码摘要 6e462a4a75072b23f1e55bec5f51f9e6dcdbfa2b17e3c452aeb458c5f091ee68。脚本采用独立临时 GARDEN_HOME，输出不入库，RSS 只计父 Python。全仓 Ruff check、改动格式检查及 git diff --check 通过；本片尚未运行新的全量 pytest，先前 888 passed 不计本片最终验证。浏览器万级、完整效率指标及其余既列 AC 缺口仍在。
+
+浏览器万级正式实验已完成：冻结 `8842795` git archive 快照 `/private/tmp/garden-v08-browser-baseline-ckqp70wa`，运行 `PYTHONPATH=. /Users/an/Documents/Garden/.venv/bin/python scripts/benchmark_collection_transport.py --transport browser --output /Users/an/Documents/Garden/.worktrees/incremental-scanning-v08/.verification/browser-scale-10000-result.json`，退出 0。20 × 500 的所有轮次均 500 实际发送/500 observed/队列覆盖完整；共 10,000 个不同 URL，1951.306s，5.125 请求/秒，数据库 43,372,544 字节，父 Python 峰值 RSS 148,013,056 字节。快照无 .git，输出 base_commit=null，源码摘要与 20 URL 冒烟一致；未运行其他浏览器，同时运行少量非浏览器回归。此基线早于下节指标/预算修改，详见 docs/benchmarks/v08-collection.md。
+
+### 2026-10-16 统一指标与身份材料预算（本地实施）
+
+在 `8842795` 后继续以下公开边界的垂直 TDD，未推送。运行环境仍为 Python 3.10.10/macOS；所有 fixture 为合成。
+
+- 新增 0011，而不回写已使用的 0010：queue.telemetry、attempt.is_retry 均 nullable。旧队列保留未记录，不能伪造重复/耗时/重试/效率为 0。有计量历史拒绝有损降级；doctor 只读检查追踪新 head，历史数据库字节不变断言保留。
+- 区分发现阶段的重复候选（既有 DiscoveryLedger 持久快照）与重复入队（精确请求键去重次数），不混用。初版重复入队更新两次 revision 导致 refresh 丢掉一次计数，公开读回测试捕获 1 != 2；改为单次 CAS 后更新计数和来源。
+- 观察以已保存的 http_response 证据为单位。匿名可确认身份语境，独立身份区分 confirmed、identity_uncertain、auth_diagnostic 和缺少判断；只查本上下文。比例为本轮已确认观察/发送尝试，0 分母或旧队列为 null，不把观察称为业务有效资产。按 HTTP/browser 标明采集方式，验证请求单列。
+- 显式重试发送与普通并发重复请求区分：持久 attempt 记录 is_retry；验证请求不继承业务重试标记。排队、活动、等待和其中冷却采用持久墙钟样本，正常关闭冻结；只读投影不前推时间，失联 worker 只保留最后提交样本并标为不完整。活动时间不是 CPU 时间，等待不持有 SQLite 写事务。
+- 共享指标投影用于 API/CLI 和 JSON/CSV/Markdown 元数据；网页和扫描 Markdown 报告使用同一中文指标格式。新增项目主体/观察指标仍待实现，不能把本片称为完整指标验收。
+
+本片关键日志（.verification，组合有重叠，不累加）：
+
+| 日志 | 实际结果 |
+|---|---|
+| metrics-duplicate-red | 缺少计数，1 failed / 0.48s |
+| metrics-duplicate-green | 初版新来源重复漏计，1 failed / 13 passed / 4.31s |
+| metrics-duplicate-final-green | 14 passed / 4.07s |
+| metrics-migration-green | 升级、拒绝有损降级、doctor、迁移组合 60 passed / 30.03s；当时 0011 尚未加入 is_retry，最终回归另记 |
+| metrics-observations-red / green | 缺少公开观察指标；GREEN 4 passed / 1.62s，含实际 HTTP 适配器→API/网页/报告一致性 |
+| metrics-identity-red | 缺少 verification_requests；fixture 已验证身份四类计数与上下文隔离，1 failed / 0.45s |
+| metrics-projection-green | 25 passed / 8.77s |
+| metrics-timing-red / green | 缺少计时操作；GREEN 22 passed / 7.17s |
+| metrics-retry-red / green | 缺少重试指标，1 failed / 1.54s；GREEN 23 passed / 8.34s，包含实际等待约 1 秒的退避 |
+| metrics-adapter-browser-regression | 90 passed / 2 warnings / 120.99s，含最终 0011、CLI/API/迁移/doctor、真实浏览器并发双顺序/正文边界/身份收尾 |
+
+身份材料预算新 RED：tests/test_collection_identity_evidence_budget.py，通过真实 Chromium 与公开匿名/身份采集入口，以匿名基础响应的计费字节 + 1 为身份采集预算。原先仍保存身份响应/请求材料且 queue.coverage_complete=true，identity-material-budget-red.log **1 failed / 2 warnings / 5.15s**。
+
+修复在基础响应事务内先合入身份评估字段，并预留受保护原始请求 JSON 与可展示 ScanRequest 内容的序列化字节；预算通过后才写响应对应的请求材料。计费不包含数据库页/索引、关系 ID、时间戳或存储路径开销；identity_uncertain 后变为较短 confirmed 时不退款，属于保守计费，并非磁盘占用。预算失败回滚本次资产/证据，仍保留已经发生的发送/响应计数；不标已覆盖。
+
+首轮 identity-material-budget-green 为 **1 failed / 7 passed / 2 warnings / 52.83s**：预算/回滚行为已通过，测试误将必需的 context-0 初始输入材料也当成响应材料。改为检查真实上下文的响应材料，未删除初始化输入或放宽预算断言。随后 identity-material-diagnostic-red 捕获公开 error_code 仍为泛化 identity_collection_failed；现对可信 collection_evidence_budget 提供明确预算说明并标为 incomplete，其他未知异常仍使用脱敏通用说明。最终组合结果待回填。
+
+剩余重点：新增项目主体/观察及报告终态一致性；完整扫描资产/证据事务的崩溃窗口、存储孤儿材料审计；最终完整 pytest、最终双评审、当前包/干净安装、版本/README/展示页和最终 UI 旅程。Linux 仍未验证。此处未将历史 888 passed 记为本片全量结果，版本仍 0.7.0。
+
+身份材料预算最终组合：identity-material-final-green.log **8 passed / 2 warnings / 54.12s**。计费、回滚、私有响应材料未写入、专用 error_code 以及既有身份恢复/收尾通过；两条仍是 websockets/uvicorn 弃用提示。
+
+当前代码冻结后启动第六轮完整 pytest：`PYTHONPATH=. /Users/an/Documents/Garden/.venv/bin/python -m pytest -q -o addopts='' --basetemp=.verification/full-sixth-temp`，日志 v08-full-pytest-sixth.log。未将正在执行记为通过。冻结期间构建 package-metrics-budget 的 wheel/sdist，版本仍 0.7.0；新采集响应模块、指标/计时模块、身份预算、模板及 0011 迁移逐字节核对源码，运行产物未入包，清单及 SHA-256 在该目录 inventory.json。安装冒烟另记，不替代浏览器或完整回归。
+
+当前包更新冒烟：将 package-metrics-budget wheel 使用 `--no-deps --force-reinstall` 安装到已有 `/private/tmp/garden-v08-finalization-smoke`（Python 3.12.14；不是全新干净安装）。从 /private/tmp 且 PYTHONPATH 为空导入，确认 collection_metrics 来自 site-packages；独立临时数据库 0010→0011 成功，公开队列初始计时为 0、观察比例为 null。doctor 前后数据库 SHA-256 不变，数据库检查 ok；doctor **退出 1**，当前依赖版本对应 Chromium 未安装，报告/runtime 目录未创建，未在此安装环境运行浏览器。日志 package-metrics-budget-install.log / package-metrics-budget-smoke.log；安装未修改用户 pip/cache 配置，缓存不可写提示不影响安装结果。
+
+### 2026-10-16 当前指标片全量回归与真实崩溃窗口
+
+第六轮完整 pytest 已退出 0：**903 passed / 2 warnings / 903.84s**。两条为既有 websockets/uvicorn 弃用提示。此结果覆盖当前 0011、指标/计时与身份材料预算代码，不包含此后新增的实验脚本调整。
+
+真实全流程实验 `.verification/full_pipeline_crash_experiment.py` 使用公开 ScanApplicationService、真实 loopback HTTP 与独立子进程，分别在等待响应、SQL INSERT 证据尚未提交、观察事务已经提交时 SIGKILL（退出 -9）。前三次立即重启均 recovered=0 且没有目标请求；等待真实租约到期 119.449 秒后，三次重启各 recovered=1，仍没有目标请求。前两种窗口没有残留 ScanAsset/ScanEvidence，工作变为 uncertain；第三种保留 1 个资产/1 条证据和 observed。前两种经公开预览/确认恢复成新任务后各新增一次实际发送并 observed，原任务资产/证据保持 0。实际总发送分别为 2、2、1；日志 full-pipeline-crash.log，结果 full-pipeline-crash-result.json。此实验没有用推进测试时钟替代真实租约等待。整理为正式脚本 scripts/experiment_collection_crash.py 后另跑复核，结果另记。
+
+正式万级队列脚本首次完整运行暴露 macOS tempfile 路径含 /var 符号链接而被受保护存储拒绝：queue-scale-current.log，退出 1 / collection_storage_unavailable。仅将新建实验临时根目录 resolve 为真实路径，未放宽产品路径保护。重跑 queue-scale-current-green.log 退出 0：10,000 入队 24.811s，10,000 重复入队 7.951s，新进程 50 页读回 0.919s；0 次发送，数据库 6,963,200 字节，私有文件 10,001，父 Python RSS 92,815,360 字节。当前含 0011 的结果与早期 1984ac2 基线分开记录，不声称直接性能对比。
+
+正式崩溃脚本复核 full-pipeline-crash-script.log 退出 0，同样三窗口、实际等待 119.452s、发送分别 2/2/1；结果文件为正式脚本的最新现场。之后仅将 SQL 字符串拆行满足 Ruff，无语义变更。上述崩溃实验早于以下项目指标收尾实现，不能作为新增收尾事务的进程中断证明。
+
+### 2026-10-16 项目入库增量与收尾快照
+
+公开 ProjectIngestionService RED：project-ingestion-metrics-red.log，1 failed / 0.53s，缺少 ingestion_metrics。实现将新增主体/观察与成功入库快照放在同一事务，重复导入不重复累计；同一主体再次观察新增主体 0、新增观察 1。按首次创建上下文归因新增主体，多身份不重复计算主体。project-ingestion-metrics-green.log 26 passed / 8.74s。
+
+扫描收尾先完成既有自动项目入库，再冻结每个队列的 project_ingestion 快照并生成最终报告；未关联项目为 not_applicable，失败/旧无指标入库为 unknown/null，不伪造 0。收尾快照有一次性标记，后续项目重试/再次 reconcile 不改写旧报告和指标；当前项目索引状态仍由项目自身展示。收尾失败保留未记录，并使用通用日志，不改变源扫描结果。此设计将扫描当轮结果与之后独立重试明确分开，未改变 v0.7 入库失败隔离语义。
+
+project-finalization-red 首次夹具误把 durable 放在请求顶层，未实际开启持久队列，不计有效 RED；修正为 request.options 后 project-finalization-valid-red.log 1 failed / 0.58s（最终报告缺少新增指标）。project-finalization-green.log 27 passed / 9.79s。新增真实 SQLite 入库失败触发器验证失败时计数 null、扫描仍 completed，显式重试成功后历史报告字节/队列指标不变。第一次组合命令误写测试文件名，没有执行测试；纠正后的 project-finalization-failure-final.log **34 passed / 12.73s**，包含项目增量计划回归。全仓 Ruff check、改动格式和 diff 检查通过。
+
+新增收尾代码冻结后启动第七轮完整 pytest，日志 v08-full-pytest-seventh.log；尚未将其记为通过。当前 HEAD 仍 8842795，本片改动未提交、未推送。剩余包括最终独立审查、当前干净安装、最终 UI/文档展示、存储孤儿审计及完整计时/资源基线；v0.8 尚未完成。
+
+存储孤儿审计 collection-orphan-audit.log：独立临时 SQLite 在 INSERT collection_work 时由真实触发器拒绝（模拟事务失败）；公开 list_work 返回 0、请求数 0，没有发布损坏引用。文件先落盘使目录保留 1 个孤儿，目录 0700/文件 0600；与 queue/work 的已提交 private_ref 集合比对形成私有 orphan-review-manifest.json。移除触发器后重试只生成 1 个 pending 工作，不自动加载孤儿、不发送目标请求。未自动删除文件；维护时必须停止写入并核对所有已提交引用后才可清理，运行中仅凭目录差集删除会误删尚未提交材料。文件与 SQLite 不承诺跨系统原子性，符合规格第 73 行边界。
+
+包含项目收尾的 package-project-metrics：wheel 293 成员、sdist 490 成员，新增模块/模板/0011 与当前源码逐字节一致，运行产物未入包；SHA-256 见该目录 inventory.json。在全新 Python 3.12.14 venv 尝试安装时，宿主 SOCKS 代理环境导致 pip 缺少 SOCKS 支持；首次退出 1，不计干净安装成功。第二次仅移除安装子进程的 SOCKS 环境变量，未改变全局配置，正在下载依赖。独立规范/规格两轴只读评审已启动，不运行浏览器，不将待完成检查记为通过。
+
+第七轮完整 pytest 已结束：**906 passed / 2 warnings / 840.29s**，覆盖当前项目收尾快照。全仓 Ruff check、364 个文件格式检查、git diff --check 通过。此检查点不意味着 v0.8 全部验收完成。
+
+独立评审（只读，基线 8c7de9b 至当前工作区）：
+- Standards：1 项 P2，适配器重复直接写工作状态，违反计划第11行深模块约定；浏览器抑制后还读取旧 work 投影。需将状态转换收回队列接口，保留最终投影。
+- Spec：2 项，P1 快速重启时旧 lease 尚有效而被跳过，到期后没有再次收敛，预览可成功但确认因 source running 被拒；需在显式恢复写操作安全收敛失效来源。P2 恢复预览缺少原预算、不可恢复计数/原因；一条材料缺失会阻断全部预览。需允许解释可恢复集合并严格绑定确认。未发现确定越界；项目已有周龄优先级，不计缺失。
+
+上述评审问题尚待 TDD 修复，不将评审完成等同于通过。新一片开始前保留本轮已通过的代码检查点。

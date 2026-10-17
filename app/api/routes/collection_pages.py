@@ -15,14 +15,20 @@ from app.core.errors import InputValidationError
 from app.db.bootstrap import session_scope
 from app.schemas.collection_queue import CollectionOptions
 from app.schemas.collection_resume import CollectionResumeRequest
-from app.services.collection_presentation import OPTION_LABELS, STATE_LABELS
+from app.services.collection_presentation import (
+    OPTION_LABELS,
+    STATE_LABELS,
+    collection_metric_lines,
+)
 
 router = APIRouter(tags=["collection"])
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[2] / "templates"))
 
 
 def render(request, name, **context):
-    context.update(option_labels=OPTION_LABELS, state_labels=STATE_LABELS)
+    context.update(
+        option_labels=OPTION_LABELS, state_labels=STATE_LABELS, metric_lines=collection_metric_lines
+    )
     return templates.TemplateResponse(
         request=request, name=f"collection/{name}.html", context=context, headers=_HEADERS
     )

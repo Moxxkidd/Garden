@@ -1,6 +1,6 @@
 """Durable collection work. URLs containing secrets live only in protected files."""
 
-from sqlalchemy import JSON, Float, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -17,6 +17,7 @@ class CollectionQueue(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(30), default="pending")
     revision: Mapped[int] = mapped_column(default=0)
     options: Mapped[dict] = mapped_column(JSON)
+    telemetry: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     lease_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     lease_until: Mapped[float] = mapped_column(Float, default=0)
     truncated: Mapped[bool] = mapped_column(default=False)
@@ -60,6 +61,7 @@ class CollectionAttempt(TimestampMixin, Base):
     state: Mapped[str] = mapped_column(String(30), default="reserved")
     status_code: Mapped[int | None] = mapped_column(nullable=True)
     evidence_bytes: Mapped[int] = mapped_column(default=0)
+    is_retry: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     request_key: Mapped[str] = mapped_column(String(64))
 
 

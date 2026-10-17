@@ -93,3 +93,11 @@ class ProjectLifecycleService:
                             membership.error_code = "project_index_failed"
         except Exception:
             logger.warning("Project indexing unavailable; explicit sync may be required.")
+        finally:
+            if ref.source == "scan":
+                from app.services.collection_project_metrics import finalize_project_metrics
+
+                try:
+                    finalize_project_metrics(ref.run_id)
+                except Exception:
+                    logger.warning("Collection project metrics finalization unavailable.")

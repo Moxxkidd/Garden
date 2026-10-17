@@ -38,7 +38,18 @@ class CollectionAdmissionService:
         self.clock = clock
         self.queues = queues or CollectionQueueService(clock=clock)
 
-    def reserve(self, session, queue_id, token, url, *, method="GET", kind="http", work_id=None):
+    def reserve(
+        self,
+        session,
+        queue_id,
+        token,
+        url,
+        *,
+        method="GET",
+        kind="http",
+        work_id=None,
+        is_retry=False,
+    ):
         with atomic_collection(session):
             queue = self.queues.check_lease(session, queue_id, token, sending=True)
             url, method = project_url(url), method.upper()
@@ -74,6 +85,7 @@ class CollectionAdmissionService:
                 url=redacted_observed_url(url),
                 kind=kind,
                 request_key=digest([url, method]),
+                is_retry=is_retry,
             )
             session.add(attempt)
             if work_id is not None:
@@ -140,7 +152,7 @@ class CollectionAdmissionService:
                 gate.failures = 0
 
     def summary(self, session, queue_id):
-        self.queues.row(session, queue_id)
+        queue = self.queues.row(session, queue_id)
         groups = dict(
             session.execute(
                 select(CollectionAttempt.state, func.count())
@@ -157,8 +169,29 @@ class CollectionAdmissionService:
                 .group_by(CollectionAttempt.kind)
             ).all()
         )
+        from app.services.collection_metrics import observation_metrics
+        from app.services.collection_timing import timing_metrics
+
+        used = sum(v for k, v in groups.items() if k != "cancelled")
         return dict(
-            requests_used=sum(v for k, v in groups.items() if k != "cancelled"),
+            **observation_metrics(session, queue, used),
+            **timing_metrics(queue),
+            duplicate_work_submissions=(queue.telemetry or {}).get("duplicate_work_submissions"),
+            requests_used=used,
+            verification_requests=kinds.get("identity_health", 0),
+            retry_requests=(
+                session.scalar(
+                    select(func.count())
+                    .select_from(CollectionAttempt)
+                    .where(
+                        CollectionAttempt.queue_id == queue_id,
+                        CollectionAttempt.is_retry.is_(True),
+                        CollectionAttempt.state.in_(["possibly_sent", "response", "failed"]),
+                    )
+                )
+                if queue.telemetry is not None
+                else None
+            ),
             possibly_sent=groups.get("possibly_sent", 0) + groups.get("reserved", 0),
             responses=groups.get("response", 0),
             by_kind=kinds,

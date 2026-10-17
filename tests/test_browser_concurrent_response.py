@@ -72,6 +72,7 @@ def test_successful_concurrent_response_does_not_inherit_other_attempt_failure(
                 queue = queues.for_run(session, first.id)[0]
                 assert queue["metrics"]["requests_used"] == 3
                 assert queue["metrics"]["responses"] == 3
+                assert queue["metrics"]["retry_requests"] == 0
                 assert queue["counts"] == {"observed": 2}
                 assert queue["coverage_complete"]
             if success_first:

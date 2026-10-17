@@ -17,6 +17,7 @@ from app.models.scan_run import ScanRun
 from app.models.target import Target
 from app.schemas.collection_queue import CollectionOptions
 from app.services.collection_storage import CollectionStorage, digest
+from app.services.collection_timing import initial_telemetry, sample_time
 from app.services.collection_transactions import atomic_collection
 from app.services.coverage_identity import redacted_observed_url
 from app.services.discovery import SOURCE_KINDS, origin, safe_route
@@ -106,6 +107,7 @@ class CollectionQueueService:
                 if context.credential_profile_id
                 else "anonymous",
                 options=options.model_dump(),
+                telemetry=initial_telemetry(self.clock()),
                 binding=binding_for(session, run, context),
                 private_ref=ref,
                 private_digest=proof,
@@ -228,10 +230,18 @@ class CollectionQueueService:
                 else "unknown"
             )
             if existing:
-                if source not in existing.sources and len(existing.sources) < 20:
+                new_source = source not in existing.sources and len(existing.sources) < 20
+                if queue.telemetry is not None or new_source:
                     self._bump(session, queue)
+                if queue.telemetry is not None:
+                    queue.telemetry = {
+                        **queue.telemetry,
+                        "duplicate_work_submissions": queue.telemetry["duplicate_work_submissions"]
+                        + 1,
+                    }
+                if new_source:
                     existing.sources = [*existing.sources, source]
-                    session.flush()
+                session.flush()
                 return self.work_view(existing)
             options = CollectionOptions(**queue.options)
             if (
@@ -322,6 +332,7 @@ class CollectionQueueService:
             queue.lease_token = secrets.token_hex(32)
             queue.lease_until = self.clock() + 120
             queue.status = "running"
+            sample_time(queue, self.clock(), start=True)
             session.flush()
             return queue.lease_token
 
@@ -346,6 +357,15 @@ class CollectionQueueService:
             queue = self.check_lease(session, queue_id, token)
             self._bump(session, queue)
             queue.lease_until = self.clock() + 120
+            sample_time(queue, self.clock())
+
+    def set_waiting(self, session, queue_id, token, reason):
+        if reason not in {None, "rate_limit", "cooldown"}:
+            raise InputValidationError("collection_invalid_wait_reason")
+        with atomic_collection(session):
+            queue = self.check_lease(session, queue_id, token)
+            self._bump(session, queue)
+            sample_time(queue, self.clock(), waiting=reason)
 
     def claim(self, session, queue_id, token):
         with atomic_collection(session):
@@ -445,6 +465,7 @@ class CollectionQueueService:
             )
             queue.status = "paused" if queue.status == "paused" else "finished"
             queue.lease_token = None
+            sample_time(queue, self.clock(), complete=True)
             session.flush()
             return self.get(session, queue_id)
 

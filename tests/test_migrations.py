@@ -86,7 +86,7 @@ def test_stamp_existing_database_preserves_rows(tmp_path):
 
     with engine.connect() as connection:
         assert connection.scalar(text("select count(*) from targets")) == 1
-        assert connection.scalar(text("select version_num from alembic_version")) == "0010"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0011"
 
 
 def test_legacy_scan_assets_are_backfilled_into_anonymous_context(tmp_path):
@@ -180,7 +180,7 @@ def test_unified_assessment_migration_round_trip(tmp_path):
 
     upgrade_database(url)
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0010"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0011"
 
 
 def test_application_requires_explicit_stamp_for_unversioned_legacy_database(tmp_path, monkeypatch):
@@ -234,7 +234,7 @@ def test_application_auto_migrates_fresh_database_in_development(tmp_path, monke
         assert client.get("/healthz").status_code == 200
 
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0010"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0011"
 
 
 def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
@@ -247,7 +247,7 @@ def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
     current_result = runner.invoke(cli_app, ["db", "current"])
 
     assert upgrade_result.exit_code == 0
-    assert "0010" in current_result.stdout
+    assert "0011" in current_result.stdout
 
 
 def test_database_cli_stamp_existing_preserves_legacy_rows(tmp_path, monkeypatch):

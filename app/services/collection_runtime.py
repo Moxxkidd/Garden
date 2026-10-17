@@ -6,7 +6,7 @@ import time
 from sqlalchemy import select
 
 from app.core.errors import ConflictError, ScanInterrupted
-from app.models.collection_queue import CollectionQueue
+from app.models.collection_queue import CollectionGate, CollectionQueue
 from app.models.scan_run import ScanEvidence
 from app.services.collection_admission import CollectionAdmissionService
 from app.services.collection_queue import CollectionQueueService
@@ -58,6 +58,7 @@ class CollectionRuntime:
                 time.sleep(0.05)
         self.latest_attempt = None
         self.work_id = None
+        self.retrying = False
 
     def check(self):
         self.pipeline._guard_network_request(self.session, self.run.id, self.deadline)
@@ -67,13 +68,23 @@ class CollectionRuntime:
             self.session.commit()
             self.last_heartbeat = time.time()
 
-    def wait_until(self, timestamp):
+    def wait_until(self, timestamp, *, reason="cooldown"):
         if timestamp - time.time() >= self.deadline - self.pipeline.clock():
             raise CollectionStopped("backoff_exceeds_deadline")
-        while time.time() < timestamp:
-            self.check()
-            self.session.commit()
-            time.sleep(min(0.05, max(0, timestamp - time.time())))
+        self.queues.set_waiting(self.session, self.queue_id, self.token, reason)
+        self.session.commit()
+        try:
+            while time.time() < timestamp:
+                self.check()
+                self.session.commit()
+                time.sleep(min(0.05, max(0, timestamp - time.time())))
+        finally:
+            try:
+                self.queues.set_waiting(self.session, self.queue_id, self.token, None)
+                self.session.commit()
+            except ConflictError:
+                # Lost workers cannot invent their uncommitted final timing interval.
+                self.session.rollback()
 
     def accepts(self, url, method="GET"):
         from app.services.collection_storage import digest
@@ -94,10 +105,14 @@ class CollectionRuntime:
                 method=method,
                 kind=kind,
                 work_id=self.work_id,
+                is_retry=self.retrying and kind != "identity_health",
             )
             self.session.commit()
             if not reserved["admitted"]:
-                self.wait_until(reserved["retry_at"])
+                queue = self.queues.row(self.session, self.queue_id)
+                gate = self.session.get(CollectionGate, queue.origin)
+                reason = "cooldown" if gate.cooldown_until > time.time() else "rate_limit"
+                self.wait_until(reserved["retry_at"], reason=reason)
                 continue
             self.latest_attempt = reserved["id"]
             self.admission.admit(self.session, self.latest_attempt, self.token)
@@ -115,7 +130,9 @@ class CollectionRuntime:
             )
             self.session.commit()
 
-    def persist(self, result, depth, asset_type):
+    def persist(
+        self, result, depth, asset_type, *, evidence_data=None, additional_evidence_bytes=0
+    ):
         with atomic_collection(self.session):
             self.queues.check_lease(self.session, self.queue_id, self.token)
             before = set(
@@ -138,7 +155,10 @@ class CollectionRuntime:
                     )
                 )
             )
-            size = sum(
+            for item in evidence:
+                if evidence_data:
+                    item.data = {**item.data, **evidence_data}
+            size = additional_evidence_bytes + sum(
                 len(
                     json.dumps(
                         dict(
