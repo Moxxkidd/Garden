@@ -179,11 +179,30 @@ class ProjectIngestionService:
                 )
                 .values(asset_id=asset.id)
             )
+        # Freeze the existing display-safe request grouping with the source snapshot.
+        # No protected request files or fingerprints are exported.
+        from app.schemas.assets import AssetQuery
+        from app.services.asset_catalog import AssetCatalogService
+
+        groups = (
+            AssetCatalogService()
+            .select(session, AssetQuery(source=run.source, run_id=run.run_id, view="grouped"))
+            .items
+        )
+        request_variants = {}
+        for group in groups:
+            for row in group.observations:
+                request_variants[row.asset_id] = [
+                    variant.model_dump(mode="json")
+                    for variant in group.variants
+                    if row.asset_id in variant.observation_ids
+                ]
         run.snapshot = {
             "scope": snapshot.scope.model_dump(mode="json"),
             "comparison_metadata": snapshot.comparison_metadata,
             "relations": snapshot.relations,
             "ingestion_metrics": metrics,
+            "request_variants": request_variants,
         }
         from app.services.project_relations import ProjectRelationService
 

@@ -407,3 +407,49 @@ def incremental(
     finally:
         identities.shutdown()
         scans.shutdown()
+
+
+@app.command("deliver")
+@guarded
+def deliver(
+    project_id: int,
+    dataset: str = "assets",
+    format: str = "json",
+    filters: str = typer.Option("{}", help="与项目清单相同的 JSON 筛选；导出忽略屏幕页码。"),
+    before_run_id: int | None = None,
+    after_run_id: int | None = None,
+    cursor: str | None = None,
+    page: bool = typer.Option(False, "--page", help="读取稳定分页 JSON；默认导出全部匹配项。"),
+):
+    """交付版本化清单、变更、概要或推断 OpenAPI 草稿。"""
+    from app.services.asset_delivery import AssetDeliveryService
+
+    service = AssetDeliveryService()
+    query = query_from(filters)
+    with session_scope() as session:
+        if page:
+            emit(
+                service.page(
+                    session,
+                    project_id,
+                    query,
+                    dataset=dataset,
+                    cursor=cursor,
+                    before_run_id=before_run_id,
+                    after_run_id=after_run_id,
+                )
+            )
+        else:
+            if cursor is not None:
+                raise InputValidationError("游标仅用于 --page；完整导出不使用游标。")
+            typer.echo(
+                service.export(
+                    session,
+                    project_id,
+                    query,
+                    format,
+                    dataset=dataset,
+                    before_run_id=before_run_id,
+                    after_run_id=after_run_id,
+                )
+            )

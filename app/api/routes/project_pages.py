@@ -129,6 +129,7 @@ def assets_page(request: Request, project_id: int):
             f: link(f"/api/projects/{project_id}/export", format=f)
             for f in ("json", "csv", "markdown")
         },
+        delivery_url=link(f"/projects/{project_id}/delivery"),
         page_title="项目清单",
     )
 
