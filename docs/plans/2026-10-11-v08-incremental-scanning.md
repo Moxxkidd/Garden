@@ -503,3 +503,10 @@ project-finalization-red 首次夹具误把 durable 放在请求顶层，未实�
 README、展示页与 v0.8 操作文档按实测内容同步。剩余交付动作仅本地提交；本次没有远端推送、PR、tag 或软件包发布授权，不自动执行。后续远端 CI/合并和 Linux 验证需分别提供真实证据。本次没有修改主工作区原有未提交内容。
 
 耗时复盘：本版把持久调度、恢复、身份边界、项目指标和全端展示集中交付；评审发现真实缺陷后反复修改冻结点，累计八轮全量，每轮约 12–15 分钟。万级浏览器实验约 32.5 分钟，真实租约实验每轮需等待约两分钟；另有工具会话卡住、代理依赖下载和人工夹具过期造成额外时间。执行上应更早固定分片完成门、集中最终验证，并把后续版本拆成更小的可交付范围；不以无差别增加检查次数替代明确验收。
+
+
+### 2026-10-18 PR #38 CI 版本断言修复
+
+首次 GitHub Actions 39089558160 的 Linux Python 3.10 / 3.12 均只有 `tests/test_v030_release.py::test_v070_release_metadata_and_cli_version_are_aligned` 失败，其余 909 项通过；CLI smoke 与 Docker build 成功。根因是最终版本改为 0.8.0 后，漏更新另一处仍要求 0.7.0 的发布一致性测试；本地 910 项通过发生在版本更新之前，随后只跑 CLI 测试未覆盖该断言。不是 Linux 采集故障。
+
+先在实际失败测试复现（ci-version-red.log，1 failed / 2 passed），再将其预期和名称更新为 v0.8.0，保留 pyproject、Settings、CLI 三处严格一致性断言。`PYTHONPATH=. python -m pytest -q -o addopts='' tests/test_v030_release.py tests/test_cli.py`：10 passed / 3.12s；全仓 Ruff、365 文件格式、diff 检查通过。仅修改测试与记录，不更改已验收产品逻辑。最终提交的 Linux 全量结果以本次 PR 新一轮 CI 为准，推送不等于已通过。今后版本更新应搜索全部旧版本断言，并在最终版本冻结后验收，避免遗漏。
