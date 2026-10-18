@@ -588,7 +588,19 @@ class ScanApplicationService:
         if run.mode != AssessmentMode.AUTHENTICATED_COVERAGE.value:
             raise InputValidationError("Only authenticated coverage runs are assessments.")
 
-    def _mark_interrupted(self, run: ScanRun) -> None:
+    @staticmethod
+    def settle_expired_collection(session, run_id, *, queues):
+        """Explicit recovery may retire a source skipped during a recent restart."""
+        run = session.get(ScanRun, run_id, populate_existing=True)
+        if run.status not in {"queued", "running"}:
+            return False
+        queues.recover_expired(session, run_id=run_id)
+        ScanApplicationService._mark_interrupted(run)
+        run.completeness = "incomplete"
+        return True
+
+    @staticmethod
+    def _mark_interrupted(run: ScanRun) -> None:
         now = datetime.now(timezone.utc)
         run.status = ScanRunStatus.INTERRUPTED.value
         run.current_stage = ScanRunStatus.INTERRUPTED.value

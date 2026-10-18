@@ -10,7 +10,7 @@ from sqlalchemy import func, select, update
 
 from app.core.errors import ConflictError, InputValidationError, ResourceNotFoundError
 from app.models.auth_session import AuthSession
-from app.models.collection_queue import CollectionQueue, CollectionWork
+from app.models.collection_queue import CollectionAttempt, CollectionQueue, CollectionWork
 from app.models.credential_profile import CredentialProfile
 from app.models.scan_context import ScanContext
 from app.models.scan_run import ScanRun
@@ -207,6 +207,7 @@ class CollectionQueueService:
         priority=2,
         not_before=0.0,
         asset_type="page",
+        max_depth=None,
     ):
         if math.isnan(not_before) or not_before < 0:
             raise InputValidationError("collection_invalid_retry_time")
@@ -231,7 +232,12 @@ class CollectionQueueService:
             )
             if existing:
                 new_source = source not in existing.sources and len(existing.sources) < 20
-                if queue.telemetry is not None or new_source:
+                depth_limited = (
+                    max_depth is not None
+                    and existing.depth > max_depth
+                    and existing.state == "pending"
+                )
+                if queue.telemetry is not None or new_source or depth_limited:
                     self._bump(session, queue)
                 if queue.telemetry is not None:
                     queue.telemetry = {
@@ -241,6 +247,8 @@ class CollectionQueueService:
                     }
                 if new_source:
                     existing.sources = [*existing.sources, source]
+                if depth_limited:
+                    existing.state, existing.reason = "suppressed", "max_depth"
                 session.flush()
                 return self.work_view(existing)
             options = CollectionOptions(**queue.options)
@@ -267,6 +275,13 @@ class CollectionQueueService:
                 .where(CollectionWork.queue_id == queue_id, CollectionWork.route_key == route)
             )
             ref, proof = self.storage.write({"url": url, "method": method})
+            suppression = (
+                "max_variants"
+                if variants >= options.max_variants
+                else "max_depth"
+                if max_depth is not None and depth > max_depth
+                else None
+            )
             work = CollectionWork(
                 queue_id=queue_id,
                 request_key=key,
@@ -281,13 +296,13 @@ class CollectionQueueService:
                 sources=[source],
                 state=(
                     "suppressed"
-                    if variants >= options.max_variants
+                    if suppression
                     else "deferred"
                     if not_before > self.clock()
                     else "pending"
                 ),
                 not_before=not_before,
-                reason="max_variants" if variants >= options.max_variants else None,
+                reason=suppression,
             )
             session.add(work)
             self._bump(session, queue)
@@ -389,7 +404,22 @@ class CollectionQueueService:
             session.flush()
             return self.work_view(work)
 
-    def complete(self, session, queue_id, work_id, token):
+    def claim_requested(self, session, queue_id, work_id, token):
+        """Bind an intercepted browser request without bypassing lease or retry time."""
+        with atomic_collection(session):
+            queue = self.check_lease(session, queue_id, token, sending=True)
+            work = session.get(CollectionWork, work_id, populate_existing=True)
+            if not work or work.queue_id != queue_id:
+                raise ResourceNotFoundError("collection_work_missing")
+            if work.state in {"pending", "deferred"}:
+                if work.not_before > self.clock():
+                    raise ConflictError("collection_retry_pending")
+                self._bump(session, queue)
+                work.state = "leased"
+            session.flush()
+            return self.work_view(work)
+
+    def complete(self, session, queue_id, work_id, token, *, attempt_id=None):
         with atomic_collection(session):
             queue = self.check_lease(session, queue_id, token)
             work = session.get(CollectionWork, work_id)
@@ -398,11 +428,38 @@ class CollectionQueueService:
             if work.state == "observed":
                 return self.work_view(work)
             if work.state != "leased":
-                raise ConflictError("collection_work_not_leased")
+                attempt = session.get(CollectionAttempt, attempt_id) if attempt_id else None
+                if not (
+                    work.state in {"failed", "deferred"}
+                    and attempt
+                    and attempt.queue_id == queue_id
+                    and attempt.work_id == work_id
+                    and attempt.state == "response"
+                    and attempt.status_code not in {429, 502, 503, 504}
+                ):
+                    raise ConflictError("collection_work_not_leased")
             self._bump(session, queue)
             work.state, work.reason = "observed", None
             session.flush()
             return self.work_view(work)
+
+    def assess_identity(self, session, queue_id, token, url, method, assessment):
+        with atomic_collection(session):
+            queue = self.check_lease(session, queue_id, token)
+            work = session.scalar(
+                select(CollectionWork).where(
+                    CollectionWork.queue_id == queue_id,
+                    CollectionWork.request_key == digest([project_url(url), method]),
+                )
+            )
+            if work is None or work.state in {"deferred", "failed"}:
+                return
+            confirmed = assessment == "confirmed"
+            if work.reason == "identity_confirmed" and not confirmed:
+                return
+            self._bump(session, queue)
+            work.state = "observed" if confirmed else "uncertain"
+            work.reason = "identity_confirmed" if confirmed else "identity_uncertain"
 
     def pause(self, session, queue_id):
         with atomic_collection(session):
@@ -412,16 +469,34 @@ class CollectionQueueService:
             session.flush()
             return self.get(session, queue_id)
 
-    def recover_expired(self, session):
+    def recover_expired(self, session, *, run_id=None):
+        """Recover expired leases; a targeted run must have no live sibling lease."""
         with atomic_collection(session):
-            expired = list(
-                session.scalars(
-                    select(CollectionQueue).where(
-                        CollectionQueue.lease_token.is_not(None),
-                        CollectionQueue.lease_until <= self.clock(),
+            if run_id is not None:
+                # Obtain the SQLite writer lock before validating sibling leases.
+                session.execute(
+                    update(CollectionQueue)
+                    .where(CollectionQueue.run_id == run_id)
+                    .values(revision=CollectionQueue.revision + 1)
+                )
+                siblings = list(
+                    session.scalars(
+                        select(CollectionQueue)
+                        .where(CollectionQueue.run_id == run_id)
+                        .execution_options(populate_existing=True)
                     )
                 )
+                if not any(q.lease_token for q in siblings) or any(
+                    q.lease_token and q.lease_until > self.clock() for q in siblings
+                ):
+                    raise ConflictError("collection_source_active")
+            query = select(CollectionQueue).where(
+                CollectionQueue.lease_token.is_not(None),
+                CollectionQueue.lease_until <= self.clock(),
             )
+            if run_id is not None:
+                query = query.where(CollectionQueue.run_id == run_id)
+            expired = list(session.scalars(query))
             for queue in expired:
                 self._bump(session, queue)
                 session.execute(

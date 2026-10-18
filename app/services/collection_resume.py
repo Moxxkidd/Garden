@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+from collections import Counter
 
 from sqlalchemy import select
 
@@ -63,13 +64,22 @@ class CollectionResumeService:
             rows = [row for row in rows if row.id in selected]
         if not rows:
             raise InputValidationError("collection_no_remaining_work")
-        if len(rows) > request.options.max_work:
-            raise InputValidationError("collection_selection_exceeds_budget")
+        remaining = Counter((row.state, row.reason) for row in rows)
+        recoverable, unavailable = [], []
         # Check all original materials, not only public examples, before offering confirmation.
         for row in rows:
-            raw = self.queues.request(session, queue.id, row.id)
+            try:
+                raw = self.queues.request(session, queue.id, row.id)
+            except InputValidationError:
+                unavailable.append(
+                    dict(id=row.id, url=row.url, reason="private_request_unavailable")
+                )
+                continue
             if origin(raw["url"]) != queue.origin or raw["method"] not in {"GET", "HEAD"}:
                 raise ConflictError("collection_binding_changed")
+            recoverable.append(row)
+        if len(recoverable) > request.options.max_work:
+            raise InputValidationError("collection_selection_exceeds_budget")
         identity = None
         if context.credential_profile_id:
             profile = session.get(
@@ -107,6 +117,8 @@ class CollectionResumeService:
             revision=queue.revision,
             binding=queue.binding,
             work=[self._values(row) for row in rows],
+            recoverable_work_ids=[row.id for row in recoverable],
+            unavailable=unavailable,
             identity=identity,
             projects=projects,
         )
@@ -115,18 +127,32 @@ class CollectionResumeService:
             json.dumps(binding, sort_keys=True, default=str).encode(),
             hashlib.sha256,
         ).hexdigest()
+        original = self.queues.get(session, queue.id)
         return dict(
             queue_id=queue.id,
             source_run_id=run.id,
             source_context_id=context.id,
             revision=queue.revision,
             mode=request.mode,
-            work_count=len(rows),
-            work_ids=[row.id for row in rows],
-            examples=[row.url for row in rows[:5]],
+            can_start=bool(recoverable),
+            work_count=len(recoverable),
+            work_ids=[row.id for row in recoverable],
+            examples=[row.url for row in recoverable[:5]],
+            unrecoverable_count=len(unavailable),
+            unrecoverable=unavailable,
+            remaining_reasons=[
+                dict(state=state, reason=reason, count=count)
+                for (state, reason), count in remaining.items()
+            ],
+            original_budget=dict(
+                options=queue.options,
+                requests_used=original["metrics"]["requests_used"],
+                evidence_bytes=original["metrics"]["evidence_bytes"],
+                work_count=sum(original["counts"].values()),
+            ),
             options=request.options.model_dump(),
             token=token,
-            unknown_sends=self.queues.get(session, queue.id)["metrics"]["possibly_sent"],
+            unknown_sends=original["metrics"]["possibly_sent"],
             scope_truncated=queue.truncated,
             identity_recheck_required=identity is not None,
             identity_health_uses_budget=identity is not None,
@@ -152,11 +178,11 @@ class CollectionResumeService:
             if existing:
                 return existing.run_id
             preview = self.confirm_preview(session, request, token)
+            if not preview["can_start"]:
+                raise InputValidationError("collection_no_recoverable_work")
             parent = self.queues.row(session, request.queue_id)
             source = session.get(ScanRun, parent.run_id)
             old_context = session.get(ScanContext, parent.context_id)
-            if source.status in {"queued", "running"}:
-                raise ConflictError("collection_source_active")
             work = [self.queues.request(session, parent.id, wid) for wid in preview["work_ids"]]
             entry = self.queues.storage.read(parent.private_ref, parent.private_digest)["entry_url"]
             if source.mode == "quick":
@@ -166,6 +192,9 @@ class CollectionResumeService:
 
                 service = self.identities or IdentityCollectionService()
             service.ensure_collection_executor()
+            retired = ScanApplicationService.settle_expired_collection(
+                session, source.id, queues=self.queues
+            )
             options = {**source.options, "durable": request.options.model_dump()}
             child = ScanRun(
                 mode=source.mode,
@@ -251,6 +280,8 @@ class CollectionResumeService:
                 )
             child_id = child.id
         session.commit()
+        if retired:
+            ProjectLifecycleService().reconcile(ProjectSourceRef(source="scan", run_id=source.id))
         try:
             callback = service.execute_scan if child.mode == "quick" else service.execute
             service.dispatcher.submit(child_id, callback)

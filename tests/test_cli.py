@@ -29,7 +29,7 @@ runner = CliRunner()
 def test_version_command() -> None:
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert "Garden 0.7.0" in result.stdout
+    assert "Garden 0.8.0" in result.stdout
 
 
 def test_healthcheck_command() -> None:

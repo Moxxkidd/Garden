@@ -20,12 +20,15 @@ def main():
     parser.add_argument("--transport", choices=["http", "browser"], required=True)
     parser.add_argument("--rounds", type=int, default=20)
     parser.add_argument("--per-round", type=int, default=500)
+    parser.add_argument("--interval-ms", type=int, default=0)
     parser.add_argument(
         "--output", type=Path, default=Path(".verification/transport-scale-result.json")
     )
     args = parser.parse_args()
     if not 1 <= args.rounds <= 20 or not 1 <= args.per_round <= 500:
         parser.error("rounds must be 1..20 and per-round must be 1..500")
+    if not 0 <= args.interval_ms <= 60000:
+        parser.error("interval-ms must be 0..60000")
     output_path = args.output.resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     repo = Path(__file__).resolve().parents[1]
@@ -34,7 +37,7 @@ def main():
         tempfile.mkdtemp(
             prefix=f"garden-v08-{args.transport}-scale-",
         )
-    )
+    ).resolve()
     os.environ["GARDEN_HOME"] = str(root / "home")
     os.environ["GARDEN_DATABASE_URL"] = "sqlite:///" + str(root / "scan.db")
     revision = subprocess.run(
@@ -59,6 +62,7 @@ def main():
     from app.services.scan_reporting import ScanReportService
 
     seen = []
+    received_at = []
 
     class Site(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -68,6 +72,7 @@ def main():
 
         def do_GET(self):
             seen.append(self.path)
+            received_at.append(time.monotonic())
             if self.path.startswith("/round-"):
                 batch = self.path.removeprefix("/round-")
                 html = '<link rel="icon" href="data:,">' + "".join(
@@ -99,6 +104,7 @@ def main():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     start = time.perf_counter()
+    cpu_start = time.process_time()
     rounds = []
     try:
         for batch in range(args.rounds):
@@ -118,7 +124,7 @@ def main():
                     durable=CollectionOptions(
                         max_requests=args.per_round,
                         max_work=args.per_round,
-                        min_interval_ms=0,
+                        min_interval_ms=args.interval_ms,
                         retry_attempts=0,
                     ),
                 ),
@@ -153,6 +159,10 @@ def main():
         server.server_close()
         thread.join(timeout=5)
         elapsed = time.perf_counter() - start
+        timing_fields = ("queued_seconds", "active_seconds", "wait_seconds", "cooldown_seconds")
+        timing_recorded = bool(rounds) and all(
+            row["queue"]["metrics"].get(key) is not None for row in rounds for key in timing_fields
+        )
         output = {
             "transport": args.transport,
             "root": str(root),
@@ -168,8 +178,20 @@ def main():
             "source_sha256": source_digest,
             "base_commit": revision.stdout.strip() if revision.returncode == 0 else None,
             "database_bytes": (root / "scan.db").stat().st_size,
-            "explicit_interval_ms": 0,
-            "wait_timing_measured": False,
+            "explicit_interval_ms": args.interval_ms,
+            "wait_timing_measured": timing_recorded,
+            "timing_source": "persisted collector wall-time samples",
+            "timing_seconds": {
+                key: sum(row["queue"]["metrics"][key] for row in rounds)
+                if timing_recorded
+                else None
+                for key in timing_fields
+            },
+            "parent_python_cpu_seconds": time.process_time() - cpu_start,
+            "server_min_receive_gap_seconds": min(
+                (b - a for a, b in zip(received_at[:-1], received_at[1:], strict=True)),
+                default=None,
+            ),
         }
         output_path.write_text(json.dumps(output, indent=2))
         print(json.dumps({k: v for k, v in output.items() if k != "rounds"}), flush=True)

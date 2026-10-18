@@ -1,6 +1,6 @@
 # v0.8 持久采集规模实验
 
-这些脚本只使用合成数据和本机 loopback，不接受外部目标。产品版本尚未核销全部 v0.8 验收项，数字不构成性能承诺。
+这些脚本只使用合成数据和本机 loopback，不接受外部目标。结果按实际执行时的提交和环境分别记录，数字不构成性能承诺。
 
 ## 复现
 
@@ -16,7 +16,7 @@ PYTHONPATH=. python scripts/benchmark_collection_transport.py --transport browse
 
 传输脚本默认 20 轮，每轮 500 个不同 URL，保留每轮既有 max_pages=500、max_browser_requests=2000、max_candidates=10000 上限。可用 `--rounds 1 --per-round 100` 预跑。每轮断言实际服务器请求数、持久请求数、观察数一致且队列覆盖完整；不将任务生命周期警告等同于队列缺口。显式发送间隔为 0，重试为 0；这是本机能力基线，不是推荐面向真实站点的配置。
 
-结果记录平台、Python、产品源码摘要、基准提交、各轮队列指标、总吞吐、数据库大小和父 Python 进程峰值 RSS。RSS **不包含 Chromium 子进程**；目前不单独测量活动/等待/冷却时间，因此不能作为完整资源或效率指标验收。临时目录路径写入结果供复查，脚本不自动删除现场。输出和运行数据不入库。
+结果记录平台、Python、产品源码摘要、基准提交、各轮队列指标、总吞吐、数据库大小和父 Python 进程峰值 RSS。RSS **不包含 Chromium 子进程**。当前脚本还记录持久化活动/等待/冷却墙钟样本、父 Python CPU 用时及服务端最小收包间隔；旧基线没有的指标不能补零。临时目录路径写入结果供复查，脚本不自动删除现场。输出和运行数据不入库。
 
 ## 已观察结果（2026-10-16）
 
@@ -45,3 +45,27 @@ PYTHONPATH=. python scripts/experiment_collection_crash.py
 ```
 
 此脚本只访问合成本机 HTTP 服务，主动 SIGKILL 自己启动的三个扫描子进程，并等待约 120 秒的真实租约失效。分别覆盖等待响应、证据插入尚未提交、观察事务已提交三个窗口；立即重启和租约到期后重启均断言不发送请求。前两种只能经显式预览/确认生成新任务补采，第三种保留已提交观察。SQL 事件用于定位故障注入时刻，SQL 读回用于检查实际磁盘事务边界，不替代公开服务的状态/恢复断言。临时现场保留，结果写入 `.verification/full-pipeline-crash-result.json`；脚本不执行外部目标扫描。
+
+增加 `--resume-without-restart` 可重现快速重启后不再重启服务、直接确认恢复的流程。2026-10-17 实测：SIGKILL 后立即启动均未收敛未过期租约，实际等待 119.399 秒；前两个窗口直接确认新轮成功，各总发送 2 次，旧资产/证据仍为 0；已提交窗口保留 1 个资产/证据，总发送 1 次。没有后台自动补采。
+
+## 当前计时小样本（2026-10-17）
+
+```bash
+PYTHONPATH=. python scripts/benchmark_collection_transport.py --transport http --rounds 1 --per-round 20 --interval-ms 500 --output .verification/http-timing-result.json
+PYTHONPATH=. python scripts/benchmark_collection_transport.py --transport browser --rounds 1 --per-round 20 --interval-ms 500 --output .verification/browser-timing-result.json
+```
+
+macOS 26.3 arm64 / Python 3.10.10，基线提交 `02c5a37` 加评审修复，产品源码摘要 `0c5395b8fa9b7a528bfe077807489815a036d02bebc0cc75665f1030df7a12e1`。两个实验串行；浏览器实验期间没有其他本次浏览器任务。
+
+| 20 URL / 500ms 间隔 | HTTP | Chromium |
+|---|---:|---:|
+| 真实发送 / observed | 20 / 20 | 20 / 20 |
+| 总墙钟秒 / 每秒请求 | 10.531 / 1.899 | 12.199 / 1.639 |
+| 活动 / 等待 / 冷却秒 | 0.923 / 9.010 / 0 | 3.391 / 8.395 / 0 |
+| 服务端最小收包间隔秒 | 0.510 | 0.501 |
+| 父 Python CPU 秒 | 1.531 | 1.625 |
+| 父 Python RSS 字节 | 109,412,352 | 111,050,752 |
+| 预算计费证据字节 | 14,722 | 14,683 |
+| 数据库字节 | 1,032,192 | 1,032,192 |
+
+两者均已知队列覆盖完整；浏览器任务有页面上限警告，不能据此推断全站覆盖。这是新增计时指标的小样本校验，不能替代上面的万级吞吐实验，也不能推算生产站点或完整浏览器进程树的资源需求。完整证据字节等逐轮指标保存在各结果文件中。

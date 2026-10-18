@@ -73,6 +73,8 @@ def test_queue_native_form_previews_before_creating_linked_run(seeded_records, t
         )
         assert preview.status_code == 200
         assert "确认创建新一轮" in preview.text
+        assert "原轮已用发送：1" in preview.text
+        assert "不可恢复：0 项" in preview.text
         assert len(sent) == 1
         fields = dict(
             (name, html.unescape(value))

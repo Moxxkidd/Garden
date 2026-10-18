@@ -21,6 +21,7 @@ parser.add_argument("--child", choices=["scan", "startup", "resume"])
 parser.add_argument("--root", type=Path)
 parser.add_argument("--phase")
 parser.add_argument("--url")
+parser.add_argument("--resume-without-restart", action="store_true")
 args = parser.parse_args()
 
 
@@ -222,6 +223,26 @@ def parent():
         for record in records:
             phase = record["phase"]
             before = len(calls)
+            if args.resume_without_restart and phase != "committed_observation":
+                resumed = restart(phase, "resume")
+                assert len(calls) == before + 1
+                assert resumed["queue"]["counts"] == {"observed": 1}
+                assert raw_view(root / phase)["assets"] == raw_view(root / phase)["evidence"] == 0
+                recovered = restart(phase, "startup")
+                assert len(calls) == before + 1 and recovered["recovered"] == 0
+                assert recovered["queue"]["counts"] == {"transferred": 1}
+                record.update(resumed=resumed, recovered=recovered, no_second_startup=True)
+                print(
+                    json.dumps(
+                        {
+                            "phase": phase,
+                            "no_second_startup": True,
+                            "total_sends": calls.count("/" + phase),
+                        }
+                    ),
+                    flush=True,
+                )
+                continue
             recovered = restart(phase, "startup")
             assert len(calls) == before and recovered["recovered"] == 1
             queue = recovered["queue"]
@@ -246,7 +267,12 @@ def parent():
                 ),
                 flush=True,
             )
-        output = {"root": str(root), "records": records, "actual_requests": calls}
+        output = {
+            "root": str(root),
+            "records": records,
+            "actual_requests": calls,
+            "resume_without_restart": args.resume_without_restart,
+        }
         (REPO / ".verification").mkdir(exist_ok=True)
         (REPO / ".verification/full-pipeline-crash-result.json").write_text(
             json.dumps(output, indent=2)

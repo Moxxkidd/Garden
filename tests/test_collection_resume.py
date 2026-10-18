@@ -13,6 +13,51 @@ from app.services.collection_storage import CollectionStorage
 from tests.helpers.project_assets import source_run
 
 
+def test_preview_explains_missing_material_and_binds_recoverable_subset(seeded_records, tmp_path):
+    storage = CollectionStorage(tmp_path / "private")
+    queues = CollectionQueueService(storage=storage)
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        run = source_run(session, target)
+        qid = queues.create(session, run.id, run.contexts[0].id, CollectionOptions())["id"]
+        good = queues.enqueue(session, qid, target.base_url.rstrip("/") + "/good")
+        bad = queues.enqueue(session, qid, target.base_url.rstrip("/") + "/broken?token=FIXTURE")
+    damaged = next(p for p in storage.directory.iterdir() if "/broken" in p.read_text())
+    original = damaged.read_bytes()
+    damaged.unlink()
+    planner = CollectionResumeService(queues=queues)
+    request = CollectionResumeRequest(queue_id=qid)
+    with session_scope() as session:
+        revision = queues.get(session, qid)["revision"]
+        preview = planner.preview(session, request)
+        assert preview["can_start"]
+        assert preview["work_ids"] == [good["id"]]
+        assert preview["unrecoverable_count"] == 1
+        assert preview["unrecoverable"][0]["id"] == bad["id"]
+        assert preview["unrecoverable"][0]["reason"] == "private_request_unavailable"
+        assert preview["original_budget"]["requests_used"] == 0
+        assert preview["original_budget"]["evidence_bytes"] == 0
+        assert preview["original_budget"]["work_count"] == 2
+        assert preview["remaining_reasons"] == [{"state": "pending", "reason": None, "count": 2}]
+        assert queues.get(session, qid)["revision"] == revision
+        assert "FIXTURE" not in json.dumps(preview)
+    damaged.write_bytes(original)
+    with session_scope() as session:
+        with pytest.raises(ConflictError, match="collection_preview_stale"):
+            planner.confirm_preview(session, request, preview["token"])
+    for path in storage.directory.iterdir():
+        if any(part in path.read_text() for part in ["/good", "/broken"]):
+            path.unlink()
+    from app.core.errors import InputValidationError
+
+    with session_scope() as session:
+        empty = planner.preview(session, request)
+        assert not empty["can_start"] and empty["unrecoverable_count"] == 2
+        with pytest.raises(InputValidationError, match="collection_no_recoverable_work"):
+            planner.start(session, request, empty["token"])
+        assert queues.list_work(session, qid)["total"] == 2
+
+
 def test_resume_preview_is_readonly_redacted_and_binds_exact_target(seeded_records, tmp_path):
     private = tmp_path / "private"
     queues = CollectionQueueService(storage=CollectionStorage(private))

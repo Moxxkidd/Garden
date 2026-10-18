@@ -12,6 +12,40 @@ from app.services.collection_queue import CollectionQueueService
 from tests.test_url_scan_pipeline import _service
 
 
+def test_cli_does_not_ask_to_confirm_when_all_request_material_is_missing(tmp_path):
+    sent = []
+
+    def handle(request):
+        sent.append(request.url.path)
+        return httpx.Response(
+            200, headers={"content-type": "text/html"}, text='<a href="/next">next</a>'
+        )
+
+    service = _service(tmp_path, handle)
+    try:
+        run = service.start_scan(
+            "http://localhost:8111/",
+            ScanOptions(durable=CollectionOptions(max_requests=1, min_interval_ms=0)),
+        )
+        queues = CollectionQueueService()
+        with session_scope() as session:
+            qid = queues.for_run(session, run.id)[0]["id"]
+            work = next(
+                w for w in queues.list_work(session, qid)["items"] if w["state"] != "observed"
+            )
+            queues.request(session, qid, work["id"])
+        for path in queues.storage.directory.iterdir():
+            if "/next" in path.read_text():
+                path.unlink()
+        result = CliRunner().invoke(app, ["queue", "resume", str(qid)])
+        assert result.exit_code == 1
+        assert "没有可恢复的工作" in result.output
+        assert "使用上述预算创建新一轮" not in result.output
+        assert sent == ["/"]
+    finally:
+        service.shutdown()
+
+
 def test_queue_cli_shows_preview_and_cancels_without_starting(seeded_records, tmp_path):
     sent = []
 

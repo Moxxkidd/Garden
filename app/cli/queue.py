@@ -78,6 +78,9 @@ def resume(
     emit(preview)
     if preview_only:
         return
+    if not preview["can_start"]:
+        typer.echo("没有可恢复的工作；请检查原始材料，或重新预览新的扫描入口。")
+        raise typer.Exit(code=1)
     if not yes and not typer.confirm("使用上述预算创建新一轮补采？", default=False):
         typer.echo("已取消；未创建任务。")
         return

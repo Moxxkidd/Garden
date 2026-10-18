@@ -2,7 +2,7 @@
 
 设计：[增量采集与持久调度](../specs/2026-10-11-v08-incremental-scanning.md)。
 基线：`8c7de9bcac3f0c7b9ce0dfcd107a6725607c1896`，隔离分支 `codex/incremental-scanning-v08`。
-状态（2026-10-16）：TDD 公开接口已确认；S01–S06 已有本地检查点，S07/S08 仍在实施，S09 验收未完成。版本仍为 0.7.0。
+状态（2026-10-18）：S01–S09 本地验收完成，版本 0.8.0；完整回归 910 passed。Linux 未验证；未推送、未创建 PR、未打 tag 或发布。后文按日期保留历史过程，最终核销见文末。
 
 ## 执行约定
 
@@ -457,3 +457,49 @@ project-finalization-red 首次夹具误把 durable 放在请求顶层，未实�
 - Spec：2 项，P1 快速重启时旧 lease 尚有效而被跳过，到期后没有再次收敛，预览可成功但确认因 source running 被拒；需在显式恢复写操作安全收敛失效来源。P2 恢复预览缺少原预算、不可恢复计数/原因；一条材料缺失会阻断全部预览。需允许解释可恢复集合并严格绑定确认。未发现确定越界；项目已有周龄优先级，不计缺失。
 
 上述评审问题尚待 TDD 修复，不将评审完成等同于通过。新一片开始前保留本轮已通过的代码检查点。
+
+### 2026-10-17 评审修复进行中
+
+已保存本地检查点 `02c5a37`（Record durable collection metrics and freeze project outcomes），对应上一轮 906 passed；未推送。全新 `/private/tmp/garden-v08-clean-install-ex_26uev/venv` Python 3.12.14 安装已成功，使用安装时实际解析的依赖（含 SQLAlchemy 2.1.4 / FastAPI 0.143.3 / Playwright 1.64.0），不是复用旧 venv。独立 cwd、空 PYTHONPATH 下真实 loopback HTTP 扫描 1 次发送/1 条确认观察，项目未关联显示不适用；API、HTML 与报告一致，模块来自 site-packages。doctor 前后数据库 SHA 不变；doctor exit 1，未安装对应 Chromium，故未声称安装环境浏览器通过。日志 clean-install-project-smoke.log / clean-install-project-api-smoke.log。此包是 02c5a37 实施内容，不含后续评审修复；版本仍 0.7.0。
+
+快速重启恢复 RED 首次夹具 URL 拼接缺斜线，不计产品失败；修正后在原检查点确认 `collection_source_active`（restart-resume-valid-red.log）。恢复确认现先持有执行器，并在数据库写锁内核实所有同源任务上下文的租约已失效，再收敛原任务与租约、创建关联子任务；读预览不改变任务。restart-resume-final-green.log **19 passed / 6.44s**。新脚本参数 --resume-without-restart 正进行真实 SIGKILL/租约等待验证，不把可控时钟测试替代实机结论。
+
+恢复材料预览 RED：单条私有材料删除导致整个 preview 抛 collection_payload_unavailable。现在返回可恢复集合、不可恢复条目/原因、原轮预算与选中工作未完成原因；确认绑定实际可恢复集合，材料恢复或丢失会使旧 token 失效。全不可恢复时 start 拒绝创建空子任务，CLI 不再发出空任务确认提示，网页没有确认按钮。页面预算显示 RED 与 CLI 空集合提示 RED 均已观察，recovery-preview-final-green.log **16 passed / 7.60s**（API/CLI/HTML/恢复/启动组合）。
+
+规范评审深度投影问题通过公开 CollectionBrowser.enqueue 复现：深度越界工作已 suppressed，但返回 True；browser-depth-admission-red.log。状态规则统一到队列服务仍待完成，尚未对这些评审修改运行新的完整回归。
+
+
+### 2026-10-18 最终收口与 AC 核销
+
+产品基线 `02c5a37` 加本片评审修复。规范和规格两位只读评审者复核三项修改后均无剩余具体问题。队列服务集中 claim、完成、身份评估和深度抑制规则；浏览器 enqueue 返回最终状态，不再返回过期的“可接受”投影。针对性 review-fixes-browser-regression.log：22 passed / 2 warnings / 89.83s；队列/HTTP 组合 14 passed / 4.98s。此前恢复组合 19 passed、预览组合 16 passed 仍适用。
+
+快速重启真实实验 `scripts/experiment_collection_crash.py --resume-without-restart` 退出 0：实际等待 119.399 秒，前两个 SIGKILL 窗口无需二次服务启动即可显式创建补采子任务；旧资产/证据不变，总发送 2/2/1。没有自动访问目标。日志 fast-restart-crash-experiment.log。
+
+人工界面验收使用 Playwright CLI，禁用页面 JavaScript，浏览器工作串行：390×844 恢复预览、确认新轮成功，页面宽度 390；1440×1000 指标展开截图已查看。运行中暂停的最初两次夹具等待超过租约，不计正常收尾通过；第三次在浏览器中受控启动后立即暂停，实际 1 次发送/1 条 observed/1 条 pending，队列 paused、coverage_complete=false，559 字节证据，新发现链接未发送。快照和截图留在 output/playwright，API 证据 pause-ui-result.json。产品租约与范围未放宽。
+
+真实 HTTP/Chromium 各 20 URL、500ms 间隔样本完成：最小服务端间隔 0.510/0.501 秒，等待 9.010/8.395 秒，发送与观察均 20。实验产品源码摘要 `0c5395b8fa9b7a528bfe077807489815a036d02bebc0cc75665f1030df7a12e1`，完整数值及历史万级基线见 docs/benchmarks/v08-collection.md；小样本不冒充新的万级结果。
+
+冻结产品后的第八轮完整命令：`PYTHONPATH=. /Users/an/Documents/Garden/.venv/bin/python -m pytest -q -o addopts='' --basetemp=.verification/full-eighth-temp`。v08-full-pytest-eighth.log 退出 0：**910 passed / 2 warnings / 740.94s**；仅既有 websockets/uvicorn 弃用提示。随后仅将 pyproject/settings/CLI 版本断言从 0.7.0 统一为 0.8.0，tests/test_cli.py **7 passed**；未将版本变更后称作重新全量执行。全仓 Ruff check、365 文件格式检查、git diff --check 通过。
+
+打包与安装：使用 `python -m hatchling build -d .verification/package-v080`（一次误用 `-t wheel,sdist` 被拒，未产生有效包，随后按默认双目标成功）。wheel 293 成员、sdist 492 成员，275 个 app 文件与迁移资源逐字节一致；运行数据、.verification、output 和 worktree 未入包。最终哈希保存该目录 inventory.json，文档更新后 sdist 重新构建核对。
+
+干净安装过程：最初从全新 Python 3.12.14 venv 安装依赖成功；当前 wheel 在该隔离环境中重装验证，不冒充再次全新安装。初次安装宿主 SOCKS 代理失败后，仅移除子进程 SOCKS 变量重试，未改全局 pip/cache。最终 0.8.0 从 /private/tmp、空 PYTHONPATH 导入 site-packages，0010→0011 成功，真实 Chromium 156（Playwright 1.64.0）扫描 1 次请求/1 个确认观察，API/HTML/报告一致；`garden version` 输出 Garden 0.8.0。日志 package-v080-smoke.log。doctor exit 2：runtime 目录未创建故写能力 unknown；数据库/安装/Chromium 检查 ok，数据库哈希未变。此未知不等于采集失败；未为诊断强行建目录。
+
+| 条件 | 最终证据与结论 |
+|---|---|
+| AC01 | 迁移/降级/旧值测试、包内迁移逐字节检查、安装环境 0010→0011；通过。 |
+| AC02 | 三个真实 SIGKILL 窗口、快速重启后直接恢复、过期 worker fencing 与活 worker 启动保护；通过。 |
+| AC03 | 队列去重、独立会话 claim、同时确认幂等、事务失败与孤儿审计；通过。孤儿不自动删除，文件/DB 无跨系统原子性。 |
+| AC04 | origin/身份准入、重定向与健康验证计费、有界共享线程、HTTP/浏览器暂停测试及手机真实按钮；通过。 |
+| AC05 | 目标/入口/profile/session/配置变化失效、确认锁内复查、重新认证、历史报告和项目快照保护测试；通过。 |
+| AC06 | known_only/continue_discovery 范围、选择抑制项、缺失材料说明、退避复制与关联新轮；通过。 |
+| AC07 | 参数配额、深度/预算抑制、稳定优先级和项目老化、10,000 工作唯一分页；通过。 |
+| AC08 | Retry-After 秒/日期/坏值/远期、有界退避/重试、传输失败与重启/取消回归；通过。 |
+| AC09 | 正文边界、身份材料计费、同 URL 并发响应归属、敏感值脱敏和路径保护；通过。 |
+| AC10 | API/CLI/Web/导出统一指标、项目收尾快照、未知与不适用、无 JS 手机预览/暂停/恢复/查询；通过。 |
+| AC11 | 历史冻结代码真实万级 HTTP/Chromium + 当前万级队列 + 当前计时小样本；通过。父 Python RSS 不代表 Chromium 全进程树，未承诺 SLA。 |
+| AC12 | 最新 910 项全量、Ruff/格式/diff、两轴复核、wheel/sdist、干净环境和成品安装冒烟；通过本地验收。Linux 未执行，保留限制。 |
+
+README、展示页与 v0.8 操作文档按实测内容同步。剩余交付动作仅本地提交；本次没有远端推送、PR、tag 或软件包发布授权，不自动执行。后续远端 CI/合并和 Linux 验证需分别提供真实证据。本次没有修改主工作区原有未提交内容。
+
+耗时复盘：本版把持久调度、恢复、身份边界、项目指标和全端展示集中交付；评审发现真实缺陷后反复修改冻结点，累计八轮全量，每轮约 12–15 分钟。万级浏览器实验约 32.5 分钟，真实租约实验每轮需等待约两分钟；另有工具会话卡住、代理依赖下载和人工夹具过期造成额外时间。执行上应更早固定分片完成门、集中最终验证，并把后续版本拆成更小的可交付范围；不以无差别增加检查次数替代明确验收。

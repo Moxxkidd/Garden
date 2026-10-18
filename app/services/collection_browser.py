@@ -30,11 +30,8 @@ class CollectionBrowser(CollectionRuntime):
             method=method,
             asset_type=asset_type,
             source=source,
+            max_depth=self.options.max_depth,
         )
-        if work["id"] and depth > self.options.max_depth:
-            row = self.session.get(CollectionWork, work["id"])
-            if row.state == "pending":
-                row.state, row.reason = "suppressed", "max_depth"
         self.session.commit()
         return work["id"] is not None and work["state"] not in {"suppressed", "failed"}
 
@@ -105,14 +102,12 @@ class CollectionBrowser(CollectionRuntime):
         )
         if work["id"] is None or work["state"] == "suppressed":
             raise ConflictError("collection_max_work")
-        row = self.session.get(CollectionWork, work["id"])
-        if row.state in {"pending", "deferred"}:
-            row.state = "leased"
+        work = self.queues.claim_requested(self.session, self.queue_id, work["id"], self.token)
         self.session.commit()
-        self.work_id = row.id if row.state == "leased" else None
+        self.work_id = work["id"] if work["state"] == "leased" else None
         self.retrying = bool(
             self.navigation
-            and self.navigation["id"] == row.id
+            and self.navigation["id"] == work["id"]
             and self.navigation["not_before"] > 0
         )
         attempt = self.before_send(url, method, kind="browser")
@@ -178,15 +173,14 @@ class CollectionBrowser(CollectionRuntime):
             )
         )
         retryable = result.status_code in {429, 502, 503, 504}
-        if (
-            work
-            and not retryable
-            and attempt.work_id == work.id
-            and work.state in {"failed", "deferred"}
+        if work and (
+            work.state == "leased"
+            or (
+                not retryable
+                and attempt.work_id == work.id
+                and work.state in {"failed", "deferred"}
+            )
         ):
-            # Another in-flight attempt can succeed after its sibling failed.
-            work.state = "leased"
-        if work and work.state == "leased":
             if retryable:
                 gate = self.session.get(
                     CollectionGate, self.queues.row(self.session, self.queue_id).origin
@@ -202,30 +196,17 @@ class CollectionBrowser(CollectionRuntime):
                     else None,
                 )
             else:
-                self.queues.complete(self.session, self.queue_id, work.id, self.token)
+                self.queues.complete(
+                    self.session, self.queue_id, work.id, self.token, attempt_id=attempt.id
+                )
         if not retryable:
             self.observed_urls.add(project_url(result.final_url))
         return asset
 
     def assess_identity(self, url, method, assessment):
-        from app.services.collection_transactions import atomic_collection
-
-        with atomic_collection(self.session):
-            queue = self.queues.check_lease(self.session, self.queue_id, self.token)
-            work = self.session.scalar(
-                select(CollectionWork).where(
-                    CollectionWork.queue_id == self.queue_id,
-                    CollectionWork.request_key == digest([project_url(url), method]),
-                )
-            )
-            if work is None or work.state in {"deferred", "failed"}:
-                return
-            confirmed = assessment == "confirmed"
-            if work.reason == "identity_confirmed" and not confirmed:
-                return
-            self.queues._bump(self.session, queue)
-            work.state = "observed" if confirmed else "uncertain"
-            work.reason = "identity_confirmed" if confirmed else "identity_uncertain"
+        self.queues.assess_identity(
+            self.session, self.queue_id, self.token, url, method, assessment
+        )
 
     def navigation_finished(self, success, final_url=None):
         if self.navigation is None:

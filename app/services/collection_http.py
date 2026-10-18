@@ -39,7 +39,7 @@ def collect_http(pipeline, session, run, options, deadline):
             or origin(item.url) != runtime.queues.row(session, runtime.queue_id).origin
         ):
             return
-        work = runtime.queues.enqueue(
+        runtime.queues.enqueue(
             session,
             runtime.queue_id,
             item.route_url or item.url,
@@ -47,11 +47,8 @@ def collect_http(pipeline, session, run, options, deadline):
             depth=depth,
             source=item.source_kind,
             asset_type=item.asset_type,
+            max_depth=options.max_depth,
         )
-        if depth > options.max_depth and work["id"]:
-            row = session.get(CollectionWork, work["id"])
-            if row.state == "pending":
-                row.state, row.reason = "suppressed", "max_depth"
 
     try:
         enqueue(DiscoveredAsset(url=run.normalized_url, asset_type="page", source_kind="entry"), 0)
