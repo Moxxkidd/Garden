@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}<section class="collection-page" hx-boost="false">
+<h1>确认增量采集</h1><p>{{ preview.scope_note }}</p>
+<p>本轮选中 {{ preview.work_count }} 项；{{ preview.recent_count }} 项近期已观察；{{ preview.blocked_count }} 项缺少可执行材料。</p>
+{% if preview.truncated %}<p>选中数量已达本轮工作上限，仍有内容未纳入本轮。</p>{% endif %}
+{% if preview.identity_recheck_required %}<p>身份会重新验证，验证请求计入本轮发送预算。</p>{% endif %}
+<dl>{% for key, value in preview.options.items() %}<dt>{{ option_labels.get(key, key) }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+<details><summary>沿用的扫描限制</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">{{ preview.scan_options|tojson(indent=2) }}</pre></details>
+<table><thead><tr><th>请求</th><th>优先原因</th></tr></thead><tbody>{% for item in preview.work %}<tr><td>{{ item.method }} {{ item.url }}</td><td>{{ item.reason }}{{ ' · 等待老化提升' if item.aged else '' }}</td></tr>{% endfor %}</tbody></table>
+{% if preview.blocked %}<details><summary>无法复查的历史观察</summary><ul>{% for item in preview.blocked %}<li>{{ item.asset_id }} · 原始请求材料不可用</li>{% endfor %}</ul></details>{% endif %}
+{% if preview.work_count %}<form method="post" action="/projects/{{ project_id }}/entries/{{ entry_id }}/incremental">
+<input type="hidden" name="request" value="{{ request_json }}"><input type="hidden" name="token" value="{{ preview.token }}"><button>确认增量采集</button></form>{% endif %}
+<a href="/projects/{{ project_id }}/entries/{{ entry_id }}/incremental">修改或取消</a>
+</section>{% endblock %}

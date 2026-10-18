@@ -12,7 +12,7 @@ from urllib.parse import urljoin
 
 from sqlalchemy import select
 
-from app.core.errors import InputValidationError, OverallScanTimeout, ScanInterrupted
+from app.core.errors import ConflictError, InputValidationError, OverallScanTimeout, ScanInterrupted
 from app.core.settings import get_settings
 from app.db.bootstrap import session_scope
 from app.models.auth_session import AuthSession
@@ -25,6 +25,7 @@ from app.schemas.identity import IdentityCollectionRequest, SessionHealthView
 from app.schemas.projects import ProjectSourceRef
 from app.schemas.scan import DiscoveredAsset
 from app.services.browser_discovery import BrowserDiscovery
+from app.services.collection_runtime import CollectionOwnershipLost
 from app.services.coverage_identity import redacted_observed_url
 from app.services.discovery import DiscoveryLedger, origin, safe_route
 from app.services.discovery_js import extract_js
@@ -44,11 +45,12 @@ from app.services.scan_reporting import ScanReportService
 class IdentityCollectionService:
     def __init__(self, *, sessions=None, dispatcher=None, report_service=None):
         self.settings = get_settings()
+        self.collection_executor = None
         self.policy = TargetNetworkPolicy(self.settings)
         self.sessions = sessions or IdentitySessionService(policy=self.policy)
         self.storage = self.sessions.storage
         self.dispatcher = dispatcher or ThreadedScanDispatcher(
-            self.settings.scan_max_concurrent_tasks
+            self.settings.scan_max_concurrent_tasks, database_url=self.settings.database_url
         )
         self.pipeline = ScanPipeline(
             policy=self.policy,
@@ -56,8 +58,35 @@ class IdentityCollectionService:
             report_service=report_service or ScanReportService(),
         )
 
-    def start(self, session, request: IdentityCollectionRequest, *, recovery=None):
+    def ensure_collection_executor(self):
+        if self.collection_executor is None:
+            from app.services.collection_executor import CollectionExecutor
+
+            owner = CollectionExecutor(self.settings.database_url)
+            owner.acquire()
+            self.collection_executor = owner
+
+    def shutdown(self):
+        shutdown = getattr(self.dispatcher, "shutdown", None)
+        if shutdown is not None:
+            shutdown()
+        if self.collection_executor is not None:
+            self.collection_executor.close()
+            self.collection_executor = None
+
+    def start(
+        self, session, request: IdentityCollectionRequest, *, recovery=None, collection_plan=None
+    ):
         request = IdentityCollectionRequest.model_validate(request)
+        if collection_plan is not None:
+            collection_plan.validate(session)
+            from app.models.collection_queue import CollectionQueue
+
+            previous = session.scalar(
+                select(CollectionQueue).where(CollectionQueue.resume_token == collection_plan.token)
+            )
+            if previous is not None:
+                return previous.run_id
         target = session.get(Target, request.target_id)
         if not target or target.status != "active":
             raise InputValidationError("目标不可用于采集。")
@@ -75,11 +104,18 @@ class IdentityCollectionService:
         options = resolve_scan_options(request.options, self.settings).model_copy(
             update={"collection_mode": "browser"}
         )
+        if options.durable is not None:
+            self.ensure_collection_executor()
         if options.seed_input:
             parse_seed_input(options.seed_input, options.seed_format, base_url=entry)
         digest = hashlib.sha256(
             json.dumps(
-                {"request": request.model_dump(), "recovery": recovery}, sort_keys=True
+                {
+                    "request": request.model_dump(),
+                    "recovery": recovery,
+                    **({"collection_plan": collection_plan.token} if collection_plan else {}),
+                },
+                sort_keys=True,
             ).encode()
         ).hexdigest()
         existing = session.scalar(select(ScanRun).where(ScanRun.active_key == digest))
@@ -109,12 +145,20 @@ class IdentityCollectionService:
         )
         session.add(run)
         session.flush()
+        if collection_plan is not None:
+            collection_plan.validate(session)
         run.discovery_input_ref = self.storage.write_request_payload(
             run.id,
             0,
             {
                 "entry_url": entry,
-                "recovery_work": recovery["work"] if recovery else None,
+                "recovery_work": (
+                    collection_plan.work
+                    if collection_plan and collection_plan.mode == "known_only"
+                    else recovery["work"]
+                    if recovery
+                    else None
+                ),
                 "seed_input": options.seed_input,
                 "sitemap_url": options.sitemap_url,
             },
@@ -155,6 +199,9 @@ class IdentityCollectionService:
             ProjectLifecycleService().attach(
                 session, request.project_entry_id, ProjectSourceRef(source="scan", run_id=run.id)
             )
+        from app.services.collection_queue import prepare_queues
+
+        prepare_queues(session, run, options, entry, plan=collection_plan)
         session.commit()
         try:
             self.dispatcher.submit(run.id, self.execute)
@@ -196,6 +243,7 @@ class IdentityCollectionService:
             deadline = time.monotonic() + options.overall_timeout_seconds
             run.status, run.started_at = "running", datetime.now(timezone.utc)
             session.commit()
+            ownership_lost = False
             try:
                 private = self.storage.read_payload(run.discovery_input_ref)
                 entry = private["entry_url"]
@@ -215,13 +263,25 @@ class IdentityCollectionService:
                         self._collect(session, run, context, entry, options, private, deadline)
                     except (ScanInterrupted, OverallScanTimeout):
                         raise
-                    except Exception:
-                        context.status = context.collection_status = "failed"
+                    except Exception as error:
+                        evidence_limit = (
+                            isinstance(error, ConflictError)
+                            and str(error) == "collection_evidence_budget"
+                        )
+                        context.status = context.collection_status = (
+                            "incomplete" if evidence_limit else "failed"
+                        )
                         context.completeness, context.error_code = (
                             "incomplete",
-                            "identity_collection_failed",
+                            "collection_evidence_budget"
+                            if evidence_limit
+                            else "identity_collection_failed",
                         )
-                        context.error_message = "此身份采集未完成，已取得的观察保留。"
+                        context.error_message = (
+                            "已达到证据预算；本次超额观察和请求材料未保存，已有观察保留。"
+                            if evidence_limit
+                            else "此身份采集未完成，已取得的观察保留。"
+                        )
                         context.finished_at = datetime.now(timezone.utc)
                         session.commit()
                 self._stage(session, run, "collect", "completed")
@@ -232,6 +292,10 @@ class IdentityCollectionService:
                 run.completeness = "complete" if complete else "incomplete"
                 run.status = "completed" if complete else "completed_with_warnings"
                 run.progress = 100
+            except CollectionOwnershipLost:
+                ownership_lost = True
+                session.rollback()
+                return
             except Exception as error:
                 run.status = "interrupted" if isinstance(error, ScanInterrupted) else "incomplete"
                 run.completeness = "incomplete"
@@ -249,17 +313,18 @@ class IdentityCollectionService:
                     if stage.status in {"pending", "running"} and stage.name != "report":
                         stage.status = "skipped"
             finally:
-                run.active_key = None
-                run.finished_at = datetime.now(timezone.utc)
-                self._stage(session, run, "report", "running")
-                session.commit()
-                try:
-                    run.report_path = self.pipeline.report_service.generate(session, run.id)
-                    self._stage(session, run, "report", "completed")
-                except Exception:
-                    self._stage(session, run, "report", "failed")
-                    run.status, run.error_code = "failed", "report_failed"
-                session.commit()
+                if not ownership_lost:
+                    run.active_key = None
+                    run.finished_at = datetime.now(timezone.utc)
+                    self._stage(session, run, "report", "running")
+                    session.commit()
+                    try:
+                        run.report_path = self.pipeline.report_service.generate(session, run.id)
+                        self._stage(session, run, "report", "completed")
+                    except Exception:
+                        self._stage(session, run, "report", "failed")
+                        run.status, run.error_code = "failed", "report_failed"
+                    session.commit()
 
     def _establish(self, session, context):
         context.started_at = datetime.now(timezone.utc)
@@ -267,6 +332,25 @@ class IdentityCollectionService:
             context.status, context.health_status = "ready", "ready"
             context.login_status = "not_required"
             context.session_validation_status = "not_required"
+            return
+        from app.models.collection_queue import CollectionQueue
+        from app.services.collection_queue import binding_for, identity_binding_for
+
+        queue = session.scalar(
+            select(CollectionQueue).where(CollectionQueue.context_id == context.id)
+        )
+        if queue is not None and (
+            binding_for(session, context.scan_run, context) != queue.binding
+            or identity_binding_for(session, context)
+            != (context.identity_snapshot or {}).get("collection_identity_binding")
+        ):
+            context.status = context.collection_status = "failed"
+            context.health_status = "unknown"
+            context.login_status = "failed"
+            context.completeness, context.error_code = "incomplete", "identity_binding_changed"
+            context.error_message = "登录状态或采集配置已变化，请重新预览确认后补采。"
+            context.finished_at = datetime.now(timezone.utc)
+            queue.status = "finished"
             return
         stored = session.scalar(
             select(AuthSession)
@@ -302,6 +386,11 @@ class IdentityCollectionService:
         )
         from app.services.identity_recovery import IdentityRecoveryService
 
+        runtime = None
+        if options.durable is not None:
+            from app.services.collection_browser import CollectionBrowser
+
+            runtime = CollectionBrowser(self.pipeline, session, run, context, options, deadline)
         recovery_service = IdentityRecoveryService(storage=self.storage)
         pending_work = {}
         uncertain_work = {}
@@ -358,6 +447,9 @@ class IdentityCollectionService:
 
         def persist_batch(observations, assessment):
             for evidence_id, asset_id in observations:
+                pending = uncertain_work.get((evidence_id, asset_id))
+                if runtime is not None and pending:
+                    runtime.assess_identity(pending["url"], pending["method"], assessment)
                 if assessment in {"confirmed", "auth_diagnostic"}:
                     uncertain_work.pop((evidence_id, asset_id), None)
                 evidence = session.get(ScanEvidence, evidence_id) if evidence_id else None
@@ -378,10 +470,17 @@ class IdentityCollectionService:
 
             def in_fresh_thread():
                 with session_scope() as validation_session:
+                    validation_admission = admit
+                    if runtime is not None:
+                        from app.services.collection_runtime import IdentityCollectionAdmission
+
+                        validation_admission = IdentityCollectionAdmission(
+                            runtime, validation_session, admit
+                        )
                     return self.sessions.validate(
                         validation_session,
                         context.auth_session_id,
-                        before_request=admit,
+                        before_request=validation_admission,
                         current_state=current_state,
                     )
 
@@ -485,8 +584,45 @@ class IdentityCollectionService:
                         source_kind="browser_request",
                     )
                 )
+            request_payload = {"url": result.final_url, "method": result.method}
+            capture = ScanRequest.from_capture(
+                scan_run_id=run.id,
+                source_context_id=context.id,
+                method=result.method,
+                raw_url=result.final_url,
+                header_names=[],
+                fingerprint="identity-observed-v1",
+                protected_storage_ref="",
+            )
+            # Count serialized evidence content and protected request material, not
+            # database pages/indexes, row IDs, timestamps or storage path overhead.
+            request_bytes = len(json.dumps(request_payload, indent=2).encode()) + len(
+                json.dumps(
+                    {
+                        "method": capture.method,
+                        "normalized_redacted_url": capture.normalized_redacted_url,
+                        "header_names": capture.header_names,
+                        "fingerprint": capture.fingerprint,
+                        "replay_allowed": False,
+                        "replay_status": "pending",
+                        "replay_reason": None,
+                    }
+                ).encode()
+            )
+            asset = (
+                runtime.persist(
+                    result,
+                    0,
+                    None,
+                    evidence_data={
+                        "identity_assessment": "identity_uncertain" if state else "confirmed"
+                    },
+                    additional_evidence_bytes=request_bytes,
+                )
+                if runtime is not None
+                else self.pipeline._persist_fetch(session, run, result, depth=0, context=context)
+            )
             ledger.observed(result.final_url, result.method)
-            asset = self.pipeline._persist_fetch(session, run, result, depth=0, context=context)
             item = ledger.items.get(key, {})
             asset.attributes = {
                 **asset.attributes,
@@ -501,21 +637,10 @@ class IdentityCollectionService:
                     "source_count": item.get("source_count"),
                 },
             }
-            ref = self.storage.write_request_payload(
-                run.id, context.id, {"url": result.final_url, "method": result.method}
-            )
-            session.add(
-                ScanRequest.from_capture(
-                    scan_run_id=run.id,
-                    source_context_id=context.id,
-                    asset_id=asset.id,
-                    method=result.method,
-                    raw_url=result.final_url,
-                    header_names=[],
-                    fingerprint="identity-observed-v1",
-                    protected_storage_ref=ref,
-                )
-            )
+            ref = self.storage.write_request_payload(run.id, context.id, request_payload)
+            capture.asset_id = asset.id
+            capture.protected_storage_ref = ref
+            session.add(capture)
             session.flush()
             evidence = session.scalar(
                 select(ScanEvidence)
@@ -535,6 +660,8 @@ class IdentityCollectionService:
                     "url": result.final_url,
                     "method": result.method,
                 }
+            if runtime is not None and health_gate:
+                runtime.assess_identity(result.final_url, result.method, "identity_uncertain")
             save()
             if health_gate:
                 health_gate.observe(result, (evidence.id if evidence else None, asset.id))
@@ -595,6 +722,7 @@ class IdentityCollectionService:
                 seeds,
                 attempt,
                 identity_state=state,
+                **({"durable": runtime} if runtime is not None else {}),
                 response_candidates=sources,
                 before_send=health_gate.before_send if health_gate else None,
                 on_state_provider=lambda provider: state_provider.__setitem__(0, provider),
@@ -608,6 +736,9 @@ class IdentityCollectionService:
             )
             if outcome["stopped_reason"]:
                 warnings.append(outcome["stopped_reason"])
+            if runtime is not None:
+                if not runtime.queues.get(session, runtime.queue_id)["coverage_complete"]:
+                    warnings.append("collection_uncovered")
             healthy = True
             context.asset_count = len(
                 session.scalars(select(ScanAsset).where(ScanAsset.context_id == context.id)).all()
@@ -650,4 +781,6 @@ class IdentityCollectionService:
                 session.scalars(select(ScanAsset).where(ScanAsset.context_id == context.id)).all()
             )
             context.finished_at = datetime.now(timezone.utc)
+            if runtime is not None:
+                runtime.close()
             save(complete=context.completeness == "complete")

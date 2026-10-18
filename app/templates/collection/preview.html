@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="collection-page space-y-5" hx-boost="false">
+<h1 class="text-3xl font-semibold">确认创建新一轮</h1>
+<p>已选 {{ preview.work_count }} 项。范围：{{ '仅已知工作，未知子请求将被拦截' if preview.mode == 'known_only' else '继续同源发现，可能新增工作' }}。</p>
+<p>原任务不重写；可能已发送 {{ preview.unknown_sends }} 次。新轮可能重复请求，仍受退避与预算限制。</p>
+<p>原轮已用发送：{{ preview.original_budget.requests_used }} / {{ preview.original_budget.options.max_requests }}；已用证据：{{ preview.original_budget.evidence_bytes }} / {{ preview.original_budget.options.max_evidence_bytes }} 字节；已记录工作：{{ preview.original_budget.work_count }} / {{ preview.original_budget.options.max_work }}。</p>
+<p>不可恢复：{{ preview.unrecoverable_count }} 项。原始材料缺失、损坏或无法验证的工作不会进入新轮，也不会根据展示地址猜测请求。</p>
+<ul>{% for item in preview.unrecoverable %}<li class="break-all">工作 #{{ item.id }} · {{ item.url }}：原始请求材料不可用。</li>{% endfor %}</ul>
+<details><summary>原选中工作的未完成原因</summary><ul>{% for item in preview.remaining_reasons %}<li>{{ state_labels.get(item.state, item.state) }}：{{ item.count }} 项{% if item.reason %}（{{ item.reason }}）{% endif %}</li>{% endfor %}</ul></details>
+{% if preview.identity_recheck_required %}<p>身份将重新验证，验证请求也计入下列预算。</p>{% endif %}
+{% if preview.scope_truncated %}<p>原发现范围曾截断，本轮不代表完整站点。</p>{% endif %}
+<dl>{% for key, value in preview.options.items() %}<dt>{{ option_labels.get(key, key) }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+<ul>{% for url in preview.examples %}<li class="break-all">{{ url }}</li>{% endfor %}</ul>
+<form method="post" action="/scans/{{ run_id }}/queue/resume">
+<input type="hidden" name="request" value="{{ request_json }}">
+<input type="hidden" name="token" value="{{ preview.token }}">
+{% if preview.can_start %}<button type="submit">确认创建新一轮</button>{% else %}<p>没有可恢复的工作。请检查原始材料，或通过新的扫描预览提交入口。</p>{% endif %}
+<a href="/scans/{{ run_id }}/queue">取消</a>
+</form></section>
+{% endblock %}

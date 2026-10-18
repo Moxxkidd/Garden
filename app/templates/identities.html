@@ -30,6 +30,7 @@
 <label>目标<select required name="target_id" class="border p-2">{% for t in targets %}<option value="{{ t.id }}" {% if project_entry and project_entry.target_id == t.id %}selected{% endif %}>{{ t.name }} #{{ t.id }}</option>{% endfor %}</select></label>
 <label>采集入口<input required type="url" name="url" value="{{ project_entry.entry_url if project_entry else '' }}" class="block w-full border rounded p-2"></label>
 <fieldset><legend>选择身份（最多 10 个）</legend><label class="block"><input type="checkbox" name="anonymous" value="1"> 匿名</label>{% for p in profiles %}<label class="block"><input type="checkbox" name="profile_ids" value="{{ p.id }}"> {{ p.name }} · {{ p.role }} · 目标 #{{ p.target_id }} · 身份 #{{ p.id }}</label>{% endfor %}</fieldset>
+{% include "collection/_options.html" %}
 <label>每身份页面预算<input type="number" required min="1" max="500" name="max_pages" value="50" class="border p-2"></label>
 <button class="rounded bg-slate-900 text-white p-3">预览采集范围</button></form></section>
 <section class="rounded-2xl bg-white p-6 space-y-3"><h2 class="text-xl font-semibold">最近身份采集与补采</h2>

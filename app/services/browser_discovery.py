@@ -43,6 +43,7 @@ class BrowserDiscovery:
         recovery_work=None,
         on_state_provider=None,
         on_finish=None,
+        durable=None,
     ) -> dict:
         from playwright.sync_api import Error as PlaywrightError
         from playwright.sync_api import sync_playwright
@@ -59,6 +60,8 @@ class BrowserDiscovery:
         pages = 0
         request_routes: dict[object, str | None] = {}
         pending_responses: dict[object, object] = {}
+        active_requests: set[object] = set()
+        settling = False
         redirect_depths: dict[str, int] = {}
 
         def check() -> None:
@@ -93,6 +96,8 @@ class BrowserDiscovery:
                 return
             if len(queued) >= options.max_candidates:
                 stopped = stopped or "max_candidates"
+                return
+            if durable is not None and not durable.enqueue(normalized, depth):
                 return
             queued.add((normalized, "GET"))
             queue.append((normalized, depth, "GET"))
@@ -223,9 +228,13 @@ class BrowserDiscovery:
                     try:
                         check()
                         self.guard.ensure_allowed(base, url)
-                        if allowed_urls is not None and self.policy.normalize_url(url) not in {
+                        if settling:
+                            allowed, reason = False, "collection_finishing"
+                        elif allowed_urls is not None and self.policy.normalize_url(url) not in {
                             self.policy.normalize_url(x) for x in allowed_urls
                         }:
+                            allowed, reason = False, "outside_recovery_scope"
+                        elif durable is not None and not durable.accepts(url, method):
                             allowed, reason = False, "outside_recovery_scope"
                         elif redirects > options.max_redirects:
                             allowed, reason = False, "max_redirects"
@@ -266,6 +275,8 @@ class BrowserDiscovery:
                         if allowed and recorded and not errors:
                             if before_send:
                                 before_send()
+                            if durable is not None:
+                                durable_responses.sent(event, route_window, method)
                             attempts += 1
                             if on_attempt is not None:
                                 on_attempt(url, method)
@@ -299,6 +310,20 @@ class BrowserDiscovery:
                         except PlaywrightError:
                             pass
 
+                durable_responses = None
+                if durable is not None:
+                    from app.services.collection_browser_responses import CollectionBrowserResponses
+
+                    def collected_response(result, route):
+                        on_response(result, route)
+                        if response_candidates:
+                            for item in response_candidates(result):
+                                if candidate(item) and item.get("auto_visit", True):
+                                    enqueue(item.get("route_url") or item["url"], 0)
+
+                    durable_responses = CollectionBrowserResponses(
+                        cdp, durable, collected_response, errors.append
+                    )
                 cdp.on("Fetch.requestPaused", guard_request)
                 cdp.send(
                     "Fetch.enable", {"patterns": [{"urlPattern": "*", "requestStage": "Request"}]}
@@ -319,9 +344,12 @@ class BrowserDiscovery:
                     route.continue_()
 
                 context.route("**/*", context_guard)
-                page.on(
-                    "request", lambda request: request_routes.__setitem__(request, route_window)
-                )
+
+                def request_started(request):
+                    request_routes[request] = route_window
+                    active_requests.add(request)
+
+                page.on("request", request_started)
 
                 def response_observed(response, *, finished: bool) -> None:
                     try:
@@ -379,28 +407,45 @@ class BrowserDiscovery:
                         errors.append(error)
 
                 def request_finished(request) -> None:
+                    active_requests.discard(request)
                     response = pending_responses.pop(request, None)
                     if response is not None:
                         response_observed(response, finished=True)
                     else:
                         request_routes.pop(request, None)
 
-                page.on(
-                    "response",
-                    lambda response: pending_responses.__setitem__(response.request, response),
-                )
+                def response_started(response):
+                    if durable_responses is None:
+                        pending_responses[response.request] = response
+
+                def request_failed(request):
+                    active_requests.discard(request)
+                    request_routes.pop(request, None)
+
+                page.on("response", response_started)
+                page.on("requestfailed", request_failed)
                 page.on("requestfinished", request_finished)
-                while queue and stopped not in {"max_browser_requests", "max_candidates"}:
+                while (queue or durable is not None) and stopped not in {
+                    "max_browser_requests",
+                    "max_candidates",
+                }:
                     check()
                     if pages >= options.max_pages:
                         stopped = stopped or "max_pages"
                         break
-                    url, depth, document_method = queue.popleft()
+                    if durable is not None:
+                        work = durable.next_navigation()
+                        if work is None:
+                            break
+                        url, depth, document_method = work
+                    else:
+                        url, depth, document_method = queue.popleft()
                     route_window = url
                     pages += 1
                     timeout = min(
                         options.request_timeout_seconds or 15, max(0.001, deadline - monotonic())
                     )
+                    navigation_success = False
                     try:
                         page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
                         remaining = options.render_wait_ms
@@ -425,6 +470,7 @@ class BrowserDiscovery:
                                     "auto_visit": False,
                                 }
                             )
+                        navigation_success = True
                         if document_method == "HEAD":
                             continue
                         _, items = parse_html(
@@ -444,10 +490,33 @@ class BrowserDiscovery:
                         if document_method != "HEAD":
                             stopped = stopped or "navigation_error"
                     finally:
+                        if durable is not None:
+                            durable.navigation_finished(navigation_success, page.url)
                         route_window = None
                 check()
+                # Freeze new sends before proving the last batch. Playwright may deliver
+                # response callbacks while context.close() pumps its event loop.
+                settling = True
+                settle_deadline = min(
+                    deadline, monotonic() + (options.request_timeout_seconds or 15)
+                )
+                while (
+                    active_requests or (durable_responses and durable_responses.pending)
+                ) and monotonic() < settle_deadline:
+                    check()
+                    page.wait_for_timeout(25)
+                check()
+                if active_requests or (durable_responses and durable_responses.pending):
+                    stopped = stopped or "response_settle_timeout"
+                page.remove_listener("response", response_started)
+                page.remove_listener("requestfinished", request_finished)
+                page.remove_listener("requestfailed", request_failed)
+                page.remove_listener("request", request_started)
                 for response in list(pending_responses.values()):
                     response_observed(response, finished=False)
+                pending_responses.clear()
+                if durable_responses is not None:
+                    durable_responses.close()
                 check()
                 if on_finish:
                     on_finish()

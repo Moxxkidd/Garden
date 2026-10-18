@@ -237,6 +237,8 @@ class HttpScanGateway:
         expected_origin: tuple[str, str, int] | None = None,
         before_request: Callable[[], None] | None = None,
         on_request_attempt: Callable[[str], None] | None = None,
+        on_http_response: Callable | None = None,
+        method: str = "GET",
     ) -> FetchResult:
         started = time.monotonic()
         current = self.policy.normalize_url(url)
@@ -249,6 +251,8 @@ class HttpScanGateway:
                 options,
                 before_request=before_request,
                 on_request_attempt=on_request_attempt,
+                on_http_response=on_http_response,
+                method=method,
             )
             total_attempts += attempts
             if response.status_code in {301, 302, 303, 307, 308}:
@@ -286,6 +290,7 @@ class HttpScanGateway:
             return FetchResult(
                 requested_url=url,
                 final_url=current,
+                method=method,
                 status_code=response.status_code,
                 headers=self._normalize_headers(response.headers),
                 content_type=content_type,
@@ -310,6 +315,8 @@ class HttpScanGateway:
         *,
         before_request: Callable[[], None] | None,
         on_request_attempt: Callable[[str], None] | None = None,
+        on_http_response: Callable | None = None,
+        method: str = "GET",
     ) -> tuple[httpx.Response, bytes, int, bool]:
         retries = options.retry_attempts or 0
         proxy = self.policy.proxy_for_url(url)
@@ -328,7 +335,7 @@ class HttpScanGateway:
                         before_request()
                     if on_request_attempt is not None:
                         on_request_attempt(url)
-                    with client.stream("GET", url) as response:
+                    with client.stream(method, url) as response:
                         chunks: list[bytes] = []
                         size = 0
                         body_truncated = False
@@ -347,6 +354,8 @@ class HttpScanGateway:
                         content_length = response.headers.get("content-length")
                         if content_length and content_length.isdigit():
                             body_truncated = body_truncated or int(content_length) > len(body)
+                if on_http_response is not None:
+                    on_http_response(response.status_code, response.headers.get("retry-after"))
                 if response.status_code not in TRANSIENT_STATUS_CODES:
                     return response, body, attempt, body_truncated
                 if attempt > retries:

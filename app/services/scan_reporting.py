@@ -105,6 +105,17 @@ class ScanReportService:
                             f"E{x}" for x in cell["uncertain_evidence_ids"]
                         )
                 lines.append("| " + self._cell(row["url"]) + " | " + " | ".join(cells) + " |")
+        from app.services.collection_presentation import collection_metric_lines
+        from app.services.collection_queue import CollectionQueueService
+
+        for queue in CollectionQueueService().for_run(session, run.id):
+            lines.extend(["", f"## 持久采集指标 · 上下文 #{queue['context_id']}", ""])
+            lines.extend(collection_metric_lines(queue["metrics"]))
+            lines.append(
+                "已知队列覆盖完成；不代表全站覆盖。"
+                if queue["coverage_complete"]
+                else "已知队列仍未覆盖完整。"
+            )
         metadata = run.asset_metadata
         if isinstance(metadata, dict) and metadata.get("version") == 2:
             from app.services.discovery import SOURCE_KINDS

@@ -22,6 +22,11 @@
       <dt>{{ label }}</dt><dd class="break-all font-medium">{{ preview.effective_options | attr(key) }}</dd>
       {% endfor %}
     </dl>
+    {% if preview.effective_options.durable is not none %}
+    <section class="collection-page"><h2>可恢复增量采集</h2>
+    <p>这些预算按上下文计量；重定向、重试与身份验证也计入。原页面和时间限制继续生效。</p>
+    <dl>{% for field in collection_fields %}<dt>{{ field.label }}</dt><dd>{{ preview.effective_options.durable | attr(field.name) }}</dd>{% endfor %}</dl></section>
+    {% endif %}
     {% if values.get('seed_ref') %}<p>导入或地图输入已临时保留，不在页面回显；15 分钟后需重新提供。</p>{% endif %}
     <p class="text-sm">匿名浏览器仅自动发送 GET/HEAD；表单、JS 和 OpenAPI 声明不会自动执行。</p>
     <ul class="space-y-2 text-sm text-slate-600">{% for issue in preview.issues %}<li>{{ issue.message }}</li>{% endfor %}</ul>

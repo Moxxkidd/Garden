@@ -81,6 +81,7 @@ class IdentityPreviewService:
             "project_entry_id": request.project_entry_id,
             "profiles": profiles,
             "include_anonymous": request.include_anonymous,
+            "durable": request.options.durable.model_dump() if request.options.durable else None,
             "max_pages": request.options.max_pages,
             "max_browser_requests": request.options.max_browser_requests,
             "note": "预览不访问目标。确认后仅 GET/HEAD；身份验证请求也占用请求预算。",

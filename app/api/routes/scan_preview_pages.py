@@ -16,10 +16,16 @@ from app.core.errors import GardenError, InputValidationError, ResourceNotFoundE
 from app.db.bootstrap import session_scope
 from app.schemas.assessment import AssessmentStartRequest
 from app.schemas.scan import ScanOptions
+from app.services.collection_presentation import (
+    COLLECTION_FIELDS,
+    COLLECTION_FORM_KEYS,
+    collection_form_options,
+)
 from app.services.scan_submission_preview import build_preview
 
 router = APIRouter(tags=["scans"])
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[2] / "templates"))
+templates.env.globals["collection_fields"] = COLLECTION_FIELDS
 # Process-local, fixed-size key: restart or another worker requires a fresh preview.
 _SIGNING_KEY = secrets.token_bytes(32)
 _PREVIEW_TTL_SECONDS = 600
@@ -46,6 +52,7 @@ def _form_values(form):
             "target_id",
             "project_entry_id",
             *ScanOptions.model_fields,
+            *COLLECTION_FORM_KEYS,
         )
     }
     now = time.time()
@@ -71,7 +78,15 @@ def _form_values(form):
 
 def _private_options(values):
     raw = _PRIVATE_INPUTS.get(values.get("seed_ref"), (0, {}))[1]
-    return {**{k: values[k] for k in ScanOptions.model_fields if values.get(k, "") != ""}, **raw}
+    return {
+        **{
+            k: values[k]
+            for k in ScanOptions.model_fields
+            if k != "durable" and values.get(k, "") != ""
+        },
+        **raw,
+        "durable": collection_form_options(values),
+    }
 
 
 def _signature(timestamp, values, preview, settings):
@@ -221,5 +236,10 @@ def reuse_scan(request: Request, scan_run_id: int):
     values = {
         key: str(value) if value is not None else "" for key, value in source["options"].items()
     }
+    durable = source["options"].get("durable")
+    values.pop("durable", None)
+    values["durable_enabled"] = "true" if durable is not None else "false"
+    if durable is not None:
+        values.update({"durable_" + key: str(value) for key, value in durable.items()})
     values.update(url=source["url"], rerun_of_run_id=str(source["id"]))
     return _render(request, values, errors=_missing_reuse_values(values))

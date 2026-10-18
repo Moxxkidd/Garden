@@ -6,9 +6,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from app.models.enums import AssessmentMode, CompletenessStatus, ContextKind
+from app.schemas.collection_queue import CollectionOptions
 from app.schemas.coverage_gap import CoverageGapView
 
 
@@ -36,6 +37,7 @@ class ScanStageName(str, Enum):
 class ScanOptions(BaseModel):
     """Bounded user controls; infrastructure defaults are injected by the service."""
 
+    durable: CollectionOptions | None = None
     collection_mode: Literal["http", "browser"] = "http"
     sitemap_enabled: bool = False
     sitemap_url: str = Field(default="", max_length=2000)
@@ -153,6 +155,7 @@ class ScanRunView(BaseModel):
 
 
 class FetchResult(BaseModel):
+    _collection_attempt_id: int | None = PrivateAttr(default=None)
     method: str = "GET"
     route_url: str | None = None
     requested_url: str

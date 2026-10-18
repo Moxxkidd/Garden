@@ -217,6 +217,9 @@ def test_stop_interrupts_active_scans_and_stops_ui(monkeypatch):
             calls.append("interrupt")
             return 2
 
+        def shutdown(self):
+            calls.append("shutdown")
+
     class Manager:
         def __init__(self, **kwargs):
             pass
@@ -230,7 +233,7 @@ def test_stop_interrupts_active_scans_and_stops_ui(monkeypatch):
     result = runner.invoke(app, ["stop"])
 
     assert result.exit_code == 0
-    assert calls == ["interrupt", "stop"]
+    assert calls == ["stop", "interrupt", "shutdown"]
     assert "已中断 2 个活动扫描" in result.stdout
 
 

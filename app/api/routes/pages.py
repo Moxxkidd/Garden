@@ -8,10 +8,12 @@ from fastapi.templating import Jinja2Templates
 
 from app.core.settings import get_settings
 from app.db.bootstrap import session_scope
+from app.services.collection_presentation import COLLECTION_FIELDS
 from app.services.dashboard import DashboardService
 from app.services.scan_result_presentation import coverage_summary, format_execution_progress
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[2] / "templates"))
+templates.env.globals["collection_fields"] = COLLECTION_FIELDS
 templates.env.globals.update(
     coverage_summary=coverage_summary,
     format_execution_progress=format_execution_progress,

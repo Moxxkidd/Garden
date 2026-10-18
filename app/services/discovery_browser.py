@@ -13,7 +13,16 @@ class AnonymousDiscoveryBrowser(BrowserDiscovery):
         on_candidate,
         seed_urls=None,
         on_attempt=None,
+        *,
+        durable=None,
     ):
         return super().collect(
-            start_url, options, before_request, on_response, on_candidate, seed_urls, on_attempt
+            start_url,
+            options,
+            before_request,
+            on_response,
+            on_candidate,
+            seed_urls,
+            on_attempt,
+            durable=durable,
         )

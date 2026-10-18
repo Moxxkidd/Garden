@@ -152,7 +152,11 @@ def _observation(index, finding):
 
 
 def _options(run):
-    if any(key not in run.options or run.options[key] is None for key in ScanOptions.model_fields):
+    if any(
+        key not in run.options or run.options[key] is None
+        for key in ScanOptions.model_fields
+        if key != "durable"
+    ):
         return None
     try:
         options = ScanOptions.model_validate(run.options).model_dump()

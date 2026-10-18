@@ -90,16 +90,57 @@ class InlineScanDispatcher:
 
 
 class ThreadedScanDispatcher:
-    def __init__(self, max_workers: int) -> None:
-        self.executor = ThreadPoolExecutor(
-            max_workers=max_workers, thread_name_prefix="garden-scan"
-        )
+    # Anonymous and identity services in one database share a bounded pool.
+    _pools = {}
+    _pool_lock = threading.RLock()
+
+    def __init__(self, max_workers: int, *, database_url: str | None = None) -> None:
+        self.key = database_url or get_settings().database_url
+        self.closed = False
+        self.futures = set()
+        with self._pool_lock:
+            pool = self._pools.get(self.key)
+            if pool is not None and pool[2] != max_workers:
+                raise ConflictError("scan_worker_configuration_changed")
+            if pool is None:
+                pool = [
+                    ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="garden-scan"),
+                    0,
+                    max_workers,
+                ]
+                self._pools[self.key] = pool
+            pool[1] += 1
+            self.executor = pool[0]
 
     def submit(self, scan_run_id: int, callback) -> None:
-        self.executor.submit(callback, scan_run_id)
+        with self._pool_lock:
+            if self.closed:
+                raise RuntimeError("scan_dispatcher_closed")
+            future = self.executor.submit(callback, scan_run_id)
+            self.futures.add(future)
+            future.add_done_callback(self._finished)
+
+    def _finished(self, future):
+        with self._pool_lock:
+            self.futures.discard(future)
 
     def shutdown(self) -> None:
-        self.executor.shutdown(wait=True, cancel_futures=False)
+        from concurrent.futures import wait
+
+        with self._pool_lock:
+            if self.closed:
+                return
+            self.closed = True
+            pending = tuple(self.futures)
+        wait(pending)
+        with self._pool_lock:
+            pool = self._pools[self.key]
+            pool[1] -= 1
+            last = pool[1] == 0
+            if last:
+                del self._pools[self.key]
+        if last:
+            self.executor.shutdown(wait=True, cancel_futures=False)
 
 
 class ScanApplicationService:
@@ -119,9 +160,18 @@ class ScanApplicationService:
             policy = TargetNetworkPolicy(self.settings)
             pipeline = ScanPipeline(policy=policy, gateway=HttpScanGateway(policy))
         self.pipeline = pipeline
+        self.collection_executor = None
         self.dispatcher = dispatcher or ThreadedScanDispatcher(
-            self.settings.scan_max_concurrent_tasks
+            self.settings.scan_max_concurrent_tasks, database_url=self.settings.database_url
         )
+
+    def ensure_collection_executor(self):
+        if self.collection_executor is None:
+            from app.services.collection_executor import CollectionExecutor
+
+            owner = CollectionExecutor(self.settings.database_url)
+            owner.acquire()
+            self.collection_executor = owner
 
     def start_scan(
         self, url: str, options: ScanOptions | None = None, *, project_entry_id: int | None = None
@@ -136,15 +186,20 @@ class ScanApplicationService:
         )
         return ScanRunView.model_validate(assessment.model_dump())
 
-    def start_assessment(self, request: AssessmentStartRequest) -> AssessmentRunView:
+    def start_assessment(
+        self, request: AssessmentStartRequest, *, collection_plan=None
+    ) -> AssessmentRunView:
         resolved = self._resolve_options(request.options)
+        if resolved.durable is not None:
+            self.ensure_collection_executor()
         normalized = self.pipeline.policy.normalize_url(request.url)
         from app.services.discovery_sources import parse_seed_input
 
         if resolved.seed_input:
             parse_seed_input(resolved.seed_input, resolved.seed_format, base_url=normalized)
         if request.mode != AssessmentMode.QUICK and (
-            resolved.collection_mode != "http"
+            resolved.durable is not None
+            or resolved.collection_mode != "http"
             or resolved.sitemap_enabled
             or resolved.js_enabled
             or resolved.seed_input
@@ -166,7 +221,22 @@ class ScanApplicationService:
                     or original.target_id != target_id
                 ):
                     raise InputValidationError("沿用配置仅支持同一 Target 的被动匿名任务。")
+            if collection_plan is not None:
+                collection_plan.validate(session)
+                from app.models.collection_queue import CollectionQueue
+
+                previous = session.scalar(
+                    select(CollectionQueue).where(
+                        CollectionQueue.resume_token == collection_plan.token
+                    )
+                )
+                if previous is not None:
+                    return self._assessment_view(session.get(ScanRun, previous.run_id))
             active_key = self._active_key(normalized, request, resolved, target_id)
+            if collection_plan is not None:
+                active_key = hashlib.sha256(
+                    (active_key + collection_plan.token).encode()
+                ).hexdigest()
             existing = session.scalar(select(ScanRun).where(ScanRun.active_key == active_key))
             if existing is not None:
                 if request.project_entry_id is not None:
@@ -233,6 +303,9 @@ class ScanApplicationService:
                         session.refresh(existing)
                     return self._assessment_view(existing)
                 raise
+            if collection_plan is not None:
+                # The flush acquired the SQLite writer lock; recheck before publishing work.
+                collection_plan.validate(session)
             if resolved.seed_input or resolved.sitemap_url:
                 from app.services.session_storage import SessionStorageService
 
@@ -243,6 +316,9 @@ class ScanApplicationService:
                 )
             session.add_all(self._assessment_contexts(session, run, request))
             create_assessment_stages(session, run)
+            from app.services.collection_queue import prepare_queues
+
+            prepare_queues(session, run, resolved, normalized, plan=collection_plan)
             if request.project_entry_id is not None:
                 ProjectLifecycleService().attach(
                     session,
@@ -313,16 +389,27 @@ class ScanApplicationService:
     def interrupt_active_scans(self) -> int:
         """在服务启动时收敛上次异常退出遗留的活动扫描。"""
 
+        from app.models.collection_queue import CollectionQueue
+        from app.services.collection_queue import CollectionQueueService
+
+        self.ensure_collection_executor()
         with session_scope() as session:
+            queues = CollectionQueueService()
+            live_runs = select(CollectionQueue.run_id).where(
+                CollectionQueue.lease_token.is_not(None),
+                CollectionQueue.lease_until > queues.clock(),
+            )
             active_ids = list(
                 session.scalars(
                     select(ScanRun.id).where(
                         ScanRun.status.in_(
                             [ScanRunStatus.QUEUED.value, ScanRunStatus.RUNNING.value]
-                        )
+                        ),
+                        ScanRun.id.not_in(live_runs),
                     )
                 )
             )
+            queues.recover_expired(session)
             for scan_run_id in active_ids:
                 run = self._get(session, scan_run_id)
                 self._mark_interrupted(run)
@@ -456,6 +543,9 @@ class ScanApplicationService:
         shutdown = getattr(self.dispatcher, "shutdown", None)
         if shutdown is not None:
             shutdown()
+        if self.collection_executor is not None:
+            self.collection_executor.close()
+            self.collection_executor = None
 
     def _mark_dispatch_failed(self, scan_run_id: int) -> None:
         with session_scope() as session:
@@ -498,7 +588,19 @@ class ScanApplicationService:
         if run.mode != AssessmentMode.AUTHENTICATED_COVERAGE.value:
             raise InputValidationError("Only authenticated coverage runs are assessments.")
 
-    def _mark_interrupted(self, run: ScanRun) -> None:
+    @staticmethod
+    def settle_expired_collection(session, run_id, *, queues):
+        """Explicit recovery may retire a source skipped during a recent restart."""
+        run = session.get(ScanRun, run_id, populate_existing=True)
+        if run.status not in {"queued", "running"}:
+            return False
+        queues.recover_expired(session, run_id=run_id)
+        ScanApplicationService._mark_interrupted(run)
+        run.completeness = "incomplete"
+        return True
+
+    @staticmethod
+    def _mark_interrupted(run: ScanRun) -> None:
         now = datetime.now(timezone.utc)
         run.status = ScanRunStatus.INTERRUPTED.value
         run.current_stage = ScanRunStatus.INTERRUPTED.value

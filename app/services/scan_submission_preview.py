@@ -82,6 +82,13 @@ def _inspect(session, request: AssessmentStartRequest, settings: Settings) -> Sc
     ):
         error("discovery_mode_invalid", "mode", "增强发现选项目前仅适用于匿名 quick 扫描。")
 
+    if request.mode.value != "quick" and options.durable is not None:
+        error(
+            "durable_mode_unsupported",
+            "durable",
+            "持久采集仅支持匿名 quick 和独立身份采集；固定三身份覆盖请关闭此选项。",
+        )
+
     if request.active_checks_enabled:
         error("active_mode_not_supported", "mode", "此预览仅支持普通扫描与被动认证覆盖。")
 

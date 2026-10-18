@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         app.state.manual_login.shutdown()
-        app.state.identity_collection.dispatcher.shutdown()
+        app.state.identity_collection.shutdown()
         app.state.scan_service.shutdown()
         logger.info("Shutting down Garden application")
 

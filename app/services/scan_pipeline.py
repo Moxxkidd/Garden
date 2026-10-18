@@ -632,6 +632,10 @@ class ScanPipeline:
         options: ScanOptions,
         deadline: float,
     ):
+        if options.durable is not None and options.collection_mode == "http":
+            from app.services.collection_http import collect_http
+
+            return collect_http(self, session, run, options, deadline)
         if options.collection_mode == "browser":
             from app.services.discovery_scan import ScanDiscovery
 

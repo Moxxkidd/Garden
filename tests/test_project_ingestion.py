@@ -7,6 +7,37 @@ from app.services.project_ingestion import ProjectIngestionService
 from tests.helpers.project_assets import import_request, project_fixture, source_run
 
 
+def test_import_metrics_distinguish_new_subjects_from_repeat_observations(seeded_records):
+    service = ProjectIngestionService()
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        pid = project.id
+        first_run = source_run(session, target)
+        second_run = source_run(session, target, day=2)
+        previews = []
+        for run in [first_run, second_run]:
+            preview = service.preview(session, pid, import_request(entry, run))
+            membership = service.confirm(session, pid, preview.token)
+            previews.append((membership.id, run.contexts[0].id))
+    with session_scope() as session:
+        first, second = service.runs(session, pid)
+        assert first.snapshot["ingestion_metrics"] == {
+            "version": 1,
+            "new_subjects": 1,
+            "new_observations": 1,
+            "contexts": {str(previews[0][1]): {"new_subjects": 1, "new_observations": 1}},
+        }
+        assert second.snapshot["ingestion_metrics"] == {
+            "version": 1,
+            "new_subjects": 0,
+            "new_observations": 1,
+            "contexts": {str(previews[1][1]): {"new_subjects": 0, "new_observations": 1}},
+        }
+        frozen = dict(first.snapshot["ingestion_metrics"])
+        assert service.sync(session, first.id).snapshot["ingestion_metrics"] == frozen
+
+
 def test_ingestion_retries_preserve_history_and_refuse_changed_source(seeded_records):
     service = ProjectIngestionService()
     with session_scope() as session:
