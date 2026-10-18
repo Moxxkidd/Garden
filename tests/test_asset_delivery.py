@@ -42,6 +42,7 @@ def test_delivery_filters_full_export_and_revision_bound_pages(seeded_records):
 def test_variants_survive_source_removal_and_legacy_is_unknown(seeded_records):
     from app.models.project import ProjectRun
     from app.models.scan_request import ScanRequest
+    from app.models.scan_run import ScanRun
     from app.services.asset_delivery import AssetDeliveryService
 
     with session_scope() as session:
@@ -68,8 +69,18 @@ def test_variants_survive_source_removal_and_legacy_is_unknown(seeded_records):
         assert result["items"][0]["identity_status"] == "known"
         assert "synthetic-secret" not in json.dumps(result)
         assert "a" * 40 not in json.dumps(result)
+        # This fixture simulates source removal, not a product deletion API.
+        # View-only request/asset relationships do not order ORM cascades.
+        source_id = run.id
+        request_ids = [request.id for request in run.requests]
+        for request in list(run.requests):
+            session.delete(request)
+        session.flush()
+        session.expire(run, ["requests"])
         session.delete(run)
         session.flush()
+        assert session.get(ScanRun, source_id) is None
+        assert all(session.get(ScanRequest, request_id) is None for request_id in request_ids)
         after = AssetDeliveryService().page(session, project.id, ProjectQuery(), dataset="variants")
         assert after == result
         stored = session.get(ProjectRun, indexed.id)

@@ -58,3 +58,11 @@ RED/GREEN：首次公开服务用例因服务不存在失败；实现后通过�
 最终全量 **915 passed** 在版本号已改为 0.9.0 后运行，覆盖两处发布版本断言。本版新增 5 个行为测试，合计一次完整回归；没有为无关假设新增防御分支或扩大采集功能。当前环境 macOS / Python 3.10.10，全量浏览器串行；Python 3.12.14 成品安装升级冒烟通过。未运行本版 Linux CI，不能借用 v0.8 远端成功结果当作本版结果。
 
 剩余限制：完整下载和当前分页投影在内存组织筛选结果，未做流式大型文件交付或新的性能承诺；旧快照变体不自动补建；OpenAPI 仍需人工审核。没有新 migration，数据库 head 保持 0011。下一步是用户授权后的推送与 PR，不自动执行。
+
+### PR #39 CI 修正（2026-10-19）
+
+提交 5890efb 的 GitHub Actions run 39147206620 在 Linux/Python 3.10 与 3.12 均因同一用例 `test_variants_survive_source_removal_and_legacy_is_unknown` 失败；CLI smoke 与 Docker build 通过。失败是夹具直接 `session.delete(run)` 时先删 scan_assets，仍存在 scan_requests 引用，触发 FOREIGN KEY constraint failed。请求到资产的 view-only ORM 关系不提供删除排序，当前项目也没有正式源扫描删除入口。
+
+本地 macOS/Python 3.10 运行 `PYTHONPATH=. /Users/an/Documents/Garden/.venv/bin/python -m pytest tests/test_asset_delivery.py::test_variants_survive_source_removal_and_legacy_is_unknown -q -o addopts=''` 复现同一外键错误；固定 PYTHONHASHSEED=0 的另一次进程却通过。这说明此前一次 915 passed 不能证明夹具的跨进程稳定性，并非仅 Linux 问题。
+
+最小修正只调整该测试：先删除捕获请求并 flush，再删除源扫描，明确断言源扫描与请求确已消失，继续比较完整导出快照及旧记录 unknown 语义。不放宽外键、不跳过测试、不改产品删除语义。针对性命令 `PYTHONPATH=. /Users/an/Documents/Garden/.venv/bin/python -m pytest tests/test_asset_delivery.py tests/test_project_catalog.py tests/test_project_ingestion.py -q -o addopts='' --tb=short`：16 passed / 5.11s；Ruff check、format check（370 文件）、git diff --check 通过。修正后的完整 Linux 双版本回归交给 PR CI；本次未重复本地 13 分钟全量测试。
