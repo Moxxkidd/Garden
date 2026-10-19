@@ -16,6 +16,19 @@ URL
   → Markdown 报告
 ```
 
+## v0.9.0：资产交付与集成
+
+项目清单可将当前筛选直接带入「资产交付」：分别下载主体、请求变体、身份观察、候选和关系；项目比较页可交付变更清单。版本化 JSON Schema 与修订绑定分页便于系统消费，JSON/CSV 导出全部匹配结果，Markdown/HTML 提供概要与证据入口。
+
+```bash
+garden projects deliver 1 --dataset observations --format json
+garden projects deliver 1 --dataset variants --format csv
+garden projects deliver 1 --dataset changes --before-run-id 2 --after-run-id 3
+garden projects deliver 1 --dataset observations --format openapi
+```
+
+OpenAPI 是已观察接口的推断草稿，不猜测鉴权、正文或响应 schema。旧快照未记录的请求变体明确为未知，不读取私有材料补猜。原有导出接口保持兼容，无新增数据库迁移；当前迁移仍为 `0011`。[交付契约、分页示例与限制](docs/asset-delivery-v1.md)。尚未发布。
+
 ## v0.8.0：持久队列与增量补采
 
 扫描可以显式启用持久队列。请求预算、已观察工作、未完成原因和发送尝试一起保存；暂停后停止新增请求，在途请求收尾。进程重启本身不会访问目标，补采必须先预览，再确认创建关联的新任务，原任务和报告保留。

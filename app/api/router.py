@@ -7,6 +7,7 @@ from app.api.routes.assets import router as assets_router
 from app.api.routes.collection_pages import router as collection_pages_router
 from app.api.routes.collection_queue import router as collection_queue_router
 from app.api.routes.credentials import router as credentials_router
+from app.api.routes.delivery import router as delivery_router
 from app.api.routes.demo_auth import router as demo_auth_router
 from app.api.routes.evidence import router as evidence_router
 from app.api.routes.findings import router as findings_router
@@ -23,6 +24,7 @@ from app.api.routes.sessions import router as sessions_router
 from app.api.routes.targets import router as targets_router
 
 api_router = APIRouter()
+api_router.include_router(delivery_router)
 api_router.include_router(collection_queue_router)
 api_router.include_router(collection_pages_router)
 api_router.include_router(projects_router)

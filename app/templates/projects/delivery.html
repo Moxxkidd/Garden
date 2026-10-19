@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="project-page" hx-boost="false">
+<a href="/projects/{{ project_id }}/assets">返回项目清单</a>
+<h1>资产交付</h1>
+<p>格式 delivery-v1 · 项目修订 {{ result.revision }} · 全部筛选匹配 {{ result.matched }} 条</p>
+<p>下载包含全部筛选结果，不限于当前预览的 {{ result['items']|length }} 条。Markdown/HTML 仅为概要；OpenAPI 为推断草稿。</p>
+<form method="get" action="/projects/{{ project_id }}/delivery">
+<div class="project-grid">
+<label>交付数据集<select name="dataset">{% for value,label in [('assets','资产主体'),('observations','身份观察'),('variants','请求变体'),('candidates','未请求候选'),('relations','来源关系'),('changes','两次运行的变更')] %}<option value="{{ value }}" {% if dataset == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label>关键词<input name="q" value="{{ query.q }}" maxlength="200"></label>
+<label>标签<input name="tag" value="{{ query.tag or '' }}"></label>
+</div>
+<details><summary>筛选与比较范围</summary><div class="project-grid">
+{% for field,label in [('site','Origin'),('kind','类型'),('method','HTTP 方法'),('identity_key','身份标识'),('asset_id','展示主体 ID'),('original_asset_id','原始主体 ID'),('project_run_id','项目运行 ID'),('seen_from','观察时间起'),('seen_to','观察时间止')] %}
+<label>{{ label }}<input name="{{ field }}" value="{{ query|attr(field) or '' }}"></label>{% endfor %}
+<label>比较：较早项目运行 ID<input name="before_run_id" type="number" min="1" value="{{ before_run_id or '' }}"></label>
+<label>比较：较晚项目运行 ID<input name="after_run_id" type="number" min="1" value="{{ after_run_id or '' }}"></label>
+</div><p>变更清单仅接受两次项目运行；切换到变更时请清空资产筛选。未再次观察不表示已删除。</p></details>
+<input type="hidden" name="sort" value="{{ query.sort }}"><input type="hidden" name="order" value="{{ query.order }}">
+<button>预览交付范围</button>
+</form>
+<p>{% for format,url in exports.items() %}<a href="{{ url }}">下载 {{ format|upper }}{% if format == 'openapi' %} 草稿{% endif %}</a> {% endfor %}</p>
+<p><a href="{{ api_url }}">稳定分页 API</a> · <a href="/api/delivery/schema">JSON Schema</a></p>
+<p>分页使用 next_cursor；项目变更后返回 409 并要求重读，避免静默漏行。Cookie、令牌值和完整敏感请求不进入交付文件。</p>
+{% for note in result.limitations %}<p>{{ note }}</p>{% endfor %}
+<p>覆盖来源 {{ result.coverage_summary.sources }}；不完整 {{ result.coverage_summary.incomplete_sources }}；未知 {{ result.coverage_summary.unknown_sources }}。</p>
+{% for row in result['items'] %}<article>
+<h2>{{ {'asset':'资产主体','observation':'身份观察','variant':'请求变体','candidate':'候选','relation':'关系','change':'变更'}.get(row.record_type, row.record_type) }} · {{ row.id }}</h2>
+{% if row.record_type == 'asset' %}<p>{{ row.method or '方法未知' }} {{ row.url }}</p><p>观察 {{ row.observation_count }} 条 · 最近观察 {{ row.last_seen or '未知' }}</p>
+{% elif row.record_type in ['observation','candidate'] %}<p>{{ row.record.method or '方法未知' }} {{ row.record.url }}</p><p>响应 {{ row.record.status_codes|join(', ') or '未知' }} · {{ row.record.context }} · 覆盖 {{ row.record.context_completeness or '未知' }}</p><a href="{{ row.record.source_url }}">查看来源证据</a>
+{% elif row.record_type == 'variant' %}<p>身份 {{ row.identity_key }} · {{ '已识别变体' if row.identity_status == 'known' else '变体身份未知' }}</p><p>{{ row.note }}</p>
+{% elif row.record_type == 'relation' %}<p>{{ row.kind }} · {{ row.from_asset_id or '来源主体未知' }} → {{ row.to_asset_id or '目标主体未知' }}</p>
+{% else %}<p>{{ {'newly_observed':'新观察','attributes_changed':'属性变化','unchanged':'未变化','not_observed':'本轮未观察','unknown':'无法比较'}.get(row.status,row.status) }}</p><p>{{ row.reasons|join(' · ') }}</p>{% endif %}
+</article>{% else %}<p>此范围没有匹配记录；空导出仍保留范围和覆盖说明。</p>{% endfor %}
+</section>
+{% endblock %}
