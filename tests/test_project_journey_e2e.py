@@ -1,6 +1,7 @@
 """Real local two-origin project journey, without JavaScript or external services."""
 
 import json
+import time
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -10,12 +11,23 @@ from playwright.sync_api import expect, sync_playwright
 from app.db.bootstrap import session_scope
 from app.models.target import Target
 from app.schemas.target import TargetCreate
+from app.services.project_lifecycle import ProjectLifecycleService
 from app.services.scan_reporting import ScanReportService
 from app.services.targets import TargetService
 from tests.test_scan_preview_e2e import _serve
 
 
-def test_two_origins_project_scan_history_and_download_without_js(app, seeded_records, tmp_path):
+def test_two_origins_project_scan_history_and_download_without_js(
+    app, seeded_records, tmp_path, monkeypatch
+):
+    original_retry = ProjectLifecycleService.retry
+
+    def delayed_index(self, project_run_id):
+        # Scan completion is published before independently retryable indexing.
+        time.sleep(1)
+        return original_retry(self, project_run_id)
+
+    monkeypatch.setattr(ProjectLifecycleService, "retry", delayed_index)
     site = FastAPI()
 
     @site.get("/", response_class=HTMLResponse)
@@ -83,6 +95,22 @@ def test_two_origins_project_scan_history_and_download_without_js(app, seeded_re
                     run = app.state.scan_service.wait_for_completion(run_id, timeout_seconds=30)
                     assert run.status in {"completed", "completed_with_warnings"}
                     reports.append((Path(run.report_path), Path(run.report_path).read_bytes()))
+                # A no-JavaScript page is a snapshot: wait for project indexing,
+                # not only the source scan's terminal status, before loading it.
+                deadline = time.monotonic() + 10
+                while True:
+                    response = page.request.get(
+                        garden + "/api/projects/" + project_url.rsplit("/", 1)[1]
+                    )
+                    assert response.status == 200
+                    memberships = response.json()["runs"]
+                    assert not any(r["status"] == "failed" for r in memberships), memberships
+                    if len(memberships) == len(targets) and all(
+                        r["status"] == "complete" for r in memberships
+                    ):
+                        break
+                    assert time.monotonic() < deadline, memberships
+                    time.sleep(0.05)
                 page.goto(project_url + "/assets")
                 expect(page.get_by_text("4 个主体", exact=False)).to_be_visible()
                 page.get_by_role("link", name=first + "/asset", exact=True).click()
