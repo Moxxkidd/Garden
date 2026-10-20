@@ -407,12 +407,16 @@ class BrowserDiscovery:
                         errors.append(error)
 
                 def request_finished(request) -> None:
-                    active_requests.discard(request)
-                    response = pending_responses.pop(request, None)
-                    if response is not None:
-                        response_observed(response, finished=True)
-                    else:
-                        request_routes.pop(request, None)
+                    try:
+                        response = pending_responses.pop(request, None)
+                        if response is not None:
+                            response_observed(response, finished=True)
+                        else:
+                            request_routes.pop(request, None)
+                    finally:
+                        # Reading headers/body yields to Playwright. Keep the request
+                        # active until its observation is persisted before final proof.
+                        active_requests.discard(request)
 
                 def response_started(response):
                     if durable_responses is None:

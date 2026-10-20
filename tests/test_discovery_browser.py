@@ -28,7 +28,8 @@ def site():
             kind = "application/json"
             if self.path == "/":
                 kind = "text/html"
-                body = b"""<a href="#/one">One</a><a href="#!/two">Two</a>
+                body = b"""<link rel="icon" href="data:,">
+<a href="#/one">One</a><a href="#!/two">Two</a>
 <a href="#section">Anchor</a><form method="post" action="/form"></form>
 <script>
 setTimeout(() => fetch('/delayed'), 20);

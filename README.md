@@ -16,6 +16,19 @@ URL
   → Markdown 报告
 ```
 
+## v1.0.0：可重复的质量验收
+
+提供六维合成质量基线：发现、归并、可信度、数据完整性、持续更新和边界控制。报告记录实际执行结果、提交与环境，列出缺失、跳过及失败检查，并给出固定语料的发现召回、候选确认与误合并计数。
+
+```bash
+# 从源码仓库、安装开发依赖和 Chromium 后运行
+python scripts/quality_baseline.py
+# 发布准备：全量只运行一次，同时提取质量门禁
+python scripts/quality_baseline.py --full
+```
+
+默认输出 `.verification/quality/quality.md` 与 `quality.json`。CI 的两个 Python 任务也保存同类报告。**合成测试通过不代表真实站点发现率 100%，也不代表已发布。** 当前为 v1.0.0 发布准备，仍需远端 Linux CI 验证；无新增依赖、数据库迁移或扫描动作。[验收口径与发布检查](docs/quality/README.md)。
+
 ## v0.9.0：资产交付与集成
 
 项目清单可将当前筛选直接带入「资产交付」：分别下载主体、请求变体、身份观察、候选和关系；项目比较页可交付变更清单。版本化 JSON Schema 与修订绑定分页便于系统消费，JSON/CSV 导出全部匹配结果，Markdown/HTML 提供概要与证据入口。

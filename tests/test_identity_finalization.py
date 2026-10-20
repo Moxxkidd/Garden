@@ -25,8 +25,20 @@ from tests.test_scan_preview_e2e import _serve
 
 @pytest.mark.parametrize("settle_timeout", [False, True])
 def test_response_finishing_during_final_identity_proof_is_not_left_uncertain(
-    seeded_records, tmp_path, settle_timeout
+    seeded_records, tmp_path, settle_timeout, monkeypatch
 ):
+    # Header retrieval yields to Playwright's event loop. Hold this callback
+    # across a settle-loop tick so finalization cannot outrun persistence.
+    from playwright.sync_api import Response
+
+    original_headers = Response.all_headers
+
+    def delayed_headers(response):
+        if not settle_timeout and response.url.endswith("/asset"):
+            response.request.frame.page.wait_for_timeout(100)
+        return original_headers(response)
+
+    monkeypatch.setattr(Response, "all_headers", delayed_headers)
     release = threading.Event()
     body_started = threading.Event()
     calls = []

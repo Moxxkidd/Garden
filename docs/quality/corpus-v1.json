@@ -1,0 +1,70 @@
+{
+  "version": "synthetic-v1",
+  "dimensions": [
+    {
+      "name": "发现能力",
+      "tests": [
+        "tests/test_quality_corpus.py::test_fixed_browser_discovery_metrics",
+        "tests/test_collection_browser_e2e.py::test_browser_sitemap_discovers_and_visits_hidden_asset",
+        "tests/test_collection_identity_e2e.py::test_identity_health_and_business_share_durable_request_budget"
+      ]
+    },
+    {
+      "name": "归并准确性",
+      "tests": [
+        "tests/test_quality_corpus.py::test_fixed_grouping_metrics",
+        "tests/test_asset_grouping.py::test_grouping_keeps_origin_method_path_and_query_multiplicity",
+        "tests/test_asset_validity.py::test_identical_responses_do_not_combine_identity_contexts"
+      ]
+    },
+    {
+      "name": "结果可信度",
+      "tests": [
+        "tests/test_asset_validity.py::test_passive_signals_keep_origin_context_and_response_differences",
+        "tests/test_asset_validity.py::test_login_fallback_and_redirect_alias_require_evidence",
+        "tests/test_coverage_gaps.py::test_failed_identity_has_unknown_coverage_without_exposing_exception"
+      ]
+    },
+    {
+      "name": "数据完整性",
+      "tests": [
+        "tests/test_asset_delivery.py::test_variants_survive_source_removal_and_legacy_is_unknown",
+        "tests/test_asset_delivery.py::test_delivery_api_cli_web_schema_and_escaped_summary",
+        "tests/test_asset_surfaces.py::test_large_export_and_context_filter_do_not_truncate_or_reorder",
+        "tests/test_project_export.py::test_exports_preserve_failed_zero_observation_coverage"
+      ]
+    },
+    {
+      "name": "持续更新",
+      "tests": [
+        "tests/test_project_comparison.py::test_missing_requires_complete_comparable_coverage",
+        "tests/test_collection_resume.py::test_known_work_resume_creates_linked_run_and_preserves_original_report",
+        "tests/test_collection_identity_e2e.py::test_queued_identity_change_requires_new_confirmation",
+        "tests/test_identity_finalization.py::test_response_finishing_during_final_identity_proof_is_not_left_uncertain"
+      ]
+    },
+    {
+      "name": "边界控制",
+      "tests": [
+        "tests/test_discovery_browser.py::test_real_browser_dynamic_hash_and_readonly_boundary",
+        "tests/test_authenticated_network_boundaries.py::test_authenticated_inventory_blocks_cross_origin_redirect_before_request",
+        "tests/test_collection_http.py::test_durable_http_uses_real_scan_entry_and_retains_uncovered_work",
+        "tests/test_asset_surfaces.py::test_invalid_and_missing_scopes_never_fall_back_to_all_assets"
+      ]
+    }
+  ],
+  "metrics": {
+    "discovery_recall": {
+      "min": 1.0,
+      "definition": "固定浏览器语料中已观察到的预期路径 / 三个预期路径；不包含真实站点。"
+    },
+    "candidate_confirmation": {
+      "min": 1.0,
+      "definition": "固定浏览器语料中已观察的可自动访问同源 GET 候选路径 / 该类候选路径；按路径去重，不含 POST。"
+    },
+    "false_merge_rate": {
+      "max": 0.0,
+      "definition": "固定归并语料中被错误合并的不同路由族样本对 / 全部不同路由族样本对；不是参数值语义准确率。"
+    }
+  }
+}

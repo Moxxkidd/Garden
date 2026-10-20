@@ -41,7 +41,16 @@ jobs:
         run: ruff format --check .
 
       - name: Run tests
-        run: pytest -q
+        run: python scripts/quality_baseline.py --full --output .verification/quality
+
+      - name: Upload quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-python-${{ matrix.python-version }}
+          path: .verification/quality/
+          include-hidden-files: true
+          if-no-files-found: warn
 
   docker-build:
     name: Docker build
