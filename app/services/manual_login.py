@@ -75,11 +75,15 @@ class ManualBrowser:
 
     def close(self):
         try:
-            if self.browser:
-                self.browser.close()
+            if self.context:
+                self.context.close()
         finally:
-            if self.pw:
-                self.pw.stop()
+            try:
+                if self.browser:
+                    self.browser.close()
+            finally:
+                if self.pw:
+                    self.pw.stop()
 
 
 class _Worker:
