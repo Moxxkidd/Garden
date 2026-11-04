@@ -33,7 +33,13 @@
     bar.firstElementChild.style.width = `${state.progress}%`;
     (state.stages || []).forEach(stage => {
       const card = [...root.querySelectorAll('[data-stage]')].find(el => el.dataset.stage === stage.name);
-      if (card) card.querySelector('[data-stage-status]').textContent = stage.status;
+      if (card) {
+        card.querySelector('[data-stage-status]').textContent = stage.status;
+        card.querySelector('[data-stage-summary]').textContent = {
+          pending: '尚未开始', running: '阶段执行中', completed: '阶段已结束，详情见最终报告',
+          failed: '阶段失败，详情见最终诊断', skipped: '阶段已跳过', interrupted: '阶段已中断'
+        }[stage.status] || stage.status;
+      }
     });
     tick();
     if (!active(state)) {
