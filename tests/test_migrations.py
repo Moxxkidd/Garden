@@ -86,7 +86,7 @@ def test_stamp_existing_database_preserves_rows(tmp_path):
 
     with engine.connect() as connection:
         assert connection.scalar(text("select count(*) from targets")) == 1
-        assert connection.scalar(text("select version_num from alembic_version")) == "0011"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0012"
 
 
 def test_legacy_scan_assets_are_backfilled_into_anonymous_context(tmp_path):
@@ -180,7 +180,7 @@ def test_unified_assessment_migration_round_trip(tmp_path):
 
     upgrade_database(url)
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0011"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0012"
 
 
 def test_application_requires_explicit_stamp_for_unversioned_legacy_database(tmp_path, monkeypatch):
@@ -234,7 +234,7 @@ def test_application_auto_migrates_fresh_database_in_development(tmp_path, monke
         assert client.get("/healthz").status_code == 200
 
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0011"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0012"
 
 
 def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
@@ -247,7 +247,7 @@ def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
     current_result = runner.invoke(cli_app, ["db", "current"])
 
     assert upgrade_result.exit_code == 0
-    assert "0011" in current_result.stdout
+    assert "0012" in current_result.stdout
 
 
 def test_database_cli_stamp_existing_preserves_legacy_rows(tmp_path, monkeypatch):
@@ -590,3 +590,46 @@ def test_discovery_migration_preserves_nullable_legacy_metadata(tmp_path):
             assert '"version": 1' in row[2]
             assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
         downgrade_database(url, "0006")
+
+
+@pytest.mark.parametrize("shape", ["missing", "manual", "normal"])
+def test_known_context_drift_upgrade_preserves_data_and_uniqueness(tmp_path, shape):
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    database = tmp_path / "drift.db"
+    url = f"sqlite:///{database}"
+    upgrade_database(url, "0011")
+    engine = create_engine(url)
+    # Construct the known historical omission from the actual historical migrations.
+    if shape != "normal":
+        with engine.begin() as connection:
+            operations = Operations(MigrationContext.configure(connection))
+            with operations.batch_alter_table("scan_contexts") as batch:
+                batch.drop_constraint("uq_scan_contexts_temporary_secret_ref", type_="unique")
+                if shape == "missing":
+                    batch.drop_column("temporary_secret_ref")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO targets "
+                "(name, base_url, type, owner, tags, status, created_at, updated_at) "
+                "VALUES ('keep', 'http://localhost', 'web', 'fixture', '[]', 'active', "
+                "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+    backup = upgrade_database(url)
+    assert backup is not None and backup.is_file()
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT name FROM targets")) == "keep"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0012"
+    inspector = inspect(engine)
+    assert "temporary_secret_ref" in {c["name"] for c in inspector.get_columns("scan_contexts")}
+    unique = inspector.get_unique_constraints("scan_contexts") + [
+        i for i in inspector.get_indexes("scan_contexts") if i["unique"]
+    ]
+    assert any(i["column_names"] == ["temporary_secret_ref"] for i in unique)
+    before = database.read_bytes()
+    assert upgrade_database(url) is None
+    assert database.read_bytes() == before
+    engine.dispose()

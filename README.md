@@ -16,6 +16,23 @@ URL
   → Markdown 报告
 ```
 
+## v1.0.1：实际使用问题收口
+
+安装包元数据是正式运行的版本来源，源码运行读取 `pyproject.toml`；旧 `GARDEN_PROJECT_VERSION` 不再覆盖版本。`garden doctor` 只读展示加载位置、命令入口、数据目录、代理依赖与结构检查；不会连接扫描目标或修复数据库。旧服务没有版本记录时显示未知，更新安装不会自动重启现有服务。
+
+```bash
+garden --version
+garden doctor
+# 仅在确认目标授权后显式触发：一次 GET，不重试、不跟随跳转、不创建扫描
+garden connection-test http://127.0.0.1:8080/ --json
+# 显式升级；已有 SQLite 数据库修改前自动生成同目录 .pre-upgrade-*.bak
+garden db upgrade
+```
+
+HTTPX 安装包含 SOCKS 支持，扫描仅使用显式 `GARDEN_SCAN_PROXY_URL` / `GARDEN_SCAN_NO_PROXY`，不继承 shell 代理。迁移 `0012` 仅修复已知的 `scan_contexts.temporary_secret_ref` 缺列/唯一约束漂移，兼容已经手工补列的旧库，不自动清洗重复值；重复值导致迁移失败时保留备份供人工核查。
+
+来源详情在独立有界面板内展示，支持键盘打开和 Esc 关闭；采集中显示实际请求、响应、线索、待处理量与耗时。历史缺失计数显示未知；执行结束仍不等于覆盖完整。[本版实施与验收记录](docs/versions/v1.0.1.md)。
+
 ## v1.0.0：可重复的质量验收
 
 提供六维合成质量基线：发现、归并、可信度、数据完整性、持续更新和边界控制。报告记录实际执行结果、提交与环境，列出缺失、跳过及失败检查，并给出固定语料的发现召回、候选确认与误合并计数。

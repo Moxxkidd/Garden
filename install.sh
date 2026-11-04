@@ -259,6 +259,8 @@ EOF
 write_launcher "$GARDEN_BIN_DIR/garden" "garden"
 write_launcher "$GARDEN_BIN_DIR/gardenctl" "gardenctl"
 
+"$GARDEN_BIN_DIR/garden" --version
+
 echo "Garden 已安装。"
 echo "命令入口：$GARDEN_BIN_DIR/garden"
 

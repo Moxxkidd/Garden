@@ -1,6 +1,8 @@
 """Database bootstrap and session factory."""
 
-from contextlib import contextmanager
+import sqlite3
+import tempfile
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 from alembic import command
@@ -8,7 +10,7 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, event, inspect, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.logging import get_logger
@@ -41,9 +43,27 @@ def _alembic_config(database_url: str) -> Config:
     return config
 
 
-def upgrade_database(database_url: str, revision: str = "head") -> None:
+def upgrade_database(database_url: str, revision: str = "head") -> Path | None:
+    config = _alembic_config(database_url)
+    target = ScriptDirectory.from_config(config).get_revision(revision)
+    url = make_url(database_url)
+    backup = None
+    if url.get_backend_name() == "sqlite" and url.database and url.database != ":memory:":
+        path = Path(url.database).absolute()
+        if path.is_file():
+            if get_database_revision(database_url) == target.revision:
+                return None
+            # SQLite backup also captures committed WAL data; a plain file copy does not.
+            with tempfile.NamedTemporaryFile(
+                prefix=path.name + ".pre-upgrade-", suffix=".bak", dir=path.parent, delete=False
+            ) as file:
+                backup = Path(file.name)
+            with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as source:
+                with closing(sqlite3.connect(backup)) as destination:
+                    source.backup(destination)
     _ensure_sqlite_directory(database_url)
-    command.upgrade(_alembic_config(database_url), revision)
+    command.upgrade(config, revision)
+    return backup
 
 
 def stamp_existing_database(database_url: str, revision: str = "0001") -> None:
@@ -87,6 +107,21 @@ def ensure_database_at_head(
         )
 
     if current_revision == head_revision:
+        inspector = inspect(create_engine(database_url))
+        try:
+            columns = {c["name"] for c in inspector.get_columns("scan_contexts")}
+            unique = inspector.get_unique_constraints("scan_contexts") + [
+                i for i in inspector.get_indexes("scan_contexts") if i["unique"]
+            ]
+            if "temporary_secret_ref" not in columns or not any(
+                i["column_names"] == ["temporary_secret_ref"] for i in unique
+            ):
+                raise RuntimeError(
+                    "scan_contexts.temporary_secret_ref 列或唯一约束缺失。"
+                    "请先备份并核对迁移记录；不要覆盖版本号或盲目升级。"
+                )
+        finally:
+            inspector.bind.dispose()
         return
     if auto_migrate:
         upgrade_database(database_url)

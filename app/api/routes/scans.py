@@ -19,6 +19,7 @@ from app.services.scan_result_presentation import (
     coverage_summary,
     diagnostic_hint,
     execution_summary,
+    format_collection_activity,
     format_execution_progress,
     summarize_scan_view,
 )
@@ -31,6 +32,7 @@ templates.env.globals.update(
     coverage_gap_note=COVERAGE_GAP_NOTE,
     coverage_summary=coverage_summary,
     format_execution_progress=format_execution_progress,
+    format_collection_activity=format_collection_activity,
 )
 router = APIRouter(tags=["scans"])
 

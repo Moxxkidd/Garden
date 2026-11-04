@@ -119,9 +119,7 @@ def test_desktop_mobile_identity_journey_without_javascript(
                         break
                     assert time.monotonic() < deadline
                     page.wait_for_timeout(100)
-                assert status == "completed", app.state.scan_service.get_assessment(
-                    run_id
-                ).model_dump()
+                assert status == "completed", app.state.scan_service.get_scan(run_id).model_dump()
                 page.goto(garden + f"/assets?source=scan&run_id={run_id}&view=grouped")
                 assert "身份可见性矩阵" in page.inner_text("body")
                 assert "已观察" in page.inner_text("body")

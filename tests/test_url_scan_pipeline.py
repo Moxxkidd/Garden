@@ -1233,3 +1233,29 @@ def test_http_entry_rejects_invalid_url_before_dispatch(monkeypatch) -> None:
         response = client.post("/api/scans", json={"url": "file:///etc/passwd"})
     assert response.status_code == 400
     assert "http or https" in response.json()["detail"]
+
+
+def test_collect_publishes_monotonic_progress_before_stage_finishes(tmp_path):
+    samples = []
+
+    def handler(request):
+        with session_scope() as session:
+            row = session.scalar(select(ScanRun).order_by(ScanRun.id.desc()))
+            samples.append(service.get_scan(row.id))
+        if request.url.path == "/":
+            body = "".join(f'<a href="/p{n}">Page</a>' for n in range(5))
+        elif request.url.path == "/p0":
+            body = "".join(f'<a href="/new{n}">New</a>' for n in range(5))
+        else:
+            body = "Fixture"
+        return httpx.Response(200, headers={"content-type": "text/html"}, text=body)
+
+    service = _service(tmp_path, handler)
+    scan = service.start_scan("http://127.0.0.1/", ScanOptions(max_pages=12, retry_attempts=0))
+    progress = [s.progress for s in samples]
+    assert scan.status == "completed"
+    assert len(set(progress)) >= 3
+    assert progress == sorted(progress)
+    assert all(p < 58 for p in progress)
+    assert samples[-1].discovery_summary["pending_count"] >= 1
+    assert scan.progress == 100

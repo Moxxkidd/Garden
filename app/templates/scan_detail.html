@@ -25,6 +25,10 @@
           <h3 class="text-sm font-medium text-slate-600">执行状态</h3>
           <p class="mt-2 text-lg font-semibold">{{ execution_text }}</p>
           <p class="mt-2 text-sm">{{ format_execution_progress(scan.progress) }}</p>
+          {% if scan.status in ['queued', 'running'] %}
+          <p class="mt-2 text-sm" role="status">{{ format_collection_activity(scan.discovery_summary) or ('正在采集，等待下一次响应' if scan.current_stage == 'collect' else '正在准备任务') }}</p>
+          <p class="mt-1 text-xs text-slate-500">{% if scan.started_at %}<span data-scan-started="{{ scan.started_at.isoformat() }}">任务执行中</span> · {% endif %}百分比为阶段内估算；发现新链接时待处理量可能增加。</p>
+          {% endif %}
           <div class="mt-3 h-2 overflow-hidden rounded-full bg-stone-200" role="progressbar" aria-label="执行进度" aria-valuenow="{{ scan.progress }}" aria-valuemin="0" aria-valuemax="100"><div class="h-full rounded-full bg-emerald-600" style="width: {{ scan.progress }}%"></div></div>
         </div>
         <div class="rounded-2xl bg-stone-50 p-5">
@@ -109,7 +113,15 @@
       </div>
     {% endif %}
     {% if scan.status in ["queued", "running"] %}
-      <script>window.setTimeout(function () { window.location.reload(); }, 1000);</script>
+      <script>
+        document.querySelectorAll('[data-scan-started]').forEach(function (el) {
+          const stamp = el.dataset.scanStarted;
+          const start = Date.parse(/(?:Z|[+-]\d{2}:\d{2})$/.test(stamp) ? stamp : stamp + 'Z');
+          function tick() { el.textContent = '已用时 ' + Math.max(0, Math.floor((Date.now() - start) / 1000)) + ' 秒'; }
+          tick(); window.setInterval(tick, 1000);
+        });
+        window.setTimeout(function () { window.location.reload(); }, 1000);
+      </script>
     {% endif %}
   </section>
 {% endblock %}

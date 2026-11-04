@@ -8,6 +8,15 @@ if TYPE_CHECKING:
     from app.schemas.scan import ScanRunView
 
 _DIAGNOSTIC_HINTS = {
+    (
+        "collect",
+        "network_retry_exhausted",
+    ): (
+        "连接未成功；请检查目标和显式代理配置，可手动运行 "
+        "garden connection-test <已授权 URL>；不会自动重试。"
+    ),
+    ("collect", "proxy_unavailable"): "代理不可用；请检查代理进程、地址及认证配置。",
+    ("collect", "proxy_dependency_missing"): "SOCKS 支持未安装，请重新安装或升级 Garden。",
     ("context", "authentication_session_mismatch"): (
         "请检查凭据档案所属 Target 和 user/admin 角色，选择与当前目标匹配的档案后重新提交。"
     ),
@@ -39,6 +48,26 @@ def format_finding_count(raw_count: int, group_count: int | None) -> str:
 
 def format_execution_progress(progress: int) -> str:
     return f"{progress}%（执行进度，不代表覆盖完整）"
+
+
+def format_collection_activity(summary: dict | None) -> str | None:
+    if not summary:
+        return None
+    stats = list(summary.get("stats", {}).values())
+
+    def total(key):
+        if not stats or any(s.get(key) is None for s in stats):
+            return "未知"
+        return sum(s[key] for s in stats)
+
+    attempts = total("request_attempts")
+    responses = total("response_observed")
+    candidates = total("new_candidates")
+    pending = summary.get("pending_count")
+    return (
+        f"已发起 {attempts} 次请求 · 收到 {responses} 次响应 · "
+        f"发现 {candidates} 条线索 · 待处理 {pending if pending is not None else '未知'} 条"
+    )
 
 
 def coverage_summary(status: str, completeness: str | None, mode: str) -> str:

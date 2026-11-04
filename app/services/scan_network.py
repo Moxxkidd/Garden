@@ -366,6 +366,18 @@ class HttpScanGateway:
                         retryable=True,
                         attempts=attempt,
                     )
+            except ImportError as error:
+                if proxy and proxy.startswith(("socks5:", "socks5h:")):
+                    raise FetchError(
+                        "proxy_dependency_missing",
+                        "SOCKS 支持未安装，请重新安装或升级 Garden。",
+                        url=url,
+                    ) from error
+                raise
+            except httpx.ProxyError as error:
+                raise FetchError(
+                    "proxy_unavailable", "代理不可用，请检查显式代理配置。", url=url
+                ) from error
             except TRANSIENT_EXCEPTIONS as error:
                 if attempt > retries:
                     raise FetchError(

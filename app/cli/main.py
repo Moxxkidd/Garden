@@ -5,6 +5,7 @@ from typing import Annotated
 
 import typer
 
+from app.cli.connection_test import connection_test
 from app.cli.doctor import doctor as doctor_command
 from app.cli.lazy_group import GardenCommandGroup
 from app.cli.utils import console, render_json
@@ -33,7 +34,7 @@ def main(
         typer.Option("--version", help="Show the current Garden version.", is_eager=True),
     ] = False,
 ) -> None:
-    if context.invoked_subcommand == "doctor" and not show_version:
+    if context.invoked_subcommand in {"doctor", "connection-test"} and not show_version:
         return
     settings = get_settings()
     if show_version:
@@ -60,6 +61,7 @@ def healthcheck() -> None:
 
 
 app.command("doctor")(doctor_command)
+app.command("connection-test")(connection_test)
 
 
 if __name__ == "__main__":

@@ -32,6 +32,29 @@ class ScanDiscovery:
         self.run.asset_metadata = self.ledger.snapshot(
             complete=complete and not self.source_incomplete
         )
+        pending = [i for i in self.ledger.items.values() if i["reason"] == "pending"]
+        self.run.asset_metadata["pending_count"] = len(pending)
+        observed = sum(v["response_observed"] for v in self.ledger.stats.values())
+        # The frontier can grow. Keep the estimate monotonic, and reserve the
+        # end of collect (58) for the stage boundary, even when budgets stop it.
+        if self.options.collection_mode == "browser":
+            remaining = min(len(pending), max(0, self.options.max_browser_requests - observed))
+        else:
+            remaining = 0
+            for pages, budget in [
+                (True, self.options.max_pages),
+                (False, self.options.max_resources),
+            ]:
+                done = sum(
+                    i["observed"]
+                    for i in self.ledger.items.values()
+                    if (i["asset_type"] == "page") == pages
+                )
+                waiting = sum((i["asset_type"] == "page") == pages for i in pending)
+                remaining += min(waiting, max(0, budget - done))
+        if observed and self.run.current_stage == "collect":
+            estimate = 8 + int(49 * observed / (observed + remaining))
+            self.run.progress = max(self.run.progress, estimate)
         for asset in self.session.scalars(
             select(ScanAsset).where(ScanAsset.scan_run_id == self.run.id)
         ):

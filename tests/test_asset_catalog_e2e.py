@@ -54,6 +54,10 @@ def test_asset_filters_survive_refresh_and_download_all_matches(
             assert page.locator("tbody tr").inner_text() != first
             page.get_by_text("查看来源", exact=True).click()
             expect(page.get_by_role("link", name="查看原任务与证据")).to_be_visible()
+            if javascript_enabled:
+                expect(page.get_by_role("dialog")).to_be_visible()
+                page.keyboard.press("Escape")
+                expect(page.get_by_role("dialog")).not_to_be_visible()
             with page.expect_download() as download_info:
                 page.get_by_role("link", name="下载 JSON", exact=True).click()
             destination = tmp_path / "assets.json"

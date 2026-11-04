@@ -45,6 +45,9 @@ def test_doctor_reads_revision_without_repair_or_sidecar_files(tmp_path, monkeyp
     database = tmp_path / "existing.db"
     with sqlite3.connect(database) as connection:
         connection.execute("CREATE TABLE alembic_version (version_num TEXT)")
+        connection.execute(
+            "CREATE TABLE scan_contexts (id INTEGER PRIMARY KEY, temporary_secret_ref TEXT UNIQUE)"
+        )
         connection.execute("INSERT INTO alembic_version VALUES ('0003')")
     before = database.read_bytes()
     files_before = set(tmp_path.iterdir())
@@ -52,7 +55,7 @@ def test_doctor_reads_revision_without_repair_or_sidecar_files(tmp_path, monkeyp
     result = runner.invoke(app, ["doctor", "--json"])
     check = next(c for c in json.loads(result.stdout)["checks"] if c["id"] == "database")
     assert check["status"] == "action_required"
-    assert "0003" in check["message"] and "0011" in check["message"]
+    assert "0003" in check["message"] and "0012" in check["message"]
     assert database.read_bytes() == before
     assert set(tmp_path.iterdir()) == files_before
 
@@ -112,7 +115,7 @@ def test_doctor_skips_remote_or_unsupported_database_without_leaking_values(monk
     )
 
 
-@pytest.mark.parametrize("revision, status", [("0011", "ok"), ("FUTURE_SECRET", "unknown")])
+@pytest.mark.parametrize("revision, status", [("0012", "ok"), ("FUTURE_SECRET", "unknown")])
 def test_doctor_distinguishes_current_and_unknown_database_revision(
     tmp_path, monkeypatch, revision, status
 ):
@@ -121,6 +124,9 @@ def test_doctor_distinguishes_current_and_unknown_database_revision(
     database = tmp_path / "revision.db"
     with sqlite3.connect(database) as connection:
         connection.execute("CREATE TABLE alembic_version (version_num TEXT)")
+        connection.execute(
+            "CREATE TABLE scan_contexts (id INTEGER PRIMARY KEY, temporary_secret_ref TEXT UNIQUE)"
+        )
         connection.execute("INSERT INTO alembic_version VALUES (?)", (revision,))
     monkeypatch.setenv("GARDEN_DATABASE_URL", f"sqlite:///{database}")
     result = runner.invoke(app, ["doctor", "--json"])
@@ -244,6 +250,9 @@ def test_doctor_reads_migration_metadata_without_executing_migration_code(tmp_pa
     database = tmp_path / "version.db"
     with sqlite3.connect(database) as connection:
         connection.execute("CREATE TABLE alembic_version (version_num TEXT)")
+        connection.execute(
+            "CREATE TABLE scan_contexts (id INTEGER PRIMARY KEY, temporary_secret_ref TEXT UNIQUE)"
+        )
         connection.execute("INSERT INTO alembic_version VALUES ('0004')")
     monkeypatch.setattr(garden_package, "__file__", str(package / "__init__.py"))
     monkeypatch.setenv("GARDEN_DATABASE_URL", f"sqlite:///{database}")
@@ -266,7 +275,10 @@ def ready_doctor(tmp_path, monkeypatch):
     database = home / "garden.db"
     with sqlite3.connect(database) as connection:
         connection.execute("CREATE TABLE alembic_version (version_num TEXT)")
-        connection.execute("INSERT INTO alembic_version VALUES ('0011')")
+        connection.execute(
+            "CREATE TABLE scan_contexts (id INTEGER PRIMARY KEY, temporary_secret_ref TEXT UNIQUE)"
+        )
+        connection.execute("INSERT INTO alembic_version VALUES ('0012')")
     chromium = tmp_path / "chromium"
     chromium.write_text("fixture executable")
     chromium.chmod(0o700)
@@ -294,12 +306,12 @@ def test_doctor_healthy_exit_code_and_plain_text_match_json(ready_doctor):
     result = runner.invoke(app, ["doctor", "--json"])
     assert result.exit_code == 0, result.output
     checks = json.loads(result.stdout)["checks"]
-    assert len(checks) == 8
+    assert len(checks) == 9
     assert all(check["status"] == "ok" for check in checks)
     text = runner.invoke(app, ["doctor"])
     assert text.exit_code == 0
     assert "Garden 环境自检（只读）" in text.output
-    assert text.output.count("[正常]") == 8
+    assert text.output.count("[正常]") == 9
 
 
 def test_doctor_unknown_exit_code_does_not_mean_healthy(ready_doctor):
@@ -376,7 +388,7 @@ def test_real_doctor_process_never_creates_runtime_or_database(tmp_path):
     assert process.returncode == 1, process.stderr
     report = json.loads(process.stdout)
     assert report["exit_code"] == 1
-    assert len(report["checks"]) == 8
+    assert len(report["checks"]) == 9
     assert "PROXY_SECRET" not in process.stdout + process.stderr
     assert "Database initialized" not in process.stderr
     assert not home.exists()
@@ -438,3 +450,54 @@ def test_lazy_command_loading_preserves_public_command_paths(arguments, color, m
     if color:
         assert "\x1b[" in result.output
     assert "Usage: garden " + " ".join(arguments[:-1]) in unstyle(result.output)
+
+
+def test_version_override_is_ignored_across_cli_web_and_doctor(monkeypatch):
+    from app.core.settings import Settings, clear_settings_cache
+    from app.main import create_app
+
+    monkeypatch.setenv("GARDEN_PROJECT_VERSION", "0.0.0-FAKE")
+    clear_settings_cache()
+    assert Settings().project_version == "1.0.1"
+    assert create_app().version == "1.0.1"
+    result = runner.invoke(app, ["--version"])
+    assert "Garden 1.0.1" in result.stdout
+    result = runner.invoke(app, ["doctor", "--json"])
+    installation = next(c for c in json.loads(result.stdout)["checks"] if c["id"] == "installation")
+    assert "1.0.1" in installation["message"]
+    assert "已忽略" in installation["message"]
+    assert "FAKE" not in installation["message"]
+
+
+def test_doctor_known_drift_is_read_only_even_with_current_revision(tmp_path, monkeypatch):
+    import sqlite3
+
+    database = tmp_path / "drift.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE alembic_version (version_num TEXT)")
+        connection.execute("INSERT INTO alembic_version VALUES ('0012')")
+        connection.execute("CREATE TABLE scan_contexts (id INTEGER PRIMARY KEY)")
+    before = database.read_bytes()
+    files_before = set(tmp_path.iterdir())
+    monkeypatch.setenv("GARDEN_DATABASE_URL", f"sqlite:///{database}")
+    result = runner.invoke(app, ["doctor", "--json"])
+    check = next(c for c in json.loads(result.stdout)["checks"] if c["id"] == "database")
+    assert check["status"] == "action_required"
+    assert "temporary_secret_ref" in check["message"]
+    assert database.read_bytes() == before
+    assert set(tmp_path.iterdir()) == files_before
+
+
+def test_doctor_missing_socks_dependency_is_explicit_without_connection(monkeypatch):
+    import importlib.util
+
+    original = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util, "find_spec", lambda name: None if name == "socksio" else original(name)
+    )
+    monkeypatch.setenv("GARDEN_SCAN_PROXY_URL", "socks5://user:PRIVATE_PROXY@127.0.0.1:1")
+    result = runner.invoke(app, ["doctor", "--json"])
+    check = next(c for c in json.loads(result.stdout)["checks"] if c["id"] == "proxy")
+    assert check["status"] == "action_required"
+    assert "缺失" in check["message"]
+    assert "PRIVATE_PROXY" not in result.stdout

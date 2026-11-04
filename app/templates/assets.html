@@ -48,7 +48,7 @@
     {% if query.view == 'grouped' %}
     {% include 'asset_groups_table.html' %}
     {% else %}
-    <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-stone-50"><tr>{% for label in ['资产 / 来源','类型 / 方法','身份','HTTP / 观察','有效性迹象','最近观察','追溯'] %}<th class="p-4 whitespace-nowrap">{{ label }}</th>{% endfor %}</tr></thead>
+    <div class="asset-table-scroll overflow-x-auto"><table class="asset-records w-full text-left text-sm"><thead class="bg-stone-50"><tr>{% for label in ['资产 / 来源','类型 / 方法','身份','HTTP / 观察','有效性迹象','最近观察','追溯'] %}<th class="p-4 whitespace-nowrap">{{ label }}</th>{% endfor %}</tr></thead>
       <tbody>{% for item in result.items %}<tr class="border-t align-top">
         <td class="p-4"><p class="font-medium">{{ item.title or '标题未记录' }}</p><p class="mt-1 min-w-48 max-w-lg break-all">{{ item.url }}</p><p class="mt-1 text-xs text-slate-500">{{ item.asset_id }}</p></td>
         <td class="p-4">{{ kinds[item.kind] }}<p class="mt-1">{{ item.method or '方法未知' }}</p><p class="mt-1 text-xs text-slate-500">{{ item.content_type or '内容类型未知' }}</p></td>
@@ -56,7 +56,7 @@
         <td class="p-4">{{ item.status_codes|join(', ') if item.status_codes else '未知' }}<p class="mt-1">{{ '候选（未请求）' if item.validity.verification == 'candidate' else observations[item.observation] }}</p></td>
         <td class="p-4"><div class="min-w-48 max-w-md">{% with validity=item.validity %}{% include 'asset_validity.html' %}{% endwith %}</div></td>
         <td class="p-4 whitespace-nowrap">{{ item.last_seen.strftime('%Y-%m-%d %H:%M') if item.last_seen else '未知' }}<p class="mt-1 text-xs">UTC</p></td>
-        <td class="p-4"><details><summary class="cursor-pointer whitespace-nowrap">查看来源</summary><div class="mt-2 min-w-48 max-w-xs space-y-2"><p>{{ item.provenance_note }}</p>{% include "asset_discovery.html" %}<p>{{ item.record_type }} #{{ item.record_id }}</p><p>请求记录数：{{ item.request_count if item.request_count is not none else '未知' }}</p><p>请求 ID：{{ item.request_ids|join(', ') if item.request_ids else '未记录' }}</p><p>证据 ID：{{ item.evidence_ids|join(', ') if item.evidence_ids else '未记录' }}</p><a class="inline-block underline" href="{{ item.source_url }}">查看原任务与证据</a></div></details></td>
+        <td class="p-4"><details class="asset-provenance" data-asset-label="{{ item.title or item.url }}"><summary class="cursor-pointer whitespace-nowrap">查看来源{% if item.discovery %}（{{ item.discovery.sources|length }} 条{% if item.discovery.truncated %}，已截断{% endif %}）{% endif %}</summary><div class="asset-provenance-body mt-2 space-y-2" tabindex="0" role="region" aria-label="资产来源详情"><p>{{ item.provenance_note }}</p>{% include "asset_discovery.html" %}<p>{{ item.record_type }} #{{ item.record_id }}</p><p>请求记录数：{{ item.request_count if item.request_count is not none else '未知' }}</p><p>请求 ID：{{ item.request_ids|join(', ') if item.request_ids else '未记录' }}</p><p>证据 ID：{{ item.evidence_ids|join(', ') if item.evidence_ids else '未记录' }}</p><a class="inline-block underline" href="{{ item.source_url }}">查看原任务与证据</a></div></details></td>
       </tr>{% else %}<tr><td colspan="7" class="p-8 text-center">没有匹配记录；不代表目标没有资产。请检查筛选、页码与覆盖情况。</td></tr>{% endfor %}</tbody>
     </table></div>
     {% endif %}
@@ -64,4 +64,26 @@
   </section>
   {% endif %}
 </section>
+{% if result %}
+<dialog id="asset-provenance-dialog" aria-labelledby="asset-provenance-title" hx-boost="false">
+  <header><div><h2 id="asset-provenance-title">资产来源</h2><p id="asset-provenance-label"></p></div><form method="dialog" hx-boost="false"><button aria-label="关闭来源详情">关闭</button></form></header>
+  <div id="asset-provenance-content"></div>
+</dialog>
+<script>
+(function () {
+  const dialog = document.getElementById('asset-provenance-dialog');
+  if (!dialog || typeof dialog.showModal !== 'function') return;
+  document.querySelectorAll('.asset-provenance').forEach(function (details) {
+    details.querySelector('summary').addEventListener('click', function (event) {
+      event.preventDefault();
+      const content = details.querySelector('.asset-provenance-body').cloneNode(true);
+      content.className = 'asset-provenance-modal-content';
+      document.getElementById('asset-provenance-content').replaceChildren(content);
+      document.getElementById('asset-provenance-label').textContent = details.dataset.assetLabel;
+      dialog.showModal();
+    });
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

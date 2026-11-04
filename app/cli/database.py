@@ -17,7 +17,9 @@ app = typer.Typer(help="Manage Garden database migrations.")
 def upgrade(revision: str = typer.Argument("head")) -> None:
     """Upgrade the configured database to a migration revision."""
     settings = get_settings()
-    upgrade_database(settings.database_url, revision)
+    backup = upgrade_database(settings.database_url, revision)
+    if backup is not None:
+        console.print(f"升级前数据库备份：{backup}", markup=False)
     console.print(f"Database upgraded to {revision}.")
 
 

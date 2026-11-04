@@ -242,3 +242,32 @@ def test_legacy_result_with_100_percent_does_not_claim_complete_coverage(run_ter
     assert result.exit_code == 0
     assert "覆盖完整性未知" in unstyle(result.stdout)
     assert "不代表覆盖完整" in unstyle(result.stdout)
+
+
+def test_cli_shows_live_counts_even_when_percentage_is_unchanged(monkeypatch, capsys):
+    def view(count, status="running"):
+        return _view(status=status, stage="collect", progress=20).model_copy(
+            update={
+                "discovery_summary": {
+                    "stats": {
+                        "entry": {
+                            "request_attempts": count,
+                            "response_observed": count,
+                            "new_candidates": 5,
+                        }
+                    },
+                    "pending_count": 5 - count,
+                }
+            }
+        )
+
+    states = iter([view(2), view(3, "completed")])
+    api = SimpleNamespace(get_scan=lambda _: next(states))
+    ticks = iter(range(100))
+    monkeypatch.setattr(scan_cli.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(scan_cli.time, "sleep", lambda _: None)
+    scan_cli._wait_for_scan(api, view(1))
+    output = capsys.readouterr().out
+    assert "收到 1 次响应" in output
+    assert "收到 2 次响应" in output
+    assert "已用时" in output

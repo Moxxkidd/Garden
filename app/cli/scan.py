@@ -22,6 +22,7 @@ from app.schemas.collection_queue import CollectionOptions
 from app.schemas.scan import ScanFailureView, ScanOptions, ScanRunView
 from app.services.scan_failure_classification import is_coverage_warning
 from app.services.scan_result_presentation import (
+    format_collection_activity,
     format_execution_progress,
     format_finding_count,
 )
@@ -159,12 +160,23 @@ def _resolve_url(entry_url: str | None, legacy_url: str | None) -> str:
 
 def _wait_for_scan(api: LocalScanApi, initial: ScanRunView) -> ScanRunView:
     result = initial
-    shown: tuple[str, int] | None = None
+    shown = None
+    started = time.monotonic()
+    last_shown = started - 5
     while result.status not in TERMINAL_SCAN_RUN_STATUSES:
-        progress = (result.current_stage, result.progress)
-        if progress != shown:
-            console.print(f"扫描 {result.id}：{result.current_stage}，{result.progress}%")
-            shown = progress
+        activity = format_collection_activity(result.discovery_summary)
+        progress = (result.current_stage, result.progress, activity)
+        now = time.monotonic()
+        stage_changed = shown is None or progress[:2] != shown[:2]
+        if stage_changed or (progress != shown and now - last_shown >= 1) or now - last_shown >= 5:
+            detail = activity or (
+                "正在采集，等待下一次响应" if result.current_stage == "collect" else ""
+            )
+            console.print(
+                f"扫描 {result.id}：{result.current_stage}，{result.progress}%"
+                f" · 已用时 {int(now - started)} 秒" + (f" · {detail}" if detail else "")
+            )
+            shown, last_shown = progress, now
         time.sleep(0.2)
         result = api.get_scan(result.id)
     return result

@@ -23,6 +23,7 @@ def doctor(
         labels = {"ok": "正常", "action_required": "需要处理", "unknown": "无法确认"}
         names = {
             "installation": "安装与版本",
+            "proxy": "代理依赖",
             "configuration": "配置来源",
             "database": "数据库",
             "service": "本地服务",

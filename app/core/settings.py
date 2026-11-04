@@ -7,6 +7,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, DotEnvSettingsSource, SettingsConfigDict
 
 from app.cli.paths import GardenPaths
+from app.core.version import project_version
 
 
 def _is_formal_cli_runtime() -> bool:
@@ -21,7 +22,14 @@ def _default_database_url() -> str:
 
 class Settings(BaseSettings):
     project_name: str = Field(default="Garden", alias="GARDEN_PROJECT_NAME")
-    project_version: str = Field(default="1.0.0", alias="GARDEN_PROJECT_VERSION")
+    ignored_version_override: str | None = Field(
+        default=None, alias="GARDEN_PROJECT_VERSION", exclude=True
+    )
+
+    @property
+    def project_version(self) -> str:
+        return project_version()
+
     environment: str = Field(default="development", alias="GARDEN_ENVIRONMENT")
     log_level: str = Field(default="INFO", alias="GARDEN_LOG_LEVEL")
     api_host: str = Field(default="127.0.0.1", alias="GARDEN_API_HOST")

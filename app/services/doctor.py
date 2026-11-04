@@ -2,7 +2,7 @@
 
 import ast
 import errno
-import importlib.metadata
+import importlib.util
 import json
 import os
 import platform
@@ -15,6 +15,7 @@ from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, computed_field
 from sqlalchemy.engine import make_url
@@ -22,6 +23,7 @@ from sqlalchemy.engine import make_url
 import app
 from app.cli.paths import GardenPaths
 from app.core.settings import Settings
+from app.core.version import project_version
 from app.redaction.service import RedactionService
 
 
@@ -97,9 +99,12 @@ def diagnose(ui_port: int | None = None) -> DoctorReport:
             DoctorCheck(
                 id="configuration",
                 status="ok",
-                message=f"{source}：{display_path(config)}；配置校验通过，不代表目标可访问。",
+                message=f"{source}：{display_path(config)}；数据目录：{display_path(paths.home)}；配置校验通过，不代表目标可访问。",
             )
         )
+        if settings.ignored_version_override is not None:
+            report.checks[-1].message += " GARDEN_PROJECT_VERSION 已忽略。"
+        report.checks.append(check_proxy(settings))
         report.checks.append(safe_check("database", lambda: check_database(settings.database_url)))
         report.checks.append(
             safe_check("service", lambda: check_service(paths, ui_port, settings.api_port))
@@ -117,6 +122,21 @@ def diagnose(ui_port: int | None = None) -> DoctorReport:
             )
         )
     return report
+
+
+def check_proxy(settings: Settings) -> DoctorCheck:
+    scheme = urlparse(settings.scan_proxy_url).scheme if settings.scan_proxy_url else "无代理"
+    available = importlib.util.find_spec("socksio") is not None
+    missing = scheme in {"socks5", "socks5h"} and not available
+    support = "缺失" if missing else "可用" if available else "未安装"
+    return DoctorCheck(
+        id="proxy",
+        status="action_required" if missing else "ok",
+        message=f"显式代理类型：{scheme}；SOCKS 支持{support}；不继承 shell 代理，未连接目标。",
+        next_step="重新安装或升级 Garden 以补齐 SOCKS 依赖。"
+        if missing
+        else "需要测试时显式运行 garden connection-test <已授权 URL>。",
+    )
 
 
 def check_database(database_url: str) -> DoctorCheck:
@@ -158,6 +178,19 @@ def check_database(database_url: str) -> DoctorCheck:
                 if "alembic_version" in tables
                 else []
             )
+            context_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(scan_contexts)")
+            }
+            unique_columns = [
+                [
+                    column[2]
+                    for column in connection.execute(
+                        "SELECT * FROM pragma_index_info(?)", (row[1],)
+                    )
+                ]
+                for row in connection.execute("PRAGMA index_list(scan_contexts)")
+                if row[2]
+            ]
         after = path.stat()
         if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns) or any(
             Path(str(path) + suffix).exists() for suffix in ("-wal", "-journal")
@@ -184,6 +217,15 @@ def check_database(database_url: str) -> DoctorCheck:
                 "核对当前 Garden 安装版本；不要盲目升级或降级数据库。",
             )
         revision = revisions[0][0]
+        if revision == head and (
+            "temporary_secret_ref" not in context_columns
+            or ["temporary_secret_ref"] not in unique_columns
+        ):
+            return result(
+                "action_required",
+                "scan_contexts.temporary_secret_ref 列或唯一约束缺失，revision 不能证明结构正确。",
+                "保留备份并核对迁移记录；若已标记 0012，请先人工核查，不要重盖版本或盲目升级。",
+            )
         if revision != head:
             return result(
                 "action_required",
@@ -208,10 +250,7 @@ def display_path(path: Path) -> str:
 
 
 def check_installation() -> DoctorCheck:
-    try:
-        version = importlib.metadata.version("garden")
-    except importlib.metadata.PackageNotFoundError:
-        version = "未找到发行包元数据"
+    version = project_version()
     entries = []
     for directory in os.get_exec_path():
         path = Path(directory) / ("garden.exe" if os.name == "nt" else "garden")
@@ -224,6 +263,8 @@ def check_installation() -> DoctorCheck:
         f"Python {platform.python_version()}；"
         f"解释器：{display_path(Path(sys.executable))}；模块：{display_path(Path(app.__file__))}。"
     )
+    if "GARDEN_PROJECT_VERSION" in os.environ:
+        message += " GARDEN_PROJECT_VERSION 已忽略；版本由当前代码或安装包决定。"
     if entries:
         message += " PATH 中的 Garden 入口：" + "；".join(
             display_path(path) for path in entries[:3]
@@ -374,7 +415,11 @@ def check_service(paths: GardenPaths, ui_port: int | None, default_port: int) ->
                 return result("unknown", "端口接受连接，但无法确认状态文件记录的进程。")
             return result(
                 "unknown",
-                f"端口 {port} 接受连接且记录的进程存在；未核实服务身份及健康状态。",
+                f"端口 {port} 接受连接且记录的进程存在；"
+                "启动记录版本："
+                + RedactionService().redact_text(str(state.get("version") or "未知（旧记录）"))
+                + "；"
+                f"当前安装：{project_version()}；未核实服务身份及健康状态。",
                 "核对本地服务日志；doctor 不发送 HTTP 健康请求或停止进程。",
             )
         return result(

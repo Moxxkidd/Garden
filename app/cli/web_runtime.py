@@ -15,6 +15,7 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 from app.cli.paths import GardenPaths
+from app.core.version import project_version
 
 
 class WebRuntimeError(RuntimeError):
@@ -27,6 +28,7 @@ class WebRuntime:
     port: int
     home: str
     started_at: str
+    version: str | None = None
 
     @property
     def base_url(self) -> str:
@@ -78,6 +80,7 @@ class WebRuntimeManager:
                     pid=process.pid,
                     port=port,
                     home=str(self.paths.home),
+                    version=project_version(),
                     started_at=datetime.now(timezone.utc).isoformat(),
                 )
                 self._write_state(runtime)
@@ -103,6 +106,7 @@ class WebRuntimeManager:
                 port=int(payload["port"]),
                 home=str(payload["home"]),
                 started_at=str(payload["started_at"]),
+                version=payload.get("version"),
             )
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             return None

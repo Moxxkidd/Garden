@@ -662,7 +662,7 @@ class ScanApplicationService:
             "discovery_summary": (
                 {
                     key: run.asset_metadata.get(key)
-                    for key in ["version", "complete", "truncated", "stats"]
+                    for key in ["version", "complete", "truncated", "stats", "pending_count"]
                 }
                 if isinstance(run.asset_metadata, dict) and run.asset_metadata.get("version") == 2
                 else None
