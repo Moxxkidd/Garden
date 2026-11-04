@@ -375,7 +375,7 @@ class CollectionQueueService:
             sample_time(queue, self.clock())
 
     def set_waiting(self, session, queue_id, token, reason):
-        if reason not in {None, "rate_limit", "cooldown"}:
+        if reason not in {None, "rate_limit", "cooldown", "concurrency"}:
             raise InputValidationError("collection_invalid_wait_reason")
         with atomic_collection(session):
             queue = self.check_lease(session, queue_id, token)

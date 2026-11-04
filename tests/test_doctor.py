@@ -458,13 +458,13 @@ def test_version_override_is_ignored_across_cli_web_and_doctor(monkeypatch):
 
     monkeypatch.setenv("GARDEN_PROJECT_VERSION", "0.0.0-FAKE")
     clear_settings_cache()
-    assert Settings().project_version == "1.0.1"
-    assert create_app().version == "1.0.1"
+    assert Settings().project_version == "1.1.0"
+    assert create_app().version == "1.1.0"
     result = runner.invoke(app, ["--version"])
-    assert "Garden 1.0.1" in result.stdout
+    assert "Garden 1.1.0" in result.stdout
     result = runner.invoke(app, ["doctor", "--json"])
     installation = next(c for c in json.loads(result.stdout)["checks"] if c["id"] == "installation")
-    assert "1.0.1" in installation["message"]
+    assert "1.1.0" in installation["message"]
     assert "已忽略" in installation["message"]
     assert "FAKE" not in installation["message"]
 

@@ -24,6 +24,8 @@ def main():
     parser.add_argument(
         "--output", type=Path, default=Path(".verification/transport-scale-result.json")
     )
+    parser.add_argument("--concurrency", type=int, choices=[1, 2, 4], default=1)
+    parser.add_argument("--latency-ms", type=int, default=0)
     args = parser.parse_args()
     if not 1 <= args.rounds <= 20 or not 1 <= args.per_round <= 500:
         parser.error("rounds must be 1..20 and per-round must be 1..500")
@@ -63,14 +65,20 @@ def main():
 
     seen = []
     received_at = []
+    connections = []
 
     class Site(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+
+        def setup(self):
+            super().setup()
+            connections.append(self.client_address)
 
         def log_message(self, *unused):
             pass
 
         def do_GET(self):
+            time.sleep(args.latency_ms / 1000)
             seen.append(self.path)
             received_at.append(time.monotonic())
             if self.path.startswith("/round-"):
@@ -126,6 +134,7 @@ def main():
                         max_work=args.per_round,
                         min_interval_ms=args.interval_ms,
                         retry_attempts=0,
+                        origin_concurrency=args.concurrency,
                     ),
                 ),
             )
@@ -171,6 +180,9 @@ def main():
             "total_seconds": elapsed,
             "unique_requested_urls": len(set(seen)),
             "actual_requests": len(seen),
+            "tcp_connections": len(connections),
+            "origin_concurrency": args.concurrency,
+            "latency_ms": args.latency_ms,
             "requests_per_second": len(seen) / elapsed,
             "max_python_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             * (1 if sys.platform == "darwin" else 1024),

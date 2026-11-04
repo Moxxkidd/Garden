@@ -673,7 +673,7 @@ def test_njau_style_report_keeps_104_raw_findings_and_trusted_versions(tmp_path,
         response = client.get(f"/api/scans/{scan.id}")
         detail = client.get(f"/scans/{scan.id}")
     assert detail.status_code == 200
-    assert "<dd>2 类关注项，104 条原始观察" in detail.text
+    assert "2 类关注项，104 条原始观察" in detail.text
     assert response.status_code == 200
     assert response.json()["finding_count"] == 104
     assert response.json()["finding_group_count"] == 2
@@ -1237,8 +1237,10 @@ def test_http_entry_rejects_invalid_url_before_dispatch(monkeypatch) -> None:
 
 def test_collect_publishes_monotonic_progress_before_stage_finishes(tmp_path):
     samples = []
+    now = [0.0]
 
     def handler(request):
+        now[0] += 1.1
         with session_scope() as session:
             row = session.scalar(select(ScanRun).order_by(ScanRun.id.desc()))
             samples.append(service.get_scan(row.id))
@@ -1250,7 +1252,7 @@ def test_collect_publishes_monotonic_progress_before_stage_finishes(tmp_path):
             body = "Fixture"
         return httpx.Response(200, headers={"content-type": "text/html"}, text=body)
 
-    service = _service(tmp_path, handler)
+    service = _service(tmp_path, handler, clock=lambda: now[0])
     scan = service.start_scan("http://127.0.0.1/", ScanOptions(max_pages=12, retry_attempts=0))
     progress = [s.progress for s in samples]
     assert scan.status == "completed"

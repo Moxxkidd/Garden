@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import socket
+import threading
 import time
 from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from http.cookiejar import CookieJar, DefaultCookiePolicy
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from urllib.parse import urljoin, urlparse, urlunparse
 
@@ -215,6 +219,11 @@ class _HTMLMetadataParser(HTMLParser):
             self.title_parts.append(data.strip())
 
 
+class _AnonymousCookies(DefaultCookiePolicy):
+    def set_ok(self, cookie, request):
+        return False
+
+
 class HttpScanGateway:
     """A passive HTTP gateway with explicit redirects and one bounded retry by default."""
 
@@ -228,6 +237,49 @@ class HttpScanGateway:
         self.policy = policy
         self.transport = transport
         self.sleeper = sleeper
+        self._task = ContextVar("http_task", default=None)
+
+    @contextmanager
+    def task_scope(self, identity="anonymous"):
+        clients, lock = {}, threading.Lock()
+        token = self._task.set((identity, clients, lock, {"request": 0.0, "parse": 0.0}))
+        try:
+            yield
+        finally:
+            self._task.reset(token)
+            for client in clients.values():
+                client.close()
+
+    def task_timings(self):
+        return dict(self._task.get()[3])
+
+    def _time(self, phase, started):
+        task = self._task.get()
+        if task is not None:
+            with task[2]:
+                task[3][phase] += time.perf_counter() - started
+
+    @contextmanager
+    def _client(self, proxy):
+        task = self._task.get()
+        if task is None:
+            with self.task_scope():
+                with self._client(proxy) as client:
+                    yield client
+            return
+        identity, clients, lock, timings = task
+        with lock:
+            key = (identity, proxy)
+            if key not in clients:
+                clients[key] = httpx.Client(
+                    follow_redirects=False,
+                    trust_env=False,
+                    proxy=proxy,
+                    transport=self.transport,
+                    cookies=CookieJar(policy=_AnonymousCookies()),
+                )
+            client = clients[key]
+        yield client
 
     def fetch(
         self,
@@ -286,7 +338,9 @@ class HttpScanGateway:
             content_type = response.headers.get("content-type")
             body_is_text = self._is_text_body(content_type, body)
             text = self._decode(body, response.encoding) if body_is_text else ""
+            tick = time.perf_counter()
             title, discovered_assets = self._parse_html(current, text, content_type)
+            self._time("parse", tick)
             return FetchResult(
                 requested_url=url,
                 final_url=current,
@@ -323,19 +377,18 @@ class HttpScanGateway:
         timeout = options.request_timeout_seconds or 5.0
         for attempt in range(1, retries + 2):
             try:
-                with httpx.Client(
-                    timeout=timeout,
-                    follow_redirects=False,
-                    trust_env=False,
-                    proxy=proxy,
-                    transport=self.transport,
-                    headers={"User-Agent": options.user_agent, "Accept": "*/*"},
-                ) as client:
+                with self._client(proxy) as client:
                     if before_request is not None:
                         before_request()
                     if on_request_attempt is not None:
                         on_request_attempt(url)
-                    with client.stream(method, url) as response:
+                    tick = time.perf_counter()
+                    with client.stream(
+                        method,
+                        url,
+                        timeout=timeout,
+                        headers={"User-Agent": options.user_agent, "Accept": "*/*"},
+                    ) as response:
                         chunks: list[bytes] = []
                         size = 0
                         body_truncated = False
@@ -354,6 +407,7 @@ class HttpScanGateway:
                         content_length = response.headers.get("content-length")
                         if content_length and content_length.isdigit():
                             body_truncated = body_truncated or int(content_length) > len(body)
+                self._time("request", tick)
                 if on_http_response is not None:
                     on_http_response(response.status_code, response.headers.get("retry-after"))
                 if response.status_code not in TRANSIENT_STATUS_CODES:

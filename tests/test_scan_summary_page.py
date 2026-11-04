@@ -74,10 +74,13 @@ def test_summary_answers_four_questions_before_technical_details(render_summary,
     assert '<details id="report-details" open' not in html
 
 
-def test_active_task_keeps_stages_open_and_refreshes_even_with_report(render_summary):
-    html = render_summary(status="running", current_stage="collect", progress=50)
+def test_active_task_keeps_stages_open_and_updates_locally_even_with_report(render_summary):
+    html = render_summary(
+        status="running", current_stage="collect", progress=50, live_progress=True
+    )
     assert '<details id="execution-details" open' in html
-    assert "window.setTimeout" in html
+    assert "/static/scan-progress.js" in html
+    assert "window.location.reload" not in html
     assert "覆盖完整性尚未确定" in html
 
 

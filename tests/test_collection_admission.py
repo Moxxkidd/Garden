@@ -21,14 +21,17 @@ def test_origin_gate_counts_redirects_and_health_without_refunding_uncertain_sen
     with session_scope() as session:
         target = session.get(Target, seeded_records["target"].id)
         run = source_run(session, target)
-        qid = queues.create(session, run.id, run.contexts[0].id, CollectionOptions(max_requests=2))[
-            "id"
-        ]
+        qid = queues.create(
+            session,
+            run.id,
+            run.contexts[0].id,
+            CollectionOptions(max_requests=2, origin_concurrency=2),
+        )["id"]
         token = queues.lease(session, qid)
         first = gate.reserve(session, qid, token, target.base_url, kind="health")
         gate.admit(session, first["id"], token)
         wait = gate.reserve(session, qid, token, target.base_url + "/redirect", kind="redirect")
-        assert wait == {"admitted": False, "retry_at": 100.25}
+        assert wait == {"admitted": False, "retry_at": 100.25, "waiting": "rate_limit"}
         now[0] = 100.25
         second = gate.reserve(session, qid, token, target.base_url + "/redirect", kind="redirect")
         gate.admit(session, second["id"], token)

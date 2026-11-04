@@ -152,6 +152,9 @@ class ScanRunView(BaseModel):
     completeness: str | None = None
     coverage_gaps: list[CoverageGapView] | None = None
     discovery_summary: dict | None = None
+    live_progress: bool = False
+    waiting_reason: str | None = None
+    execution_feedback: dict | None = None
 
 
 class FetchResult(BaseModel):

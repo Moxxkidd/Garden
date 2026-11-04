@@ -27,8 +27,13 @@ class ScanDiscovery:
             else {}
         )
         self.source_incomplete = False
+        self.last_snapshot = float("-inf")
 
-    def save(self, complete=False):
+    def save(self, complete=False, *, force=False):
+        now = self.pipeline.clock()
+        if not complete and not force and now - self.last_snapshot < 1:
+            return
+        self.last_snapshot = now
         self.run.asset_metadata = self.ledger.snapshot(
             complete=complete and not self.source_incomplete
         )
@@ -55,16 +60,16 @@ class ScanDiscovery:
         if observed and self.run.current_stage == "collect":
             estimate = 8 + int(49 * observed / (observed + remaining))
             self.run.progress = max(self.run.progress, estimate)
+        observations = {}
+        for item in self.ledger.items.values():
+            if item["observed"]:
+                observations.setdefault(
+                    (item.get("response_url", item["url"]), item["method"]), []
+                ).append(item)
         for asset in self.session.scalars(
             select(ScanAsset).where(ScanAsset.scan_run_id == self.run.id)
         ):
-            matches = [
-                i
-                for i in self.ledger.items.values()
-                if i["observed"]
-                and i.get("response_url", i["url"]) == asset.url.split("#", 1)[0]
-                and i["method"] == (asset.method or "GET")
-            ]
+            matches = observations.get((asset.url.split("#", 1)[0], asset.method or "GET"), [])
             if matches:
                 sources = []
                 for item in matches:
@@ -330,12 +335,12 @@ class ScanDiscovery:
             if not expected:
                 raise
             self.warning(str(error))
-            self.save(complete=False)
+            self.save(complete=False, force=True)
             self.session.commit()
             return None, "Browser collection stopped at a recorded bound; observations retained."
         except Exception:
             if runtime is not None:
                 runtime.close()
-            self.save(complete=False)
+            self.save(complete=False, force=True)
             self.session.commit()
             raise

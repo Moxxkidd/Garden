@@ -1,0 +1,85 @@
+{
+  "samples": [
+    {
+      "sample": "baseline-500",
+      "base_commit": "383fb47d6c386bacd66b39f81848477cfcd8ef79",
+      "source_sha256": "dab47bc90bab155d894a2713c64253025a29b6af3cc0332aea150c47ce503edf",
+      "python": "3.10.10 (v3.10.10:aad5f6a891, Feb  7 2023, 08:47:40) [Clang 13.0.0 (clang-1300.0.29.30)]",
+      "platform": "macOS-26.3-arm64-arm-64bit",
+      "requests": 500,
+      "observed": {
+        "observed": 500
+      },
+      "tcp_connections": 500,
+      "concurrency": 1,
+      "interval_ms": 0,
+      "latency_ms": 0,
+      "scan_seconds": 44.985534500097856,
+      "wall_seconds": 45.32632587500848,
+      "python_cpu_seconds": 42.803948999999996,
+      "max_rss_bytes": 137461760,
+      "phase_seconds": null,
+      "coverage_complete": true
+    },
+    {
+      "sample": "final-500-c1",
+      "base_commit": "383fb47d6c386bacd66b39f81848477cfcd8ef79",
+      "source_sha256": "bcceb66ad2a51585cc9eeaf0ac70cf56068d715439431ae67e1524d92e60b93a",
+      "python": "3.10.10 (v3.10.10:aad5f6a891, Feb  7 2023, 08:47:40) [Clang 13.0.0 (clang-1300.0.29.30)]",
+      "platform": "macOS-26.3-arm64-arm-64bit",
+      "requests": 500,
+      "observed": {
+        "observed": 500
+      },
+      "tcp_connections": 1,
+      "concurrency": 1,
+      "interval_ms": 0,
+      "latency_ms": 0,
+      "scan_seconds": 24.746561457868665,
+      "wall_seconds": 24.920149666955695,
+      "python_cpu_seconds": 22.730109,
+      "max_rss_bytes": 130695168,
+      "phase_seconds": {
+        "request": 0.5494809038937092,
+        "parse": 0.0631265442352742,
+        "enqueue": 1.678645649459213,
+        "evidence_commit": 4.362360292579979,
+        "snapshot": 0.5077972053550184
+      },
+      "coverage_complete": true
+    },
+    {
+      "sample": "final-500-c4",
+      "base_commit": "383fb47d6c386bacd66b39f81848477cfcd8ef79",
+      "source_sha256": "d31d77316a6e6e85a79d793b60b9c7a1aa457a5808ea3c2ad7cf4c5b6e92eb36",
+      "python": "3.10.10 (v3.10.10:aad5f6a891, Feb  7 2023, 08:47:40) [Clang 13.0.0 (clang-1300.0.29.30)]",
+      "platform": "macOS-26.3-arm64-arm-64bit",
+      "requests": 500,
+      "observed": {
+        "observed": 500
+      },
+      "tcp_connections": 1,
+      "concurrency": 4,
+      "interval_ms": 0,
+      "latency_ms": 0,
+      "scan_seconds": 24.552631916943938,
+      "wall_seconds": 24.813643500208855,
+      "python_cpu_seconds": 23.630503,
+      "max_rss_bytes": 140148736,
+      "phase_seconds": {
+        "request": 2.1712931224610656,
+        "parse": 0.0610757889226079,
+        "enqueue": 1.2665816843509674,
+        "evidence_commit": 4.815916906343773,
+        "snapshot": 0.5642787856049836
+      },
+      "coverage_complete": true
+    }
+  ],
+  "notes": [
+    "All data are synthetic loopback GET requests, one round of 500 URLs.",
+    "Baseline phase_seconds absent; baseline hotspots measured with cProfile on 20 pages.",
+    "C1/C4 samples differ only by an intervening CLI waiting-reason display change; HTTP execution files unchanged.",
+    "Shared development machine; targeted browser regressions overlapped the final performance run. No statistical significance or production throughput claim."
+  ]
+}

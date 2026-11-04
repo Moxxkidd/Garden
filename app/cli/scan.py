@@ -172,6 +172,8 @@ def _wait_for_scan(api: LocalScanApi, initial: ScanRunView) -> ScanRunView:
             detail = activity or (
                 "正在采集，等待下一次响应" if result.current_stage == "collect" else ""
             )
+            if result.waiting_reason:
+                detail = f"{detail} · {result.waiting_reason}" if detail else result.waiting_reason
             console.print(
                 f"扫描 {result.id}：{result.current_stage}，{result.progress}%"
                 f" · 已用时 {int(now - started)} 秒" + (f" · {detail}" if detail else "")

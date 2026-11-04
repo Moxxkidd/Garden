@@ -8,7 +8,12 @@ from email.utils import parsedate_to_datetime
 from sqlalchemy import func, select
 
 from app.core.errors import ConflictError, InputValidationError, ResourceNotFoundError
-from app.models.collection_queue import CollectionAttempt, CollectionGate, CollectionWork
+from app.models.collection_queue import (
+    CollectionAttempt,
+    CollectionGate,
+    CollectionQueue,
+    CollectionWork,
+)
 from app.schemas.collection_queue import CollectionOptions
 from app.services.collection_queue import CollectionQueueService
 from app.services.collection_storage import digest
@@ -66,7 +71,11 @@ class CollectionAdmissionService:
                 session.add(gate)
             until = max(gate.next_send_at, gate.cooldown_until)
             if until > self.clock():
-                return dict(admitted=False, retry_at=until)
+                return dict(
+                    admitted=False,
+                    retry_at=until,
+                    waiting="cooldown" if gate.cooldown_until > self.clock() else "rate_limit",
+                )
             used = session.scalar(
                 select(func.count())
                 .select_from(CollectionAttempt)
@@ -76,6 +85,31 @@ class CollectionAdmissionService:
             )
             if used >= options.max_requests:
                 raise ConflictError("collection_request_budget")
+            if kind in {"http", "redirect", "sitemap"}:
+                active = list(
+                    session.scalars(
+                        select(CollectionQueue).where(
+                            CollectionQueue.origin == queue.origin,
+                            CollectionQueue.lease_token.is_not(None),
+                            CollectionQueue.lease_until > self.clock(),
+                        )
+                    )
+                )
+                capacity = min(
+                    [options.origin_concurrency, *[q.options["origin_concurrency"] for q in active]]
+                )
+                in_flight = session.scalar(
+                    select(func.count())
+                    .select_from(CollectionAttempt)
+                    .join(CollectionQueue, CollectionQueue.id == CollectionAttempt.queue_id)
+                    .where(
+                        CollectionQueue.origin == queue.origin,
+                        CollectionQueue.lease_until > self.clock(),
+                        CollectionAttempt.state.in_(["reserved", "possibly_sent"]),
+                    )
+                )
+                if in_flight >= capacity:
+                    return dict(admitted=False, retry_at=self.clock() + 0.05, waiting="concurrency")
             self.queues._bump(session, queue)
             gate.next_send_at = self.clock() + options.min_interval_ms / 1000
             attempt = CollectionAttempt(
@@ -176,6 +210,7 @@ class CollectionAdmissionService:
         return dict(
             **observation_metrics(session, queue, used),
             **timing_metrics(queue),
+            phase_seconds=(queue.telemetry or {}).get("phase_seconds"),
             duplicate_work_submissions=(queue.telemetry or {}).get("duplicate_work_submissions"),
             requests_used=used,
             verification_requests=kinds.get("identity_health", 0),

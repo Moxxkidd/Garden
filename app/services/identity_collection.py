@@ -139,7 +139,10 @@ class IdentityCollectionService:
             active_key=digest,
             status="queued",
             current_stage="queued",
-            options=options.model_dump(exclude={"seed_input", "sitemap_url"}),
+            options={
+                **options.model_dump(exclude={"seed_input", "sitemap_url"}),
+                "feedback_version": 1,
+            },
             completeness="pending",
             active_checks_enabled=False,
         )

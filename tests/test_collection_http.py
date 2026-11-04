@@ -1,4 +1,5 @@
 import httpx
+import pytest
 
 from app.db.bootstrap import session_scope
 from app.schemas.collection_queue import CollectionOptions
@@ -97,5 +98,92 @@ def test_expired_worker_cannot_finalize_or_publish_a_report(tmp_path):
             assert queue["counts"] == {"uncertain": 1}
         assert service.interrupt_active_scans() == 1
         assert service.get_scan(result.id).status == "interrupted"
+    finally:
+        service.shutdown()
+
+
+@pytest.mark.parametrize("concurrency", [1, 2, 4])
+def test_http_workers_overlap_with_exact_admission_budget(tmp_path, concurrency):
+    import threading
+    import time
+
+    active = maximum = 0
+    sent = []
+    lock = threading.Lock()
+
+    def handle(request):
+        nonlocal active, maximum
+        with lock:
+            active += 1
+            maximum = max(maximum, active)
+            sent.append(request.url.path)
+        time.sleep(0.12)
+        with lock:
+            active -= 1
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            text="".join(f'<a href="/{i}">{i}</a>' for i in range(12))
+            if request.url.path == "/"
+            else "<p>fixture</p>",
+        )
+
+    service = _service(tmp_path, handle)
+    try:
+        result = service.start_scan(
+            "http://localhost:8123/",
+            ScanOptions(
+                durable=CollectionOptions(
+                    max_requests=7,
+                    min_interval_ms=0,
+                    origin_concurrency=concurrency,
+                    retry_attempts=0,
+                ),
+                max_pages=20,
+            ),
+        )
+        assert maximum == concurrency
+        assert len(sent) == 7
+        with session_scope() as session:
+            queue = CollectionQueueService().for_run(session, result.id)[0]
+            assert queue["metrics"]["requests_used"] == queue["metrics"]["responses"] == 7
+            assert queue["counts"]["observed"] == 7
+    finally:
+        service.shutdown()
+
+
+def test_pause_keeps_inflight_observations_without_new_admissions(tmp_path):
+    from sqlalchemy import func, select
+
+    from app.models.collection_queue import CollectionAttempt
+
+    admitted_at_pause = []
+
+    def handle(request):
+        if request.url.path != "/":
+            with session_scope() as session:
+                q = CollectionQueueService().for_run(session, 1)[0]
+                if q["status"] == "running":
+                    CollectionQueueService().pause(session, q["id"])
+                    admitted_at_pause.append(session.scalar(select(func.max(CollectionAttempt.id))))
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            text="".join(f'<a href="/{i}">page</a>' for i in range(12))
+            if request.url.path == "/"
+            else "observed",
+        )
+
+    service = _service(tmp_path, handle)
+    try:
+        result = service.start_scan(
+            "http://localhost:8123/",
+            ScanOptions(durable=CollectionOptions(origin_concurrency=4, min_interval_ms=0)),
+        )
+        with session_scope() as session:
+            q = CollectionQueueService().for_run(session, result.id)[0]
+            assert q["status"] == "paused"
+            assert q["counts"]["observed"] >= 2
+            assert session.scalar(select(func.max(CollectionAttempt.id))) == admitted_at_pause[0]
     finally:
         service.shutdown()

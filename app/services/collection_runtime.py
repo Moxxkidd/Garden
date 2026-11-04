@@ -3,7 +3,7 @@
 import json
 import time
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.errors import ConflictError, ScanInterrupted
 from app.models.collection_queue import CollectionGate, CollectionQueue
@@ -135,10 +135,11 @@ class CollectionRuntime:
     ):
         with atomic_collection(self.session):
             self.queues.check_lease(self.session, self.queue_id, self.token)
-            before = set(
-                self.session.scalars(
-                    select(ScanEvidence.id).where(ScanEvidence.scan_run_id == self.run.id)
+            before = (
+                self.session.scalar(
+                    select(func.max(ScanEvidence.id)).where(ScanEvidence.scan_run_id == self.run.id)
                 )
+                or 0
             )
             asset = self.pipeline._persist_fetch(
                 self.session,
@@ -151,7 +152,7 @@ class CollectionRuntime:
             evidence = list(
                 self.session.scalars(
                     select(ScanEvidence).where(
-                        ScanEvidence.scan_run_id == self.run.id, ScanEvidence.id.not_in(before)
+                        ScanEvidence.scan_run_id == self.run.id, ScanEvidence.id > before
                     )
                 )
             )

@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Form, Query, Request, Response, status
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from app.core.errors import ConflictError, GardenError, ResourceNotFoundError
 from app.schemas.scan import ScanOptions, ScanRunView, ScanStartRequest
@@ -15,6 +24,7 @@ from app.schemas.scan_comparison import ScanComparison
 from app.services.collection_presentation import COLLECTION_FIELDS
 from app.services.coverage_gaps import COVERAGE_GAP_NOTE
 from app.services.discovery import SOURCE_KINDS
+from app.services.scan_events import progress_snapshot
 from app.services.scan_result_presentation import (
     coverage_summary,
     diagnostic_hint,
@@ -49,6 +59,41 @@ def start_scan_api(request: Request, payload: ScanStartRequest) -> ScanRunView:
 @router.get("/api/scans/{scan_run_id}", response_model=ScanRunView)
 def scan_status_api(request: Request, scan_run_id: int) -> ScanRunView:
     return request.app.state.scan_service.get_scan(scan_run_id)
+
+
+@router.get(
+    "/api/scans/{scan_run_id}/events",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}}},
+)
+def scan_events(request: Request, scan_run_id: int):
+    service = request.app.state.scan_service
+    first = service.get_scan(scan_run_id)
+    if not first.live_progress:
+        raise ConflictError("旧任务未记录实时反馈版本，请使用状态 API。")
+
+    async def stream():
+        view, previous = first, None
+        while not await request.is_disconnected():
+            payload = progress_snapshot(view)
+            encoded = json.dumps(payload, ensure_ascii=False)
+            if encoded != previous:
+                yield f"event: snapshot\ndata: {encoded}\n\n"
+                previous = encoded
+            if view.status not in {"queued", "running"}:
+                break
+            await asyncio.sleep(0.5)
+            view = await run_in_threadpool(service.get_scan, scan_run_id)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+            "Referrer-Policy": "no-referrer",
+        },
+    )
 
 
 @router.post("/api/scans/{scan_run_id}/cancel", response_model=ScanRunView)
@@ -138,6 +183,7 @@ def scan_detail_page(request: Request, scan_run_id: int) -> HTMLResponse:
         name="scan_detail.html",
         context={
             "scan": scan,
+            "progress_snapshot": progress_snapshot(scan),
             "report": report,
             "page_title": f"Scan {scan.id}",
             "execution_text": execution_summary(scan.status),

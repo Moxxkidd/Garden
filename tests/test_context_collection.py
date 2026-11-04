@@ -97,6 +97,11 @@ class FakeCollectionGateway:
 
 
 class FakeHttpGateway:
+    def task_scope(self, identity="anonymous"):
+        from contextlib import nullcontext
+
+        return nullcontext()
+
     def __init__(self) -> None:
         self.urls: list[str] = []
 

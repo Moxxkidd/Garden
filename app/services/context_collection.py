@@ -90,7 +90,8 @@ class DefaultContextCollectionGateway:
         before_request: Callable[[], None] | None = None,
     ) -> tuple[list[ObservedResource], list[ObservedRequest]]:
         if context.kind == "anonymous":
-            return self._collect_anonymous(run, before_request=before_request)
+            with self.http_gateway.task_scope(identity=context.kind):
+                return self._collect_anonymous(run, before_request=before_request)
         return self._collect_authenticated(run, context, before_request=before_request)
 
     def _collect_anonymous(

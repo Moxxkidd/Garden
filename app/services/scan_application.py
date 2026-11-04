@@ -263,6 +263,7 @@ class ScanApplicationService:
                 current_stage="queued",
                 progress=0,
                 options={
+                    "feedback_version": 1,
                     **resolved.model_dump(exclude={"seed_input", "sitemap_url"}),
                     "seed_input": "",
                     "sitemap_url": "",
@@ -468,7 +469,30 @@ class ScanApplicationService:
     def get_scan(self, scan_run_id: int) -> ScanRunView:
         with session_scope() as session:
             run = self._get(session, scan_run_id)
-            return self._view(run)
+            view = self._view(run)
+            if view.live_progress and view.status in {"queued", "running"}:
+                from app.models.collection_queue import CollectionQueue
+
+                telemetry = session.scalars(
+                    select(CollectionQueue.telemetry).where(CollectionQueue.run_id == run.id)
+                )
+                waits = {(value or {}).get("timing", {}).get("waiting") for value in telemetry}
+                view.waiting_reason = (
+                    "等待代理或目标限流冷却"
+                    if "cooldown" in waits
+                    else "等待请求间隔"
+                    if "rate_limit" in waits
+                    else "等待并发发送槽位"
+                    if "concurrency" in waits
+                    else "等待任务启动"
+                    if view.status == "queued"
+                    else "等待响应或下一个采集步骤"
+                )
+            if view.live_progress:
+                from app.services.scan_events import progress_snapshot
+
+                view.execution_feedback = progress_snapshot(view)
+            return view
 
     def get_assessment(self, scan_run_id: int) -> AssessmentRunView:
         with session_scope() as session:
@@ -647,6 +671,7 @@ class ScanApplicationService:
     def _view_data(self, run: ScanRun) -> dict[str, object]:
         return {
             "id": run.id,
+            "live_progress": run.options.get("feedback_version") == 1,
             "mode": run.mode,
             "target_id": run.target_id,
             "source_run_id": run.source_run_id,

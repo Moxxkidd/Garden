@@ -625,7 +625,11 @@ class ScanPipeline:
             f"discovered {len(result.discovered_urls)} linked URL(s)."
         )
 
-    def _discover_and_collect(
+    def _discover_and_collect(self, session, run, options, deadline):
+        with self.gateway.task_scope():
+            return self._collect_task(session, run, options, deadline)
+
+    def _collect_task(
         self,
         session: Session,
         run: ScanRun,
@@ -666,6 +670,14 @@ class ScanPipeline:
         from app.services.discovery_scan import ScanDiscovery
 
         discovery_state = ScanDiscovery(self, session, run, options, deadline, entry.final_url)
+        try:
+            return self._collect_legacy(session, run, entry, options, deadline, discovery_state)
+        except (OverallScanTimeout, ScanInterrupted):
+            discovery_state.save(complete=False, force=True)
+            session.commit()
+            raise
+
+    def _collect_legacy(self, session, run, entry, options, deadline, discovery_state):
         discovery_state.ledger.add(
             DiscoveredAsset(url=entry.final_url, asset_type="page", source_kind="entry")
         )
