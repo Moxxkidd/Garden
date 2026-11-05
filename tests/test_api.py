@@ -52,7 +52,11 @@ def test_scan_detail_diagnostic_guidance_is_fixed_and_escaped(app, code, snippet
         finally:
             app.state.scan_service = original_service
     assert response.status_code == 200
-    assert "<dd>0 类关注项，0 条原始观察" in response.text
+    definitions = [
+        re.sub(r"<[^>]+>", "", value).strip()
+        for value in re.findall(r"<dd\b[^>]*>(.*?)</dd>", response.text, re.DOTALL)
+    ]
+    assert any(value.startswith("0 类关注项，0 条原始观察") for value in definitions)
     assert "<script>TEST_SECRET</script>" not in response.text
     if code:
         assert "&lt;script&gt;TEST_SECRET&lt;/script&gt;" in response.text

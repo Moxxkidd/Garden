@@ -89,7 +89,17 @@ def test_scan_api_schema_preserves_old_fields_and_adds_optional_presentation_fie
         "completeness",
         "coverage_gaps",
         "discovery_summary",
+        "live_progress",
+        "waiting_reason",
+        "execution_feedback",
     }
+    for name, default in {
+        "live_progress": False,
+        "waiting_reason": None,
+        "execution_feedback": None,
+    }.items():
+        assert not ScanRunView.model_fields[name].is_required()
+        assert ScanRunView.model_fields[name].default is default
     assert ScanRunView.model_fields["coverage_gaps"].default is None
     assert not ScanRunView.model_fields["coverage_gaps"].is_required()
     assert not ScanRunView.model_fields["finding_group_count"].is_required()
