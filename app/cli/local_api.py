@@ -26,7 +26,7 @@ class LocalScanApi:
     def start_scan(
         self, url: str, options: ScanOptions, *, project_entry_id: int | None = None
     ) -> ScanRunView:
-        payload = {"url": url, "options": options.model_dump()}
+        payload = {"url": url, "options": options.model_dump(exclude_unset=True)}
         if project_entry_id is not None:
             payload["project_entry_id"] = project_entry_id
         return self._scan_request("POST", "/api/scans", payload)

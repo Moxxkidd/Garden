@@ -155,7 +155,7 @@ def _options(run):
     if any(
         key not in run.options or run.options[key] is None
         for key in ScanOptions.model_fields
-        if key != "durable"
+        if key not in {"durable", "preset", "discovery_strategy"}
     ):
         return None
     try:

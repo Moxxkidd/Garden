@@ -18,8 +18,10 @@
     <p>配置检查：{{ '匹配' if preview.can_submit else '需修正' }}。登录身份：不使用（仅匿名）。覆盖状态：尚未产生。</p>
     <p class="text-sm text-slate-600">{{ preview.budget_note }}</p>
     <dl class="grid grid-cols-2 gap-3 rounded-2xl bg-stone-50 p-4 text-sm">
-      {% for key, label in [('max_pages', '页面上限'), ('max_resources', '静态资源上限'), ('max_depth', '深度上限'), ('request_timeout_seconds', '单次请求超时（秒）'), ('overall_timeout_seconds', '整体超时（秒）'), ('retry_attempts', '重试次数'), ('max_redirects', '重定向上限'), ('user_agent', 'User-Agent'), ('collection_mode','采集方式'), ('sitemap_enabled','站点地图'), ('js_enabled','JS 线索'), ('max_candidates','候选上限'), ('max_sitemap_documents','地图文件上限'), ('max_sitemap_depth','地图深度'), ('max_browser_requests','浏览器请求上限'), ('render_wait_ms','渲染等待毫秒'), ('seed_format','导入格式')] %}
-      <dt>{{ label }}</dt><dd class="break-all font-medium">{{ preview.effective_options | attr(key) }}</dd>
+      {% for key, label in [('max_pages', '页面上限'), ('max_resources', '静态资源上限'), ('max_depth', '深度上限'), ('request_timeout_seconds', '单次请求超时（秒）'), ('overall_timeout_seconds', '整体超时（秒）'), ('retry_attempts', '重试次数'), ('max_redirects', '重定向上限'), ('user_agent', 'User-Agent'), ('preset','预设'), ('discovery_strategy','发现策略'), ('max_variants','普通采样上限'), ('collection_mode','采集方式'), ('sitemap_enabled','站点地图'), ('js_enabled','JS 线索'), ('max_candidates','候选上限'), ('max_sitemap_documents','地图文件上限'), ('max_sitemap_depth','地图深度'), ('max_browser_requests','浏览器请求上限'), ('render_wait_ms','渲染等待毫秒'), ('seed_format','导入格式')] %}
+      {% set value = preview.effective_options | attr(key) %}
+      {% set labels = {'preset': {'quick':'快速','balanced':'平衡','deep':'浏览器深入',none:'默认'}, 'discovery_strategy': {'diversity':'路径多样性',none:'原顺序'}, 'collection_mode': {'http':'HTTP','browser':'匿名浏览器','hybrid':'混合：HTTP + 有界浏览器'}, 'sitemap_enabled': {true:'开启',false:'关闭'}, 'js_enabled': {true:'开启',false:'关闭'}} %}
+      <dt>{{ label }}</dt><dd class="break-all font-medium">{{ labels[key].get(value,value) if key in labels else value }}</dd>
       {% endfor %}
     </dl>
     {% if preview.effective_options.durable is not none %}

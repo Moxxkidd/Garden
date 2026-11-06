@@ -174,3 +174,59 @@ def summarize_scan_view(view: "ScanRunView") -> ResultSummary:
         diagnostics=[("context", c.error_code) for c in view.contexts if c.error_code]
         + [(f.stage, f.code) for f in view.failures],
     )
+
+
+_DISCOVERY_REASONS = {
+    "max_variants": "采样上限",
+    "request_budget": "总请求预算",
+    "max_pages": "页面上限",
+    "max_resources": "资源上限",
+    "max_depth": "深度上限",
+    "declaration_only": "仅声明，未授权自动访问",
+    "outside_scope": "范围外",
+    "repeat_family": "同路径族暂缓",
+    "collection_stopped": "采集已停止",
+    "browser_reserved": "浏览器预留边界",
+    "request_failed": "请求未取得响应",
+}
+
+
+def discovery_explanation(summary: dict | None) -> list[str]:
+    """One safe, optional projection for Web, CLI and Markdown reports."""
+    if not summary:
+        return []
+    lines = []
+    scheduling = summary.get("scheduling")
+    if scheduling:
+        lines.append(
+            f"路径多样性：已观察 {scheduling['observed_families']} 个路径族；"
+            f"未请求 {scheduling['unrequested_count']} 条候选。路径族不合并精确资产。"
+        )
+        lines.extend(
+            f"未请求原因：{_DISCOVERY_REASONS.get(reason, '其他已记录边界')} {count} 条"
+            for reason, count in scheduling["reasons"].items()
+        )
+    hybrid = summary.get("hybrid")
+    if hybrid:
+        trigger = {
+            "hash_route": "Hash 路由线索",
+            "script_only_entry": "入口有脚本且无普通同源可访链接",
+        }.get(hybrid["trigger"], "未满足浏览器触发条件")
+        status = {
+            "not_triggered": "未启动，预留已还给 HTTP",
+            "no_browser_budget": "本轮没有浏览器额度，浏览器部分未覆盖",
+            "unavailable": "浏览器不可用，HTTP 结果已保留，浏览器部分未覆盖",
+            "bounded": "已达到有界采集边界，仍可能未覆盖",
+            "completed": "本轮导航结束，仍不代表全站覆盖",
+        }[hybrid["browser_status"]]
+        lines.extend(
+            [
+                f"混合采集：{trigger}；浏览器预留 {hybrid['browser_reserved']} 次请求。",
+                f"HTTP：{hybrid['http_requests']} 次请求，"
+                f"{hybrid['http_observations']} 条新增观察；"
+                f"浏览器：{hybrid['browser_requests']} 次请求，"
+                f"{hybrid['browser_observations']} 条新增观察。",
+                f"浏览器状态：{status}。请求含重定向、重试和子请求；新增观察不是有效资产数。",
+            ]
+        )
+    return lines

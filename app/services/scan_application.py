@@ -190,9 +190,16 @@ class ScanApplicationService:
         self, request: AssessmentStartRequest, *, collection_plan=None
     ) -> AssessmentRunView:
         resolved = self._resolve_options(request.options)
+        normalized = self.pipeline.policy.normalize_url(request.url)
+        from app.services.discovery import safe_route
+
+        entry_route = (
+            request.url
+            if resolved.collection_mode == "hybrid" and safe_route(request.url)
+            else None
+        )
         if resolved.durable is not None:
             self.ensure_collection_executor()
-        normalized = self.pipeline.policy.normalize_url(request.url)
         from app.services.discovery_sources import parse_seed_input
 
         if resolved.seed_input:
@@ -268,7 +275,13 @@ class ScanApplicationService:
                     "seed_input": "",
                     "sitemap_url": "",
                     "_discovery_input_digest": hashlib.sha256(
-                        json.dumps([resolved.seed_input, resolved.sitemap_url]).encode()
+                        json.dumps(
+                            [
+                                resolved.seed_input,
+                                resolved.sitemap_url,
+                                *([entry_route] if entry_route else []),
+                            ]
+                        ).encode()
                     ).hexdigest(),
                 },
                 active_checks_enabled=request.active_checks_enabled,
@@ -307,13 +320,17 @@ class ScanApplicationService:
             if collection_plan is not None:
                 # The flush acquired the SQLite writer lock; recheck before publishing work.
                 collection_plan.validate(session)
-            if resolved.seed_input or resolved.sitemap_url:
+            if resolved.seed_input or resolved.sitemap_url or entry_route:
                 from app.services.session_storage import SessionStorageService
 
                 run.discovery_input_ref = SessionStorageService().write_request_payload(
                     run.id,
                     0,
-                    {"seed_input": resolved.seed_input, "sitemap_url": resolved.sitemap_url},
+                    {
+                        "seed_input": resolved.seed_input,
+                        "sitemap_url": resolved.sitemap_url,
+                        **({"entry_route": entry_route} if entry_route else {}),
+                    },
                 )
             session.add_all(self._assessment_contexts(session, run, request))
             create_assessment_stages(session, run)
@@ -687,7 +704,15 @@ class ScanApplicationService:
             "discovery_summary": (
                 {
                     key: run.asset_metadata.get(key)
-                    for key in ["version", "complete", "truncated", "stats", "pending_count"]
+                    for key in [
+                        "version",
+                        "complete",
+                        "truncated",
+                        "stats",
+                        "pending_count",
+                        "hybrid",
+                        "scheduling",
+                    ]
                 }
                 if isinstance(run.asset_metadata, dict) and run.asset_metadata.get("version") == 2
                 else None
@@ -758,6 +783,11 @@ class ScanApplicationService:
                     else {}
                 ),
                 "options": options.model_dump(),
+                **(
+                    {"hybrid_entry": hashlib.sha256(request.url.encode()).hexdigest()}
+                    if options.collection_mode == "hybrid"
+                    else {}
+                ),
             },
             sort_keys=True,
             separators=(",", ":"),

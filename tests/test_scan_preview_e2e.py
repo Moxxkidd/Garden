@@ -157,3 +157,29 @@ def test_browser_preview_edit_confirm_preserves_budget_without_early_requests(
                 assert len(app.state.scan_service.list_scans()) == 2
             finally:
                 browser.close()
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_discovery_presets_show_effective_hybrid_budget_before_submission(app, tmp_path, width):
+    with _serve(app) as origin, sync_playwright() as playwright:
+        app.state.scan_service.pipeline.report_service = ScanReportService(tmp_path / "reports")
+        browser = playwright.chromium.launch(headless=True, channel="chromium")
+        try:
+            page = browser.new_page(viewport={"width": width, "height": 900})
+            page.goto(origin)
+            page.get_by_label("Entry URL").fill("http://localhost:8123/")
+            page.get_by_label("发现预设", exact=True).select_option("deep")
+            page.get_by_role("button", name="预览扫描", exact=True).click()
+            expect(page.get_by_text("浏览器预留 300 次", exact=False)).to_be_visible()
+            expect(page.get_by_text("混合：HTTP + 有界浏览器", exact=True)).to_be_visible()
+            assert app.state.scan_service.list_scans() == []
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+            page.screenshot(path=str(tmp_path / f"hybrid-preview-{width}.png"), full_page=True)
+            page.get_by_role("button", name="返回修改", exact=True).click()
+            page.get_by_text("发现选项", exact=True).click()
+            page.get_by_label("采集方式", exact=True).select_option("http")
+            page.get_by_role("button", name="预览扫描", exact=True).click()
+            expect(page.get_by_text("HTTP", exact=True)).to_be_visible()
+            assert not page.get_by_text("混合：HTTP + 有界浏览器", exact=True).count()
+        finally:
+            browser.close()

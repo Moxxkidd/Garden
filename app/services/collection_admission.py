@@ -54,6 +54,7 @@ class CollectionAdmissionService:
         kind="http",
         work_id=None,
         is_retry=False,
+        request_limit=None,
     ):
         with atomic_collection(session):
             queue = self.queues.check_lease(session, queue_id, token, sending=True)
@@ -85,6 +86,8 @@ class CollectionAdmissionService:
             )
             if used >= options.max_requests:
                 raise ConflictError("collection_request_budget")
+            if request_limit is not None and used >= request_limit:
+                raise ConflictError("collection_phase_budget")
             if kind in {"http", "redirect", "sitemap"}:
                 active = list(
                     session.scalars(

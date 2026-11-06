@@ -38,7 +38,10 @@ class ScanOptions(BaseModel):
     """Bounded user controls; infrastructure defaults are injected by the service."""
 
     durable: CollectionOptions | None = None
-    collection_mode: Literal["http", "browser"] = "http"
+    collection_mode: Literal["http", "browser", "hybrid"] = "http"
+    preset: Literal["quick", "balanced", "deep"] | None = None
+    discovery_strategy: Literal["diversity"] | None = None
+    max_variants: int = Field(default=20, ge=1, le=200)
     sitemap_enabled: bool = False
     sitemap_url: str = Field(default="", max_length=2000)
     js_enabled: bool = False

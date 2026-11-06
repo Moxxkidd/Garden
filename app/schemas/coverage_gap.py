@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class BudgetGap(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    reason: Literal["max_pages", "max_resources", "max_depth"]
+    reason: Literal["max_pages", "max_resources", "max_depth", "max_variants"]
     count: int = Field(gt=0)
     limit: int = Field(ge=0)
     samples: list[str] = Field(default_factory=list, max_length=3)
@@ -18,7 +18,7 @@ class CoverageDetails(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     version: Literal[1] = 1
-    items: list[BudgetGap] = Field(min_length=1, max_length=3)
+    items: list[BudgetGap] = Field(min_length=1, max_length=4)
 
     @model_validator(mode="after")
     def unique_reasons(self):

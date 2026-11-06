@@ -15,6 +15,10 @@ from app.services.discovery_html import parse_html
 from app.services.scan_network import TargetNetworkPolicy
 
 
+class BrowserUnavailableError(RuntimeError):
+    """The single supported Chromium backend could not start."""
+
+
 class BrowserDiscovery:
     def __init__(self, policy: TargetNetworkPolicy) -> None:
         self.policy = policy
@@ -115,7 +119,7 @@ class BrowserDiscovery:
             try:
                 browser = playwright.chromium.launch(headless=True, channel="chromium")
             except PlaywrightError as error:
-                raise RuntimeError(
+                raise BrowserUnavailableError(
                     "Chromium could not start. Install it with: "
                     "python -m playwright install chromium"
                 ) from error

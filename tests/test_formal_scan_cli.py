@@ -271,3 +271,65 @@ def test_cli_shows_live_counts_even_when_percentage_is_unchanged(monkeypatch, ca
     assert "收到 1 次响应" in output
     assert "收到 2 次响应" in output
     assert "已用时" in output
+
+
+def test_terminal_scan_explains_explicit_hybrid_gap(run_terminal_scan):
+    from app.services.scan_result_presentation import discovery_explanation
+
+    payload = _view(status="completed_with_warnings", stage="finished", progress=100).model_dump()
+    payload["discovery_summary"] = {
+        "hybrid": {
+            "browser_reserved": 3,
+            "trigger": "hash_route",
+            "browser_status": "unavailable",
+            "http_requests": 7,
+            "browser_requests": 0,
+            "http_observations": 5,
+            "browser_observations": 0,
+        }
+    }
+    result = run_terminal_scan(ScanRunView.model_validate(payload))
+    assert result.exit_code == 0
+    for line in discovery_explanation(payload["discovery_summary"]):
+        assert "".join(line.split()) in "".join(result.stdout.split())
+
+
+def test_cli_preset_survives_real_local_api_transport(app, monkeypatch):
+    from app.cli.main import app as cli_app
+    from tests.test_scan_preview_e2e import _serve
+
+    received = []
+    with _serve(app) as origin:
+        service = app.state.scan_service
+
+        def start(url, options):
+            received.append(service._resolve_options(options))
+            return _view(status="completed", stage="finished", progress=100)
+
+        monkeypatch.setattr(service, "start_scan", start)
+        monkeypatch.setattr(
+            scan_cli,
+            "WebRuntimeManager",
+            lambda **kwargs: SimpleNamespace(ensure=lambda **kw: SimpleNamespace(base_url=origin)),
+        )
+        result = runner.invoke(
+            app=cli_app,
+            args=[
+                "scan",
+                "http://localhost:8123/",
+                "--preset",
+                "deep",
+                "--max-requests",
+                "50",
+                "--no-js",
+                "--detach",
+            ],
+        )
+    assert result.exit_code == 0, result.stdout
+    assert len(received) == 1
+    options = received[0]
+    assert options.collection_mode == "hybrid"
+    assert options.discovery_strategy == "diversity"
+    assert options.sitemap_enabled is True
+    assert options.js_enabled is False
+    assert options.durable.max_requests == 50

@@ -28,6 +28,7 @@ from app.services.scan_events import progress_snapshot
 from app.services.scan_result_presentation import (
     coverage_summary,
     diagnostic_hint,
+    discovery_explanation,
     execution_summary,
     format_collection_activity,
     format_execution_progress,
@@ -35,6 +36,9 @@ from app.services.scan_result_presentation import (
 )
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[2] / "templates"))
+
+templates.env.globals["discovery_explanation"] = discovery_explanation
+
 templates.env.globals["collection_fields"] = COLLECTION_FIELDS
 
 templates.env.globals["source_kinds"] = SOURCE_KINDS
@@ -138,7 +142,7 @@ def start_scan_page(
     max_pages: int = Form(default=50, ge=1, le=500),
     max_resources: int = Form(default=200, ge=0, le=2000),
     max_depth: int = Form(default=2, ge=0, le=5),
-    collection_mode: Literal["http", "browser"] = Form(default="http"),
+    collection_mode: Literal["http", "browser", "hybrid"] = Form(default="http"),
     sitemap_enabled: bool = Form(default=False),
     sitemap_url: str = Form(default=""),
     js_enabled: bool = Form(default=False),

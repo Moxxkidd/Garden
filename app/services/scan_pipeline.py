@@ -636,6 +636,10 @@ class ScanPipeline:
         options: ScanOptions,
         deadline: float,
     ):
+        if options.collection_mode == "hybrid":
+            from app.services.collection_hybrid import collect_hybrid
+
+            return collect_hybrid(self, session, run, options, deadline)
         if options.durable is not None and options.collection_mode == "http":
             from app.services.collection_http import collect_http
 
@@ -701,7 +705,44 @@ class ScanPipeline:
         skipped_external: set[str] = set()
         depth_limited: list[DiscoveredAsset] = []
 
+        from app.services.discovery_scheduling import choose_candidate, path_family, source_group
+
         queued = set(seen)
+        families = Counter([path_family(entry.final_url)])
+        selected_families = set(families)
+        last_group = None
+
+        def take(queue):
+            nonlocal last_group
+            if options.discovery_strategy != "diversity":
+                return queue.pop(0)
+            positions = {key: index for index, key in enumerate(discovery_state.ledger.items)}
+            queue.sort(
+                key=lambda pair: positions[
+                    discovery_state.ledger.key(pair[0].url, pair[0].method, pair[0].route_url)
+                ]
+            )
+            index, reason = choose_candidate(
+                [
+                    (path_family(item.url, item.method or "GET"), item.source_kind, 2)
+                    for item, _ in queue
+                ],
+                selected_families,
+                last_group,
+            )
+            item, depth = queue.pop(index)
+            last_group = source_group(item.source_kind)
+            discovery_state.ledger.items[
+                discovery_state.ledger.key(item.url, item.method, item.route_url)
+            ]["scheduling_reason"] = reason
+            for candidate, _ in queue:
+                if path_family(candidate.url, candidate.method or "GET") in selected_families:
+                    discovery_state.ledger.items[
+                        discovery_state.ledger.key(
+                            candidate.url, candidate.method, candidate.route_url
+                        )
+                    ]["scheduling_reason"] = "repeat_family"
+            return item, depth
 
         def enqueue(discovery: DiscoveredAsset, depth: int) -> None:
             accepted = discovery_state.ledger.add(discovery)
@@ -721,6 +762,16 @@ class ScanPipeline:
                 )
                 discovery_state.ledger.items[key]["reason"] = "max_depth"
                 return
+            family = path_family(discovery.url, discovery.method or "GET")
+            if options.discovery_strategy == "diversity":
+                if families[family] >= options.max_variants:
+                    discovery_state.ledger.items[
+                        discovery_state.ledger.key(
+                            discovery.url, discovery.method, discovery.route_url
+                        )
+                    ]["reason"] = "max_variants"
+                    return
+                families[family] += 1
             target = page_queue if discovery.asset_type == "page" else resource_queue
             target.append((discovery, depth))
 
@@ -738,17 +789,32 @@ class ScanPipeline:
             discovery_state.ledger.attempted(active_url)
             discovery_state.save()
 
-        while page_queue and page_requests < options.max_pages:
+        while (page_queue and page_requests < options.max_pages) or (
+            options.discovery_strategy == "diversity"
+            and resource_queue
+            and resource_requests < options.max_resources
+        ):
             self._check_interrupted(session, run.id)
             self._check_deadline(deadline)
-            discovery, depth = page_queue.pop(0)
+            if options.discovery_strategy == "diversity":
+                eligible = (page_queue if page_requests < options.max_pages else []) + (
+                    resource_queue if resource_requests < options.max_resources else []
+                )
+                discovery, depth = take(eligible)
+                (page_queue if discovery.asset_type == "page" else resource_queue).remove(
+                    (discovery, depth)
+                )
+            else:
+                discovery, depth = take(page_queue)
+            is_page = discovery.asset_type == "page"
             url = discovery.url
             active_url = url
             if url in seen:
                 continue
             seen.add(url)
             requested.add(url)
-            page_requests += 1
+            page_requests += int(is_page)
+            resource_requests += int(not is_page)
             try:
                 result = self.gateway.fetch(
                     url,
@@ -780,9 +846,11 @@ class ScanPipeline:
             discovery_state.ledger.observed(
                 url, response_url=result.final_url, aliases=result.redirects
             )
+            selected_families.add(path_family(url, discovery.method or "GET"))
             seen.update([result.final_url, *result.redirects])
             requested.update([result.final_url, *result.redirects])
-            page_count += 1
+            page_count += int(is_page)
+            resource_count += int(not is_page)
             for child in self._discoveries(result):
                 enqueue(child, depth + 1)
             for child in discovery_state.script_sources(result):
@@ -794,7 +862,7 @@ class ScanPipeline:
         while resource_queue and resource_requests < options.max_resources:
             self._check_interrupted(session, run.id)
             self._check_deadline(deadline)
-            discovery, depth = resource_queue.pop(0)
+            discovery, depth = take(resource_queue)
             url = discovery.url
             active_url = url
             if url in seen:
@@ -833,6 +901,7 @@ class ScanPipeline:
             discovery_state.ledger.observed(
                 url, response_url=result.final_url, aliases=result.redirects
             )
+            selected_families.add(path_family(url, discovery.method or "GET"))
             seen.update([result.final_url, *result.redirects])
             requested.update([result.final_url, *result.redirects])
             resource_count += 1
@@ -850,7 +919,16 @@ class ScanPipeline:
             discovery_state.warning("候选数量上限")
         discovery_state.save(complete=True)
         coverage_details = capture_budget_gaps(
-            uncovered, page_queue, resource_queue, depth_limited, options
+            uncovered,
+            page_queue,
+            resource_queue,
+            depth_limited,
+            options,
+            sampled_urls={
+                key[0]
+                for key, item in discovery_state.ledger.items.items()
+                if item["reason"] == "max_variants"
+            },
         )
         limits = (
             [f"{item['reason']}={item['limit']}" for item in coverage_details["items"]]

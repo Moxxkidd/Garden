@@ -59,6 +59,7 @@ class CollectionRuntime:
         self.latest_attempt = None
         self.work_id = None
         self.retrying = False
+        self.request_limit = None
 
     def check(self):
         self.pipeline._guard_network_request(self.session, self.run.id, self.deadline)
@@ -106,6 +107,7 @@ class CollectionRuntime:
                 kind=kind,
                 work_id=self.work_id,
                 is_retry=self.retrying and kind != "identity_health",
+                request_limit=self.request_limit,
             )
             self.session.commit()
             if not reserved["admitted"]:

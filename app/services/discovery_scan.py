@@ -1,6 +1,6 @@
 """Integrate bounded sources with the existing quick scan and persistence."""
 
-from collections import deque
+from collections import Counter, deque
 from urllib.parse import urljoin
 
 from sqlalchemy import select
@@ -27,6 +27,9 @@ class ScanDiscovery:
             else {}
         )
         self.source_incomplete = False
+        self.hybrid = None
+        self.hybrid_routes = []
+        self.entry_has_script_only = False
         self.last_snapshot = float("-inf")
 
     def save(self, complete=False, *, force=False):
@@ -37,6 +40,25 @@ class ScanDiscovery:
         self.run.asset_metadata = self.ledger.snapshot(
             complete=complete and not self.source_incomplete
         )
+        if self.options.discovery_strategy == "diversity":
+            from app.services.discovery_scheduling import path_family
+
+            self.run.asset_metadata["scheduling"] = {
+                "strategy": "diversity",
+                "observed_families": len(
+                    {
+                        path_family(key[0], key[1])
+                        for key, item in self.ledger.items.items()
+                        if item["observed"]
+                    }
+                ),
+                "unrequested_count": sum(not i["observed"] for i in self.ledger.items.values()),
+                "reasons": dict(
+                    Counter(i["reason"] for i in self.ledger.items.values() if not i["observed"])
+                ),
+            }
+        if self.hybrid is not None:
+            self.run.asset_metadata["hybrid"] = dict(self.hybrid)
         pending = [i for i in self.ledger.items.values() if i["reason"] == "pending"]
         self.run.asset_metadata["pending_count"] = len(pending)
         observed = sum(v["response_observed"] for v in self.ledger.stats.values())
@@ -87,6 +109,36 @@ class ScanDiscovery:
                 }
                 asset.attributes = attrs
         self.session.flush()
+
+    def sync_queue(self, runtime):
+        from app.models.collection_queue import CollectionWork
+        from app.services.discovery_scheduling import path_family
+
+        status = runtime.queues.get(self.session, runtime.queue_id)
+        observed_families = {
+            path_family(key[0], key[1])
+            for key, item in self.ledger.items.items()
+            if item["observed"]
+        }
+        for work in self.session.scalars(
+            select(CollectionWork).where(CollectionWork.queue_id == runtime.queue_id)
+        ):
+            request = runtime.queues.request(self.session, runtime.queue_id, work.id)
+            item = self.ledger.items.get(self.ledger.key(request["url"], request["method"]))
+            if item is None:
+                continue
+            if (work.reason or "").startswith("selected_"):
+                item["scheduling_reason"] = work.reason.removeprefix("selected_")
+            if not item["observed"]:
+                if work.state == "suppressed":
+                    item["reason"] = work.reason
+                elif status["metrics"]["requests_used"] >= self.options.durable.max_requests:
+                    item["reason"] = "request_budget"
+                else:
+                    item["reason"] = work.reason or "collection_stopped"
+                if path_family(request["url"], request["method"]) in observed_families:
+                    item["scheduling_reason"] = "repeat_family"
+        return status
 
     def warning(self, reason):
         self.source_incomplete = True
@@ -179,15 +231,14 @@ class ScanDiscovery:
             self.warning("JS 线索达到解析上限，无法确认是否仍有遗漏")
         return [DiscoveredAsset.model_validate(i) for i in items]
 
-    def browser_collect(self):
+    def browser_collect(self, *, runtime=None, seeds=None, finalize=True):
         from datetime import datetime, timezone
 
         from app.models.scan_context import ScanContext
         from app.services.discovery import safe_route
         from app.services.discovery_browser import AnonymousDiscoveryBrowser
 
-        runtime = None
-        if self.options.durable is not None:
+        if runtime is None and self.options.durable is not None:
             from app.services.collection_browser import CollectionBrowser
 
             context = self.session.scalar(
@@ -293,7 +344,7 @@ class ScanDiscovery:
             self.session.commit()
 
         self.ledger.add(DiscoveredAsset(url=self.entry_url, asset_type="page", source_kind="entry"))
-        seeds = []
+        seeds = list(seeds or [])
         for item in [] if runtime is not None else self.extra_sources():
             if self.ledger.add(item) and item.auto_visit:
                 seeds.append(item.url)
@@ -316,7 +367,11 @@ class ScanDiscovery:
             )
             if result["stopped_reason"]:
                 self.warning(result["stopped_reason"])
-            if runtime is not None:
+            if self.hybrid is not None:
+                self.hybrid["browser_status"] = (
+                    "bounded" if result["stopped_reason"] else "completed"
+                )
+            if runtime is not None and finalize:
                 runtime.close()
                 if not runtime.queues.get(self.session, runtime.queue_id)["coverage_complete"]:
                     self.warning("持久队列仍有未覆盖内容")
@@ -330,7 +385,7 @@ class ScanDiscovery:
                 "collection_max_work",
                 "collection_paused",
             }
-            if runtime is not None:
+            if runtime is not None and finalize:
                 runtime.close()
             if not expected:
                 raise
@@ -339,7 +394,7 @@ class ScanDiscovery:
             self.session.commit()
             return None, "Browser collection stopped at a recorded bound; observations retained."
         except Exception:
-            if runtime is not None:
+            if runtime is not None and finalize:
                 runtime.close()
             self.save(complete=False, force=True)
             self.session.commit()

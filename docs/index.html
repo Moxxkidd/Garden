@@ -326,6 +326,12 @@ pre{
 </section>
 
 <div class="extra" id="identity-collection" style="margin-bottom:48px;scroll-margin-top:80px">
+  <div class="tag">v1.2.0 · 有效发现与预算调度</div>
+  <h2>把有限预算留给不同功能路径</h2>
+  <p>快速、平衡、浏览器深入三个预设，提交前展开实际参数。多样性调度优先新路径族，再按页面、Sitemap、JS、导入轮转；日期、数字和同参数名组合按上限采样，精确 URL 与身份仍分别保留。</p>
+  <p>明确混合模式仅面向匿名单入口：浏览器预留总预算的 30%（向下取整并受浏览器上限约束），仅有 Hash 路由线索或入口只有脚本而无普通同源可访链接时启动。静态页面将预留还给 HTTP；重定向、重试和子请求共用同一预算与截止时间。</p>
+  <p>CLI、Web 与报告统一解释来源、贡献和未请求原因。零浏览器额度或 Chromium 不可用如实保留缺口；不自动点击业务按钮，不把声明候选当作有效资产。</p>
+  <p><a href="versions/v1.2.0.md">实现与固定预算实测</a> · 无新增依赖或迁移 · 尚未发布</p>
   <div class="tag">v1.0.0 · 质量基线</div>
   <h2>用可重复的证据，验收资产清单</h2>
   <p>发现、归并、可信度、数据完整性、持续更新、边界控制六维检查，复用真实本地浏览器和合成身份站点。报告列明分子、分母、提交与运行环境；失败、跳过或未执行均不能算通过。</p>
@@ -1062,7 +1068,7 @@ report:{b:'证据与报告 > 报告生成',h:`
 <pre>gardenctl scan \\
   --url http://127.0.0.1:8888/ \\
   --max-pages 50 --max-resources 200 --max-depth 1 --retries 1</pre>
-<p>页面和静态资源使用独立预算，并优先采集 HTML 页面。默认最多请求 50 个页面和 200 个 CSS、JavaScript、图片或文档资源。</p>
+<p>页面和静态资源使用独立上限；原默认优先采集 HTML 页面，选择多样性策略后按路径族与来源轮转。默认最多请求 50 个页面和 200 个 CSS、JavaScript、图片或文档资源。</p>
 <div class="tip">已授权公网目标默认允许；RFC1918/ULA 内网仍需设置 <code>GARDEN_ALLOW_PRIVATE_TARGETS=true</code>。</div>
 `},
 'cli-target':{b:'CLI 参考 > gardenctl target',h:`

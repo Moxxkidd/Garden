@@ -10,11 +10,12 @@ _LIMIT_LABELS = {
     "max_pages": "页面数上限",
     "max_resources": "资源数上限",
     "max_depth": "发现深度上限",
+    "max_variants": "路径族采样上限",
 }
 
 
 def capture_budget_gaps(
-    uncovered, page_queue, resource_queue, depth_limited, options
+    uncovered, page_queue, resource_queue, depth_limited, options, *, sampled_urls=()
 ) -> dict | None:
     """Partition unique, still unrequested discoveries by their available crawl path."""
     pages = {item.url for item, _depth in page_queue}
@@ -28,6 +29,8 @@ def capture_budget_gaps(
             reason = "max_resources"
         elif url in depth_exclusions:
             reason = "max_depth"
+        elif url in sampled_urls:
+            reason = "max_variants"
         else:
             # Future collector paths must not silently turn missing provenance into depth.
             return None

@@ -6,7 +6,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from contextvars import copy_context
 from copy import copy
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.errors import (
@@ -26,19 +26,36 @@ from app.services.discovery_scan import ScanDiscovery
 from app.services.scan_network import FetchError
 
 
-def collect_http(pipeline, session, run, options, deadline):
+def collect_http(
+    pipeline, session, run, options, deadline, *, runtime=None, discovery=None, finalize=True
+):
     context = session.scalar(
         select(ScanContext).where(
             ScanContext.scan_run_id == run.id, ScanContext.kind == "anonymous"
         )
     )
-    runtime = CollectionRuntime(pipeline, session, run, context, options, deadline)
-    discovery = ScanDiscovery(pipeline, session, run, options, deadline, run.normalized_url)
-    page_requests = resource_requests = 0
+    runtime = runtime or CollectionRuntime(pipeline, session, run, context, options, deadline)
+    discovery = discovery or ScanDiscovery(
+        pipeline, session, run, options, deadline, run.normalized_url
+    )
+    previous = list(
+        session.scalars(
+            select(CollectionWork).where(
+                CollectionWork.queue_id == runtime.queue_id, CollectionWork.attempts > 0
+            )
+        )
+    )
+    page_requests = sum(w.asset_type == "page" for w in previous)
+    resource_requests = len(previous) - page_requests
     active_work = None
+    fresh = not discovery.ledger.items
 
     def _enqueue(item, depth):
         accepted = discovery.ledger.add(item)
+        if options.collection_mode == "hybrid" and item.source_kind == "hash_route":
+            route = item.route_url or item.url
+            if route not in discovery.hybrid_routes:
+                discovery.hybrid_routes.append(route)
         if (
             not accepted
             or not runtime.accepts(item.route_url or item.url, item.method or "GET")
@@ -46,7 +63,7 @@ def collect_http(pipeline, session, run, options, deadline):
             or origin(item.url) != runtime.queues.row(session, runtime.queue_id).origin
         ):
             return
-        runtime.queues.enqueue(
+        work = runtime.queues.enqueue(
             session,
             runtime.queue_id,
             item.route_url or item.url,
@@ -56,6 +73,10 @@ def collect_http(pipeline, session, run, options, deadline):
             asset_type=item.asset_type,
             max_depth=options.max_depth,
         )
+        if work["reason"]:
+            discovery.ledger.items[discovery.ledger.key(item.url, item.method, item.route_url)][
+                "reason"
+            ] = work["reason"]
 
     run_id, context_id, run_url = run.id, context.id, run.normalized_url
 
@@ -122,6 +143,7 @@ def collect_http(pipeline, session, run, options, deadline):
                             if url != request["url"]
                             else ("sitemap" if work["asset_type"] == "sitemap" else "http"),
                             is_retry=local.retrying,
+                            request_limit=local.request_limit,
                         )
                         worker_session.commit()
                         if admitted["admitted"]:
@@ -141,9 +163,14 @@ def collect_http(pipeline, session, run, options, deadline):
                     local.response(status, retry_after)
 
             try:
+                fetch_options = options.model_copy(update={"retry_attempts": 0})
+                if options.collection_mode == "hybrid":
+                    fetch_options.request_timeout_seconds = min(
+                        options.request_timeout_seconds, max(0.001, deadline - pipeline.clock())
+                    )
                 result = pipeline.gateway.fetch(
                     request["url"],
-                    options.model_copy(update={"retry_attempts": 0}),
+                    fetch_options,
                     expected_origin=pipeline._origin(run_url),
                     before_request=check,
                     on_request_attempt=before,
@@ -196,7 +223,17 @@ def collect_http(pipeline, session, run, options, deadline):
                                 depth=active_work["depth"] + 1,
                                 asset_type="sitemap",
                             )
-                for child in pipeline._discoveries(result):
+                children = pipeline._discoveries(result)
+                if request["url"] == run.normalized_url:
+                    discovery.entry_has_script_only = any(
+                        c.asset_type == "script" for c in children
+                    ) and not any(
+                        c.auto_visit
+                        and c.asset_type == "page"
+                        and origin(c.url) == origin(run.normalized_url)
+                        for c in children
+                    )
+                for child in children:
                     enqueue(child, active_work["depth"] + 1)
                 for child in discovery.script_sources(result):
                     enqueue(child, active_work["depth"] + 1)
@@ -241,16 +278,21 @@ def collect_http(pipeline, session, run, options, deadline):
             session.commit()
 
     try:
-        enqueue(DiscoveredAsset(url=run.normalized_url, asset_type="page", source_kind="entry"), 0)
-        session.commit()
         from app.services.discovery_sources import parse_seed_input, parse_sitemap
 
-        if discovery.private.get("seed_input"):
-            for value in parse_seed_input(
-                discovery.private["seed_input"], options.seed_format, base_url=run.normalized_url
-            ):
-                enqueue(DiscoveredAsset.model_validate(value), 0)
-        sitemap_requests = 0
+        if fresh:
+            enqueue(
+                DiscoveredAsset(url=run.normalized_url, asset_type="page", source_kind="entry"), 0
+            )
+            session.commit()
+            if discovery.private.get("seed_input"):
+                for value in parse_seed_input(
+                    discovery.private["seed_input"],
+                    options.seed_format,
+                    base_url=run.normalized_url,
+                ):
+                    enqueue(DiscoveredAsset.model_validate(value), 0)
+        sitemap_requests = sum(w.asset_type == "sitemap" for w in previous)
         session.commit()
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="garden-http") as executor:
             while True:
@@ -275,7 +317,19 @@ def collect_http(pipeline, session, run, options, deadline):
                             if (is_page and page_requests >= options.max_pages) or (
                                 not is_page and resource_requests >= options.max_resources
                             ):
-                                raise CollectionStopped("max_pages" if is_page else "max_resources")
+                                if options.discovery_strategy != "diversity":
+                                    raise CollectionStopped(
+                                        "max_pages" if is_page else "max_resources"
+                                    )
+                                runtime.queues.stop_work(
+                                    session,
+                                    runtime.queue_id,
+                                    active_work["id"],
+                                    runtime.token,
+                                    "max_pages" if is_page else "max_resources",
+                                )
+                                session.commit()
+                                continue
                             sitemap_requests += int(is_map)
                             page_requests += int(is_page)
                             resource_requests += int(not is_page)
@@ -345,21 +399,35 @@ def collect_http(pipeline, session, run, options, deadline):
             if isinstance(error, (CollectionStopped, ConflictError))
             else "collection_stopped"
         )
-        discovery.warning(reason)
+        if reason != "collection_phase_budget":
+            discovery.warning(reason)
         session.commit()
     finally:
         queue = runtime.queues.row(session, runtime.queue_id)
         phases.update(pipeline.gateway.task_timings())
         queue.telemetry = {**queue.telemetry, "phase_seconds": phases}
         session.flush()
-        runtime.close()
-        status = runtime.queues.get(session, runtime.queue_id)
-        if not status["coverage_complete"]:
-            discovery.warning("持久队列存在未覆盖工作")
-        tick = time.perf_counter()
-        discovery.save(complete=status["coverage_complete"], force=True)
-        phases["snapshot"] += time.perf_counter() - tick
-        queue = runtime.queues.row(session, runtime.queue_id)
-        queue.telemetry = {**queue.telemetry, "phase_seconds": phases}
-        session.commit()
+        if not finalize:
+            session.execute(
+                update(CollectionWork)
+                .where(
+                    CollectionWork.queue_id == runtime.queue_id, CollectionWork.state == "leased"
+                )
+                .values(state="pending", reason="browser_reserved")
+            )
+            discovery.save(force=True)
+            session.commit()
+        else:
+            runtime.close()
+            status = runtime.queues.get(session, runtime.queue_id)
+            if not status["coverage_complete"]:
+                discovery.warning("持久队列存在未覆盖工作")
+            tick = time.perf_counter()
+            if options.discovery_strategy == "diversity":
+                discovery.sync_queue(runtime)
+            discovery.save(complete=status["coverage_complete"], force=True)
+            phases["snapshot"] += time.perf_counter() - tick
+            queue = runtime.queues.row(session, runtime.queue_id)
+            queue.telemetry = {**queue.telemetry, "phase_seconds": phases}
+            session.commit()
     return None, "Durable HTTP collection ended; consult the persisted queue for remaining work."

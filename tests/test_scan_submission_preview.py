@@ -191,3 +191,39 @@ def test_login_identity_change_invalidates_preview_without_displaying_identity(f
         after = build_preview(session, request, get_settings())
     assert before.configuration_fingerprint != after.configuration_fingerprint
     assert value not in after.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "preset,mode,strategy,sources",
+    [
+        ("quick", "http", None, False),
+        ("balanced", "http", "diversity", True),
+        ("deep", "hybrid", "diversity", True),
+    ],
+)
+def test_discovery_presets_expand_before_preview_and_keep_explicit_overrides(
+    preset, mode, strategy, sources
+):
+    from app.services.scan_submission_preview import build_preview
+
+    with session_scope() as session:
+        preview = build_preview(
+            session,
+            AssessmentStartRequest(url="http://localhost/", options=ScanOptions(preset=preset)),
+            get_settings(),
+        )
+        overridden = build_preview(
+            session,
+            AssessmentStartRequest(
+                url="http://localhost/",
+                options=ScanOptions(preset=preset, js_enabled=False, max_pages=7),
+            ),
+            get_settings(),
+        )
+    options = preview.effective_options
+    assert options.collection_mode == mode
+    assert options.discovery_strategy == strategy
+    assert options.sitemap_enabled == options.js_enabled == sources
+    assert (options.durable is not None) == (mode == "hybrid")
+    assert overridden.effective_options.js_enabled is False
+    assert overridden.effective_options.max_pages == 7

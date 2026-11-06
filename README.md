@@ -16,6 +16,23 @@ URL
   → Markdown 报告
 ```
 
+## v1.2.0：有效发现与预算调度
+
+Web 提交前可选择 **快速**（原 HTTP 默认）、**平衡**（路径多样性 + HTML / JS / Sitemap）、**浏览器深入**（明确混合模式）。高级参数优先，预览显示最终参数与预算，服务端保存同一快照。旧请求缺少这些选项时保持原义。
+
+```bash
+# 仅扫描已授权目标；--preset 同样可用于 API options.preset
+garden scan http://127.0.0.1:8080/ --preset balanced
+garden scan http://127.0.0.1:8080/ --preset deep --max-requests 50
+# 也可显式 --collection-mode hybrid 或 --discovery-strategy diversity
+```
+
+多样性调度优先新路径族，再按页面、Sitemap、JS、导入轮转；数字、日期与相同参数名组合按 `max_variants` 有界采样，精确 URL、方法、origin 和身份仍独立。普通扫描无需创建持久队列；持久采集继续用 `durable.max_variants`。候选保留具体未请求原因，扩大预算后可用原预览/确认流程补采，原记录不被改写。JS/OpenAPI 声明继续只作候选，复杂表达式不猜测、不执行。
+
+混合模式仅面向匿名单入口，自动采用持久预算：浏览器预留总请求数的 30%（向下取整，不超过 `max_browser_requests`），HTTP 使用其余额度；无 Hash 路由线索、且不满足“入口无普通同源可访链接但有脚本资源”时，不启动浏览器并归还额度。两阶段共用总截止时间，重定向、重试和浏览器子请求均计费；不自动点击业务按钮。预留为零或 Chromium 不可用时明确提示浏览器缺口并保留 HTTP 结果。Web、CLI 和报告使用同一贡献/候选原因摘要，新增观察不等于有效资产。
+
+固定 50 次预算的合成语料比较和边界见[本版实施记录](docs/versions/v1.2.0.md)。无新增依赖或数据库迁移。
+
 ## v1.1.0：扫描性能与执行反馈
 
 HTTP 连接在单个任务内复用，按实际代理和上下文隔离，退出时关闭；匿名请求仍不继承响应 Cookie。持久 HTTP 队列的 `origin_concurrency` 默认为 1，支持 1—4 个有界网络 worker；请求、重定向、重试继续共用 admission、暂停和预算约束。没有持久选项的扫描保持串行。

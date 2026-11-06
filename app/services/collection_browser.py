@@ -12,8 +12,13 @@ from app.services.projects import project_url
 
 
 class CollectionBrowser(CollectionRuntime):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, runtime=None, start_url=None, **kwargs):
+        if runtime is None:
+            super().__init__(*args, **kwargs)
+        else:
+            self.__dict__.update(runtime.__dict__)
+        self.start_url = start_url
+        self.navigation_keys = set() if runtime is not None else None
         self.network_attempts = {}
         self.navigation = None
         self.sitemap_requests = 0
@@ -32,19 +37,31 @@ class CollectionBrowser(CollectionRuntime):
             source=source,
             max_depth=self.options.max_depth,
         )
+        if self.navigation_keys is not None:
+            self.navigation_keys.add(digest([project_url(url), method]))
         self.session.commit()
         return work["id"] is not None and work["state"] not in {"suppressed", "failed"}
 
     def next_navigation(self):
+        if self.start_url is not None:
+            url, self.start_url = self.start_url, None
+            self.navigation = None
+            self.check()
+            self.session.commit()
+            return url, 0, "GET"
         while True:
             self.check()
-            self.navigation = self.queues.claim(self.session, self.queue_id, self.token)
+            self.navigation = self.queues.claim(
+                self.session, self.queue_id, self.token, request_keys=self.navigation_keys
+            )
             self.session.commit()
             if self.navigation is not None:
                 break
+            query = select(CollectionWork.not_before)
+            if self.navigation_keys is not None:
+                query = query.where(CollectionWork.request_key.in_(self.navigation_keys))
             pending_time = self.session.scalar(
-                select(CollectionWork.not_before)
-                .where(
+                query.where(
                     CollectionWork.queue_id == self.queue_id,
                     CollectionWork.state == "deferred",
                 )

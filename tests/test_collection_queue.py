@@ -186,3 +186,42 @@ def test_private_payload_does_not_follow_directory_symlinks(tmp_path, nested):
     with pytest.raises(InputValidationError, match="collection_storage_unavailable"):
         linked.write({"url": "http://localhost/another"})
     assert sorted(path.name for path in storage.directory.iterdir()) == before
+
+
+def test_diversity_rotates_sources_without_merging_methods_or_contexts(seeded_records, tmp_path):
+    service = CollectionQueueService(storage=CollectionStorage(tmp_path / "private"))
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        run = source_run(session, target)
+        run.options = {**run.options, "discovery_strategy": "diversity"}
+        qid = service.create(
+            session, run.id, run.contexts[0].id, CollectionOptions(max_variants=1)
+        )["id"]
+        base = target.base_url.rstrip("/")
+        for path, source, method in [
+            ("/article/1", "html_link", "GET"),
+            ("/article/2", "html_link", "GET"),
+            ("/settings", "html_link", "GET"),
+            ("/map", "sitemap", "GET"),
+            ("/script-api", "js_literal", "GET"),
+            ("/import", "url_import", "GET"),
+            ("/article/3", "html_link", "HEAD"),
+        ]:
+            service.enqueue(session, qid, base + path, source=source, method=method)
+        lease = service.lease(session, qid)
+        selected = []
+        for _ in range(6):
+            work = service.claim(session, qid, lease)
+            selected.append((work["url"].removeprefix(base), work["method"]))
+            service.complete(session, qid, work["id"], lease)
+        assert selected == [
+            ("/article/1", "GET"),
+            ("/map", "GET"),
+            ("/script-api", "GET"),
+            ("/import", "GET"),
+            ("/settings", "GET"),
+            ("/article/3", "HEAD"),
+        ]
+        items = service.list_work(session, qid)["items"]
+        assert sum(w["reason"] == "max_variants" for w in items) == 1
+        assert service.claim(session, qid, lease) is None

@@ -29,6 +29,7 @@ from app.services.scan_result_presentation import (
 
 
 def scan(
+    ctx: typer.Context,
     entry_url: Annotated[str | None, typer.Argument(help="已授权的 HTTP(S) 入口 URL。")] = None,
     legacy_url: Annotated[str | None, typer.Option("--url", help="兼容旧版 URL 参数。")] = None,
     max_pages: Annotated[int, typer.Option("--max-pages")] = 50,
@@ -38,6 +39,13 @@ def scan(
     overall_timeout_seconds: Annotated[float | None, typer.Option("--overall-timeout")] = None,
     retry_attempts: Annotated[int | None, typer.Option("--retries")] = None,
     collection_mode: Annotated[str, typer.Option("--collection-mode")] = "http",
+    preset: Annotated[
+        str | None, typer.Option("--preset", help="quick / balanced / deep，显式参数优先。")
+    ] = None,
+    discovery_strategy: Annotated[
+        str | None,
+        typer.Option("--discovery-strategy", help="diversity：优先不同路径族，按来源轮转。"),
+    ] = None,
     sitemap_enabled: Annotated[bool, typer.Option("--sitemap/--no-sitemap")] = False,
     sitemap_url: Annotated[str, typer.Option("--sitemap-url")] = "",
     js_enabled: Annotated[bool, typer.Option("--js/--no-js")] = False,
@@ -82,13 +90,25 @@ def scan(
             }.items()
             if value is not None
         }
-        if collection_limits and not durable:
+        if (
+            not durable
+            and collection_mode != "hybrid"
+            and preset != "deep"
+            and (discovery_strategy == "diversity" or preset == "balanced")
+        ):
+            collection_limits.pop("max_variants", None)
+        if collection_limits and not (durable or collection_mode == "hybrid" or preset == "deep"):
             raise InputValidationError("持久采集预算需要显式 --durable；未创建任务。")
         if durable and retry_attempts is not None:
             collection_limits["retry_attempts"] = retry_attempts
         options = ScanOptions(
-            durable=CollectionOptions(**collection_limits) if durable else None,
+            durable=CollectionOptions(**collection_limits)
+            if durable or collection_limits
+            else None,
             collection_mode=collection_mode,
+            preset=preset,
+            discovery_strategy=discovery_strategy,
+            max_variants=max_variants if max_variants is not None else 20,
             sitemap_enabled=sitemap_enabled,
             sitemap_url=sitemap_url,
             js_enabled=js_enabled,
@@ -106,6 +126,20 @@ def scan(
             overall_timeout_seconds=overall_timeout_seconds,
             retry_attempts=retry_attempts,
         )
+        if preset is not None:
+            from click.core import ParameterSource
+
+            from app.services.scan_options import DISCOVERY_PRESETS
+
+            if preset in DISCOVERY_PRESETS:
+                options = ScanOptions.model_validate(
+                    {
+                        key: value
+                        for key, value in options.model_dump().items()
+                        if key not in DISCOVERY_PRESETS[preset]
+                        or ctx.get_parameter_source(key) != ParameterSource.DEFAULT
+                    }
+                )
         manager = WebRuntimeManager(
             paths=GardenPaths.from_environment(), default_port=get_settings().api_port
         )
@@ -207,7 +241,10 @@ def _print_result(result: ScanRunView) -> None:
     )
     if result.discovery_summary:
         from app.services.discovery import SOURCE_KINDS
+        from app.services.scan_result_presentation import discovery_explanation
 
+        for line in discovery_explanation(result.discovery_summary):
+            console.print(line, markup=False)
         console.print("发现来源收益（不是站点发现率）：")
         for kind, counts in (result.discovery_summary.get("stats") or {}).items():
             console.print(

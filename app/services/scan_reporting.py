@@ -119,6 +119,9 @@ class ScanReportService:
         metadata = run.asset_metadata
         if isinstance(metadata, dict) and metadata.get("version") == 2:
             from app.services.discovery import SOURCE_KINDS
+            from app.services.scan_result_presentation import discovery_explanation
+
+            lines.extend(["", *discovery_explanation(metadata)])
 
             lines.extend(
                 [

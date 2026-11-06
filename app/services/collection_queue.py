@@ -1,10 +1,8 @@
 """Persistent known work behind public, redacted query interfaces."""
 
 import math
-import re
 import secrets
 import time
-from urllib.parse import parse_qsl, urlsplit
 
 from sqlalchemy import func, select, update
 
@@ -21,6 +19,7 @@ from app.services.collection_timing import initial_telemetry, sample_time
 from app.services.collection_transactions import atomic_collection
 from app.services.coverage_identity import redacted_observed_url
 from app.services.discovery import SOURCE_KINDS, origin, safe_route
+from app.services.discovery_scheduling import choose_candidate, path_family, source_group
 from app.services.projects import project_url
 
 
@@ -264,11 +263,9 @@ class CollectionQueueService:
                 queue.truncated = True
                 session.flush()
                 return dict(id=None, state="suppressed", reason="max_work")
-            parsed = urlsplit(url)
-            family = re.sub(r"/\d+(?=/|$)|/\d{4}-\d{2}-\d{2}(?=/|$)", "/{number}", parsed.path)
-            route = digest(
-                [family, sorted(k for k, _ in parse_qsl(parsed.query)), method, safe_route(url)]
-            )
+            _, verb, family, parameters, route_url = path_family(url, method)
+            # Preserve the distributed queue-key format; origin/identity are queue-bound.
+            route = digest([family, list(parameters), verb, route_url])
             variants = session.scalar(
                 select(func.count())
                 .select_from(CollectionWork)
@@ -382,13 +379,13 @@ class CollectionQueueService:
             self._bump(session, queue)
             sample_time(queue, self.clock(), waiting=reason)
 
-    def claim(self, session, queue_id, token):
+    def claim(self, session, queue_id, token, *, request_keys=None):
         with atomic_collection(session):
             queue = self.check_lease(session, queue_id, token)
             if queue.status != "running":
                 return None
             self._bump(session, queue)
-            work = session.scalar(
+            query = (
                 select(CollectionWork)
                 .where(
                     CollectionWork.queue_id == queue_id,
@@ -396,8 +393,40 @@ class CollectionQueueService:
                     CollectionWork.not_before <= self.clock(),
                 )
                 .order_by(CollectionWork.priority, CollectionWork.id)
-                .limit(1)
             )
+            if request_keys is not None:
+                query = query.where(CollectionWork.request_key.in_(request_keys))
+            run = session.get(ScanRun, queue.run_id)
+            if run.options.get("discovery_strategy") == "diversity":
+                candidates = list(session.scalars(query))
+                if not candidates:
+                    return None
+                seen = set(
+                    session.scalars(
+                        select(CollectionWork.route_key).where(
+                            CollectionWork.queue_id == queue_id,
+                            CollectionWork.state.in_(["observed", "leased"]),
+                        )
+                    )
+                )
+                last = (queue.telemetry or {}).get("last_source_group")
+                index, reason = choose_candidate(
+                    [(row.route_key, row.sources[0], row.priority) for row in candidates],
+                    seen,
+                    last,
+                )
+                work = candidates[index]
+                work.reason = "selected_" + reason
+                if work.priority >= 2:
+                    queue.telemetry = {
+                        **(queue.telemetry or {}),
+                        "last_source_group": source_group(work.sources[0]),
+                    }
+                for row in candidates:
+                    if row is not work and row.route_key in seen:
+                        row.reason = "repeat_family"
+            else:
+                work = session.scalar(query.limit(1))
             if work is None:
                 return None
             work.state = "leased"
@@ -439,7 +468,9 @@ class CollectionQueueService:
                 ):
                     raise ConflictError("collection_work_not_leased")
             self._bump(session, queue)
-            work.state, work.reason = "observed", None
+            work.state = "observed"
+            if not (work.reason or "").startswith("selected_"):
+                work.reason = None
             session.flush()
             return self.work_view(work)
 

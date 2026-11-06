@@ -19,7 +19,7 @@ from app.schemas.scan_preview import PreviewContext, PreviewIssue, ScanPreview
 from app.services.coverage_identity import redacted_observed_url
 from app.services.login_configs import LoginConfigService
 from app.services.scan_network import TargetNetworkPolicy
-from app.services.scan_options import resolve_scan_options
+from app.services.scan_options import hybrid_browser_budget, resolve_scan_options
 from app.services.scan_reuse import reusable_run
 
 
@@ -268,7 +268,13 @@ def _inspect(session, request: AssessmentStartRequest, settings: Settings) -> Sc
         ),
         can_submit=not any(issue.severity == "error" for issue in issues),
         budget_note=(
-            "页面与静态资源上限为采集预算，不是保证采集量。"
+            f"HTTP 与浏览器共用 {options.durable.max_requests} 次总请求预算"
+            "和同一截止时间；"
+            f"浏览器预留 {hybrid_browser_budget(options)} 次"
+            "（30% 向下取整并受浏览器上限约束）；"
+            "无触发线索时还给 HTTP，预留为 0 时本轮没有浏览器额度。"
+            if options.collection_mode == "hybrid"
+            else "页面与静态资源上限为采集预算，不是保证采集量。"
             if request.mode.value == "quick"
             else "各上下文分别受页面与深度预算约束；max_resources 为已登录上下文请求记录上限，"
             "不是整个任务的网络请求总量。"
