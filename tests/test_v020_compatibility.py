@@ -61,6 +61,7 @@ def test_scan_api_schema_preserves_old_fields_and_adds_optional_presentation_fie
     assert ScanStartRequest(url="https://example.com/").project_entry_id is None
     assert set(ScanRunView.model_fields) == {
         "id",
+        "interaction_mode",
         "mode",
         "target_id",
         "source_run_id",
@@ -94,6 +95,7 @@ def test_scan_api_schema_preserves_old_fields_and_adds_optional_presentation_fie
         "execution_feedback",
     }
     for name, default in {
+        "interaction_mode": None,
         "live_progress": False,
         "waiting_reason": None,
         "execution_feedback": None,

@@ -451,7 +451,6 @@ def test_coverage_gap_migration_preserves_legacy_warning_and_round_trips(tmp_pat
 def test_asset_identity_migration_keeps_ids_requests_and_evidence_and_guards_downgrade(tmp_path):
     from datetime import datetime, timezone
 
-    from app.models.scan_request import ScanRequest
     from app.models.scan_run import ScanAsset, ScanEvidence
 
     url = f"sqlite+pysqlite:///{tmp_path / 'asset-method.db'}"
@@ -488,17 +487,16 @@ def test_asset_identity_migration_keeps_ids_requests_and_evidence_and_guards_dow
         )
         session.add(asset)
         session.flush()
-        session.add(
-            ScanRequest.from_capture(
-                scan_run_id=run.id,
-                source_context_id=context.id,
-                asset_id=asset.id,
-                method="GET",
-                raw_url=asset.url,
-                header_names=[],
-                fingerprint="legacy",
-                protected_storage_ref="protected-ref",
-            )
+        # Seed the actual 0004 schema, without today's ORM-only columns.
+        session.execute(
+            text("""INSERT INTO scan_requests
+            (scan_run_id,source_context_id,asset_id,method,normalized_redacted_url,
+             header_names,fingerprint,replay_allowed,replay_status,protected_storage_ref,
+             created_at,updated_at)
+            VALUES (:run_id,:context_id,:asset_id,'GET','https://site.test/api',
+                    '[]','legacy',0,'pending','protected-ref',
+                    CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"""),
+            {"run_id": run.id, "context_id": context.id, "asset_id": asset.id},
         )
         session.add(
             ScanEvidence(
