@@ -2,8 +2,9 @@
 
 from collections import defaultdict
 from datetime import datetime
+from types import SimpleNamespace
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 
 from app.core.errors import ConflictError, ResourceNotFoundError
 from app.models.project import ProjectRun
@@ -18,9 +19,25 @@ STATES = ("newly_observed", "attributes_changed", "unchanged", "not_observed", "
 
 class ProjectComparisonService:
     def _run(self, session, project_id, run_id):
-        run = session.get(ProjectRun, run_id)
-        if not run or run.project_id != project_id:
+        row = session.execute(
+            select(
+                ProjectRun.id,
+                ProjectRun.entry_id,
+                ProjectRun.source,
+                ProjectRun.status,
+                ProjectRun.snapshot["scope"],
+                ProjectRun.snapshot["comparison_metadata"],
+            ).where(ProjectRun.id == run_id, ProjectRun.project_id == project_id)
+        ).first()
+        if not row:
             raise ResourceNotFoundError("project_run_missing")
+        run = SimpleNamespace(
+            id=row[0],
+            entry_id=row[1],
+            source=row[2],
+            status=row[3],
+            snapshot={"scope": row[4], "comparison_metadata": row[5]},
+        )
         if run.status != "complete":
             raise ConflictError("project_run_not_indexed")
         return run
@@ -80,7 +97,9 @@ class ProjectComparisonService:
                 )
         return False
 
-    def compare(self, session, project_id, before_project_run_id, after_project_run_id):
+    def compare(
+        self, session, project_id, before_project_run_id, after_project_run_id, *, keys=None
+    ):
         ProjectService().get(session, project_id)
         before = self._run(session, project_id, before_project_run_id)
         after = self._run(session, project_id, after_project_run_id)
@@ -88,10 +107,15 @@ class ProjectComparisonService:
         indexes = []
         for run in (before, after):
             index = defaultdict(list)
+            statement = select(ProjectObservation)
+            if keys is not None:
+                statement = statement.where(
+                    tuple_(ProjectObservation.asset_id, ProjectObservation.identity_key).in_(keys)
+                )
             for observation in session.scalars(
-                select(ProjectObservation)
-                .where(ProjectObservation.project_run_id == run.id)
-                .order_by(ProjectObservation.id)
+                statement.where(ProjectObservation.project_run_id == run.id).order_by(
+                    ProjectObservation.id
+                )
             ):
                 index[(observation.asset_id, observation.identity_key)].append(observation)
             indexes.append(index)
@@ -162,3 +186,23 @@ class ProjectComparisonService:
             counts=counts,
             limitations=reasons + ["未再次观察到不等于已删除或已下线；比较仅覆盖所选两次任务。"],
         )
+
+    def keys_statement(self, project_id, before, after):
+        return (
+            select(ProjectObservation.asset_id, ProjectObservation.identity_key)
+            .where(
+                ProjectObservation.project_id == project_id,
+                ProjectObservation.project_run_id.in_([before, after]),
+            )
+            .distinct()
+            .order_by(ProjectObservation.asset_id, ProjectObservation.identity_key)
+        )
+
+    def iter_items(self, session, project_id, before, after, *, offset=0):
+        statement = self.keys_statement(project_id, before, after)
+        while True:
+            keys = session.execute(statement.offset(offset).limit(200)).all()
+            if not keys:
+                break
+            yield from self.compare(session, project_id, before, after, keys=keys).items
+            offset += len(keys)

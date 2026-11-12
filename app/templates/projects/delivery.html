@@ -3,8 +3,10 @@
 <section class="project-page" hx-boost="false">
 <a href="/projects/{{ project_id }}/assets">返回项目清单</a>
 <h1>资产交付</h1>
+<section aria-label="统一报告概要">{% for line in report_lines %}<p>{{ line }}</p>{% endfor %}<details><summary>公共术语与证据边界</summary>{% for line in result.report.glossary %}<p>{{ line }}</p>{% endfor %}</details></section>
 <p>格式 delivery-v1 · 项目修订 {{ result.revision }} · 全部筛选匹配 {{ result.matched }} 条</p>
-<p>下载包含全部筛选结果，不限于当前预览的 {{ result['items']|length }} 条。Markdown/HTML 仅为概要；OpenAPI 为推断草稿。</p>
+<p>导出包含全部筛选结果，不限于当前预览的 {{ result['items']|length }} 条。报告分为概要、资产、证据；OpenAPI 为推断草稿。</p>
+<h2>生成完整交付文件</h2><form method="post" action="/delivery/projects/{{ project_id }}/exports"><input type="hidden" name="configuration" value="{{ export_request }}"><label for="export-format">格式</label><select id="export-format" name="format">{% for key,label in [('json','JSON · delivery-v1'),('csv','CSV · 原机器字段'),('readable_csv','CSV · 可读身份观察'),('markdown','Markdown 报告'),('html','离线 HTML 报告'),('pdf','PDF · 需 Chromium'),('zip','ZIP · 离线交接包')] %}{% if key != 'readable_csv' or dataset in ['assets','observations','candidates'] %}<option value="{{ key }}">{{ label }}</option>{% endif %}{% endfor %}</select><button>按当前修订生成文件</button></form><p>提交时固定查询、修订和格式；生成完成后再下载。可读 CSV 对每条身份观察独立输出，同一主体可有多行。已生成不表示已保存到你的磁盘。</p>
 <form method="get" action="/projects/{{ project_id }}/delivery">
 <div class="project-grid">
 <label>交付数据集<select name="dataset">{% for value,label in [('assets','资产主体'),('observations','身份观察'),('variants','请求变体'),('candidates','未请求候选'),('relations','来源关系'),('changes','两次运行的变更')] %}<option value="{{ value }}" {% if dataset == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>

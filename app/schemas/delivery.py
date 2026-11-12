@@ -2,12 +2,14 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.assets import AssetRecord, AssetVariant
+from app.schemas.projects import ProjectQuery
 
 
 class DeliveredAsset(BaseModel):
+    review: dict | None = None
     record_type: Literal["asset"] = "asset"
     id: str
     url: str
@@ -22,6 +24,8 @@ class DeliveredAsset(BaseModel):
 
 
 class DeliveredObservation(BaseModel):
+    source_available: bool | None = None
+    review: dict | None = None
     record_type: Literal["observation"] = "observation"
     id: int
     asset_id: str
@@ -48,6 +52,7 @@ class DeliveredVariant(BaseModel):
 
 
 class DeliveredCandidate(BaseModel):
+    review: dict | None = None
     record_type: Literal["candidate"] = "candidate"
     id: int
     project_run_id: int
@@ -90,6 +95,9 @@ DeliveryRow = Annotated[
 
 
 class DeliveryDocument(BaseModel):
+    garden_version: str | None = None
+    generated_at: str | None = None
+    report: dict | None = None
     schema_version: Literal["delivery-v1"] = "delivery-v1"
     project_id: int
     revision: int
@@ -102,3 +110,17 @@ class DeliveryDocument(BaseModel):
     source_coverage: list[dict]
     coverage_summary: dict[str, int]
     limitations: list[str]
+
+
+class DeliveryExportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    query: ProjectQuery = Field(default_factory=ProjectQuery)
+    dataset: (
+        Literal["assets", "observations", "variants", "candidates", "relations", "changes"] | None
+    ) = None
+    format: Literal["json", "csv", "readable_csv", "markdown", "html", "pdf", "zip", "openapi"] = (
+        "json"
+    )
+    expected_revision: int | None = Field(default=None, ge=0)
+    before_run_id: int | None = Field(default=None, gt=0)
+    after_run_id: int | None = Field(default=None, gt=0)

@@ -110,7 +110,7 @@ class ProjectCatalogService:
             record=row.record,
         )
 
-    def _asset_rows(self, session, statement, query):
+    def _asset_rows(self, session, statement, query, *, include_latest=True):
         filtered = statement.subquery()
         stats = (
             select(
@@ -154,12 +154,13 @@ class ProjectCatalogService:
         )
         observations = aliased(ProjectObservation, ranked)
         latest = {asset_id: [] for asset_id in ids}
-        for row in session.scalars(
-            select(observations)
-            .where(or_(ranked.c.position == 1, ranked.c.seen_at.is_(None)))
-            .order_by(ranked.c.id)
-        ):
-            latest[row.display_asset_id].append(self._observation(row))
+        if include_latest:
+            for row in session.scalars(
+                select(observations)
+                .where(or_(ranked.c.position == 1, ranked.c.seen_at.is_(None)))
+                .order_by(ranked.c.id)
+            ):
+                latest[row.display_asset_id].append(self._observation(row))
         annotations = {
             a.asset_id: a
             for a in session.scalars(
@@ -185,11 +186,13 @@ class ProjectCatalogService:
             for a, first, last, count in selected
         ], matched
 
-    def list(self, session, project_id, query: ProjectQuery):
+    def list(self, session, project_id, query: ProjectQuery, *, include_latest=True):
         project = ProjectService().get(session, project_id)
         statement = self._observations(project_id, query)
         if query.view == "assets":
-            items, matched = self._asset_rows(session, statement, query)
+            items, matched = self._asset_rows(
+                session, statement, query, include_latest=include_latest
+            )
         elif query.view == "observations":
             matched = session.scalar(select(func.count()).select_from(statement.subquery()))
             order = {
@@ -473,16 +476,23 @@ class ProjectCatalogService:
             corrections=corrections,
         )
 
-    def iter_rows(self, session, project_id, query):
-        page = 1
+    def iter_pages(self, session, project_id, query, *, include_latest=True, start_page=1):
+        page = start_page
         while True:
             result = self.list(
-                session, project_id, query.model_copy(update={"page": page, "page_size": 200})
+                session,
+                project_id,
+                query.model_copy(update={"page": page, "page_size": 200}),
+                include_latest=include_latest,
             )
-            yield from result.items
+            yield result
             if page * 200 >= result.matched:
                 break
             page += 1
+
+    def iter_rows(self, session, project_id, query):
+        for result in self.iter_pages(session, project_id, query):
+            yield from result.items
 
     def reviews(self, session, project_id, asset_ids):
         ProjectService().get(session, project_id)

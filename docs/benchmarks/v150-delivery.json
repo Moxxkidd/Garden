@@ -1,0 +1,60 @@
+{
+  "baseline_sha": "9c93cf5f25bef1ddc9085bc9cf8ff3e10c8992cf",
+  "candidate_head": "9c93cf5f25bef1ddc9085bc9cf8ff3e10c8992cf",
+  "dirty": true,
+  "python": "3.10.10 (v3.10.10:aad5f6a891, Feb  7 2023, 08:47:40) [Clang 13.0.0 (clang-1300.0.29.30)]",
+  "platform": "macOS-26.3-arm64-arm-64bit",
+  "comparison": "Legacy materializer at baseline SHA and file jobs share this catalog/schema; fresh process each, one sample per 1000/10000 size. Python allocation peak and whole-process RSS are separate.",
+  "samples": [
+    {
+      "records": 1000,
+      "materialized": {
+        "kind": "materialized",
+        "elapsed_seconds": 0.517,
+        "python_peak_bytes": 17342405,
+        "process_peak_rss_bytes": 136347648,
+        "output_bytes": 561596,
+        "row_queries": null,
+        "baseline_source_sha256": "af8b3960d15bed3dba60ca4f467208774ee9c6e4c03d21f8cb354a6414ed2914"
+      },
+      "chunked": {
+        "kind": "chunked",
+        "elapsed_seconds": 0.753,
+        "python_peak_bytes": 10532170,
+        "process_peak_rss_bytes": 123011072,
+        "output_bytes": 549068,
+        "row_queries": {
+          "count": 5,
+          "max_limit": 200
+        },
+        "baseline_source_sha256": "af8b3960d15bed3dba60ca4f467208774ee9c6e4c03d21f8cb354a6414ed2914"
+      }
+    },
+    {
+      "records": 10000,
+      "materialized": {
+        "kind": "materialized",
+        "elapsed_seconds": 5.503,
+        "python_peak_bytes": 108724816,
+        "process_peak_rss_bytes": 356499456,
+        "output_bytes": 5610599,
+        "row_queries": null,
+        "baseline_source_sha256": "af8b3960d15bed3dba60ca4f467208774ee9c6e4c03d21f8cb354a6414ed2914"
+      },
+      "chunked": {
+        "kind": "chunked",
+        "elapsed_seconds": 7.853,
+        "python_peak_bytes": 11141069,
+        "process_peak_rss_bytes": 151027712,
+        "output_bytes": 5472079,
+        "row_queries": {
+          "count": 50,
+          "max_limit": 200
+        },
+        "baseline_source_sha256": "af8b3960d15bed3dba60ca4f467208774ee9c6e4c03d21f8cb354a6414ed2914"
+      }
+    }
+  ],
+  "candidate_source_sha256": "f69f96b2715f0c64eaa09e404292d4dcd5d2b0314a2fbe0365d956ac144cabb0",
+  "candidate_source_scope": "app .py/.html/.css/.js and migrations .py, unchanged during this measurement"
+}

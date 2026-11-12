@@ -22,3 +22,5 @@ PLANS.md
 output/playwright/
 
 node_modules/
+
+output/pdf/

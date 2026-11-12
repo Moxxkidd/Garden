@@ -1,6 +1,8 @@
 """Manage persistent project assets without extending scan authorization."""
 
 import json
+import shutil
+import tempfile
 from functools import wraps
 from pathlib import Path
 from typing import Annotated
@@ -24,7 +26,7 @@ from app.schemas.projects import (
 from app.services.project_catalog import ProjectCatalogService
 from app.services.project_comparison import ProjectComparisonService
 from app.services.project_curation import ProjectCurationService
-from app.services.project_export import export_project
+from app.services.project_export import write_project
 from app.services.project_ingestion import ProjectIngestionService
 from app.services.project_presentation import correction_view, entry_view, run_view
 from app.services.projects import ProjectService
@@ -337,13 +339,22 @@ def export(
     filters: str = "{}",
     output: Path | None = None,
 ):
-    with session_scope() as session:
-        content = export_project(session, project_id, query_from(filters, view=view), format)
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8", newline="") as stream:
+        with session_scope() as session:
+            write_project(session, project_id, query_from(filters, view=view), format, stream)
+        write_cli_export(stream, output)
+
+
+def write_cli_export(stream, output):
+    """Output only completed files, after the database read transaction closes."""
+    stream.seek(0)
     if output is None:
-        typer.echo(content, nl=False)
+        while part := stream.read(65536):
+            typer.echo(part, nl=False)
     else:
-        output.write_text(content, encoding="utf-8")
-        console.print(f"已导出：{output}", markup=False)
+        with output.open("w", encoding="utf-8", newline="") as destination:
+            shutil.copyfileobj(stream, destination, 65536)
+        console.print(f"已写入文件：{output}", markup=False)
 
 
 @app.command("incremental")
@@ -420,14 +431,17 @@ def deliver(
     after_run_id: int | None = None,
     cursor: str | None = None,
     page: bool = typer.Option(False, "--page", help="读取稳定分页 JSON；默认导出全部匹配项。"),
+    output: Annotated[
+        Path | None, typer.Option(help="保存完整文件；PDF/ZIP 必须指定路径。")
+    ] = None,
 ):
     """交付版本化清单、变更、概要或推断 OpenAPI 草稿。"""
     from app.services.asset_delivery import AssetDeliveryService
 
     service = AssetDeliveryService()
     query = query_from(filters)
-    with session_scope() as session:
-        if page:
+    if page:
+        with session_scope() as session:
             emit(
                 service.page(
                     session,
@@ -439,17 +453,50 @@ def deliver(
                     after_run_id=after_run_id,
                 )
             )
-        else:
-            if cursor is not None:
-                raise InputValidationError("游标仅用于 --page；完整导出不使用游标。")
-            typer.echo(
-                service.export(
+        return
+    if cursor is not None:
+        raise InputValidationError("游标仅用于 --page；完整导出不使用游标。")
+    if format in {"pdf", "zip"}:
+        if output is None:
+            raise InputValidationError("PDF/ZIP 是二进制文件，请指定 --output 保存路径。")
+        from app.schemas.delivery import DeliveryExportRequest
+        from app.services.delivery_jobs import ExportJobService
+        from app.services.scan_application import InlineScanDispatcher
+
+        jobs = ExportJobService(dispatcher=InlineScanDispatcher())
+        try:
+            with session_scope() as session:
+                result = jobs.submit(
+                    session,
+                    project_id,
+                    DeliveryExportRequest(
+                        query=query,
+                        dataset=dataset,
+                        format=format,
+                        before_run_id=before_run_id,
+                        after_run_id=after_run_id,
+                    ),
+                    inline=True,
+                )
+                if result["status"] != "ready":
+                    raise InputValidationError(result["error_code"])
+                path, _ = jobs.artifact(session, result["id"])
+            shutil.copyfile(path, output)
+        finally:
+            jobs.shutdown()
+    else:
+        with tempfile.TemporaryFile(mode="w+", encoding="utf-8", newline="") as stream:
+            with session_scope() as session:
+                service.write(
                     session,
                     project_id,
                     query,
                     format,
+                    stream,
                     dataset=dataset,
                     before_run_id=before_run_id,
                     after_run_id=after_run_id,
                 )
-            )
+            write_cli_export(stream, output)
+    if output is not None and format in {"pdf", "zip"}:
+        console.print(f"已写入文件：{output}", markup=False)

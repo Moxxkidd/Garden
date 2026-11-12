@@ -1,7 +1,12 @@
 """Bounded project adapters; all product rules live in shared services."""
 
+import tempfile
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import FileResponse
 from pydantic import ValidationError
+from starlette.background import BackgroundTask
 
 from app.api.routes.identities import check_origin
 from app.core.errors import InputValidationError, ResourceNotFoundError
@@ -25,7 +30,7 @@ from app.schemas.projects import (
 from app.services.project_catalog import ProjectCatalogService
 from app.services.project_comparison import ProjectComparisonService
 from app.services.project_curation import ProjectCurationService
-from app.services.project_export import export_project
+from app.services.project_export import write_project
 from app.services.project_ingestion import ProjectIngestionService
 from app.services.project_presentation import correction_view, entry_view, run_view
 from app.services.projects import ProjectService
@@ -162,10 +167,21 @@ def compare(project_id: int, before_run_id: int, after_run_id: int):
 def export(project_id: int, request: Request, format: str = "json"):
     if format not in {"json", "csv", "markdown"}:
         raise InputValidationError("导出格式须为 json、csv 或 markdown。")
-    with session_scope() as session:
-        content = export_project(session, project_id, parse_query(request.query_params), format)
-    return Response(
-        content,
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", newline="", delete=False
+    ) as output:
+        path = Path(output.name)
+        try:
+            with session_scope() as session:
+                write_project(
+                    session, project_id, parse_query(request.query_params), format, output
+                )
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+    return FileResponse(
+        path,
+        background=BackgroundTask(path.unlink, missing_ok=True),
         media_type={"json": "application/json", "csv": "text/csv", "markdown": "text/markdown"}[
             format
         ],

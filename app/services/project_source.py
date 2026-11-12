@@ -95,6 +95,25 @@ class ProjectSourceService:
                 r.model_copy(update={"profile_id": run.credential_profile_id}) for r in records
             ]
         metadata = {
+            "budget": {
+                k: v
+                for k, v in run.options.items()
+                if k
+                in {
+                    "max_pages",
+                    "max_resources",
+                    "max_depth",
+                    "max_browser_requests",
+                    "overall_timeout_seconds",
+                    "durable",
+                }
+            }
+            if ref.source == "scan"
+            else {
+                "max_pages": run.max_pages,
+                "max_requests": run.max_requests,
+                "max_depth": run.max_depth,
+            },
             "configuration": digest(
                 run.options
                 if ref.source == "scan"

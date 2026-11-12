@@ -16,6 +16,24 @@ URL
   → Markdown 报告
 ```
 
+## v1.5.0：报告与资产交付
+
+从项目「资产交付」选择当前筛选，以概要、资产、证据三层查看同一份数据。报告分别显示主体数、身份观察数、人工复核和覆盖缺口；公共术语集中解释，人工保留不表示业务有效。旧报告文件保持原样。
+
+「生成完整交付文件」固定查询、项目修订和格式，按 SQL 分块读取脱敏记录，写成快照后释放数据库，再生成文件。项目修订已变化时要求重新提交；取消、失败和重启中断均不提供半成品，也不自动重做。「已生成」表示 Garden 的文件就绪；点击后仅显示「已发起下载」，保存位置由浏览器和用户确认。
+
+保留 delivery-v1、原机器 CSV 和旧导出入口，新增可读 CSV：资产 ID、URL、方法、类型、状态码、身份、最近观察、复核状态、来源引用。可读 CSV 为 UTF-8 BOM，沿用公式防护；主体视图按匹配身份观察独立输出，同一主体可占多行。
+
+离线 HTML 内含样式；PDF 用同一 HTML 和 Chromium 生成，需可用浏览器及中文字体。ZIP 包含 JSON、CSV、报告、来源索引、schema、字段说明及范围/身份/已保存预算/版本信息。文件只含脱敏历史与公开引用，不包含原始正文、截图、Cookie 或私有会话；历史未保存的预算为未知。Chromium 不可用只影响 PDF。
+
+```sh
+garden projects deliver 1 --format readable_csv --output assets-readable.csv
+garden projects deliver 1 --format zip --output delivery.zip
+garden projects deliver 1 --format pdf --output report.pdf
+```
+
+API：`POST /api/projects/{id}/exports` 提交 `{"format":"zip","query":{"collection":"keep"}}`；使用返回的 ID 查询 `/api/exports/{id}`、取消 `/api/exports/{id}/cancel` 或下载就绪文件。新增迁移 `0015` 只存导出配置、修订、状态和受控产物引用；不自动升级日用数据库。实施证据见 [v1.5.0 记录](docs/versions/v1.5.0.md)，本版尚未正式发布。
+
 ## v1.4.0：身份采集与多入口
 
 身份页将登录、新上下文恢复验证、采集与补采连续展示，并保留项目入口绑定、最近验证时间和失败步骤。新状态未验证成功前，旧有效会话继续保留；Cookie 文件存在不等于可用。

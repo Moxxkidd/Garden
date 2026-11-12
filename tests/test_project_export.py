@@ -16,7 +16,7 @@ def test_export_ignores_page_but_preserves_filters_and_unknown(seeded_records):
         project, entry = project_fixture(session, target)
         for day in (1, 2, 3):
             ingest(session, project, entry, source_run(session, target, day=day))
-        query = ProjectQuery(view="observations", page=2, page_size=1)
+        query = ProjectQuery(view="observations", page=200, page_size=1)
         payload = json.loads(export_project(session, project.id, query, "json"))
         assert payload["schema_version"] == "project-v1"
         assert payload["exported_count"] == 3

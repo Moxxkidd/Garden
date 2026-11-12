@@ -86,7 +86,7 @@ def test_stamp_existing_database_preserves_rows(tmp_path):
 
     with engine.connect() as connection:
         assert connection.scalar(text("select count(*) from targets")) == 1
-        assert connection.scalar(text("select version_num from alembic_version")) == "0014"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0015"
 
 
 def test_legacy_scan_assets_are_backfilled_into_anonymous_context(tmp_path):
@@ -180,7 +180,7 @@ def test_unified_assessment_migration_round_trip(tmp_path):
 
     upgrade_database(url)
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0014"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0015"
 
 
 def test_application_requires_explicit_stamp_for_unversioned_legacy_database(tmp_path, monkeypatch):
@@ -234,7 +234,7 @@ def test_application_auto_migrates_fresh_database_in_development(tmp_path, monke
         assert client.get("/healthz").status_code == 200
 
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0014"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0015"
 
 
 def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
@@ -247,7 +247,7 @@ def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
     current_result = runner.invoke(cli_app, ["db", "current"])
 
     assert upgrade_result.exit_code == 0
-    assert "0014" in current_result.stdout
+    assert "0015" in current_result.stdout
 
 
 def test_database_cli_stamp_existing_preserves_legacy_rows(tmp_path, monkeypatch):
@@ -620,7 +620,7 @@ def test_known_context_drift_upgrade_preserves_data_and_uniqueness(tmp_path, sha
     assert backup is not None and backup.is_file()
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT name FROM targets")) == "keep"
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0014"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0015"
     inspector = inspect(engine)
     assert "temporary_secret_ref" in {c["name"] for c in inspector.get_columns("scan_contexts")}
     unique = inspector.get_unique_constraints("scan_contexts") + [

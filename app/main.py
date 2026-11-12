@@ -43,9 +43,14 @@ async def lifespan(app: FastAPI):
     interrupted = app.state.scan_service.interrupt_active_scans()
     if interrupted:
         logger.warning("Interrupted stale active scans", extra={"count": interrupted})
+    from app.services.delivery_jobs import ExportJobService
+
+    app.state.export_jobs = ExportJobService()
+    app.state.export_jobs.interrupt_active()
     try:
         yield
     finally:
+        app.state.export_jobs.shutdown()
         app.state.manual_login.shutdown()
         app.state.identity_collection.shutdown()
         app.state.scan_service.shutdown()
