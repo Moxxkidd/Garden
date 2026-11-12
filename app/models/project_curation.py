@@ -1,6 +1,8 @@
 """Evidence-backed relationships and reversible editorial records."""
 
-from sqlalchemy import JSON, ForeignKey, Integer, String, Text, UniqueConstraint
+from datetime import datetime
+
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -25,6 +27,11 @@ class ProjectAnnotation(TimestampMixin, Base):
     asset_id: Mapped[str] = mapped_column(ForeignKey("project_assets.id"), primary_key=True)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     note: Mapped[str] = mapped_column(Text, default="")
+    review_state: Mapped[str] = mapped_column(String(20), default="unreviewed")
+    review_reason: Mapped[str] = mapped_column(Text, default="")
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_revision: Mapped[int | None] = mapped_column(Integer)
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class ProjectCorrection(TimestampMixin, Base):
@@ -59,3 +66,12 @@ class ProjectAudit(TimestampMixin, Base):
     action: Mapped[str] = mapped_column(String(40))
     actor: Mapped[str] = mapped_column(String(120), default="local_operator")
     detail: Mapped[dict] = mapped_column(JSON)
+
+
+class ProjectSavedView(TimestampMixin, Base):
+    __tablename__ = "project_saved_views"
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_project_saved_view"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    query: Mapped[dict] = mapped_column(JSON)

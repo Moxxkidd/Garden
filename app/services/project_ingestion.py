@@ -216,4 +216,5 @@ class ProjectIngestionService:
         run.status = "complete"
         run.error_code = None
         session.flush()
+        ProjectCurationService().flag_observation_changes(session, run)
         return run

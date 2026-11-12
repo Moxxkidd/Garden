@@ -86,11 +86,11 @@ def test_index_page_loads(app) -> None:
 
     assert response.status_code == 200
     assert "Garden" in response.text
-    assert "Dashboard" in response.text
-    assert "One URL to a structured report" in response.text
+    assert "概览" in response.text
+    assert "从授权入口到资产清单" in response.text
     assert "预览扫描" in response.text
     assert 'action="/scans/preview"' in response.text
-    assert "Authorized public + local by default" in response.text
+    assert "只扫描已授权范围，遵守网络策略" in response.text
 
 
 def test_scans_page_uses_compact_navigation_and_clickable_scan_rows(app) -> None:
@@ -124,7 +124,7 @@ def test_scans_page_uses_compact_navigation_and_clickable_scan_rows(app) -> None
     ):
         assert f'href="{hidden_path}"' not in response.text
     assert 'data-scan-detail-url="/scans/4"' in response.text
-    assert 'aria-label="View scan #4"' in response.text
+    assert 'aria-label="查看任务 #4"' in response.text
     assert 'href="/scans/4"' in response.text
 
 
@@ -261,16 +261,16 @@ def test_dashboard_page_shows_summary_cards(app, seeded_findings) -> None:
 
     assert response.status_code == 200
     for label, value in (
-        ("URL Scans", 1),
-        ("Assets", 3),
+        ("扫描任务", 1),
+        ("资产观察", 3),
         ("原始关注项观察", 2),
-        ("High Severity", 1),
-        ("High Confidence", 1),
+        ("高严重性观察", 1),
+        ("高置信度观察", 1),
     ):
         assert re.search(rf">{label}</p>\s*<p[^>]*>{value}</p>", response.text)
-    assert "Recent URL Scans" in response.text
-    assert "Scan Status" in response.text
-    assert "Category Distribution" in response.text
+    assert "最近任务" in response.text
+    assert "任务状态" in response.text
+    assert "关注项类型分布" in response.text
     assert f'href="/scans/{scan_id}"' in response.text
     assert "http://127.0.0.1:3000/" in response.text
     for legacy_content in (

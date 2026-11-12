@@ -1,5 +1,6 @@
 """Deterministic path sampling; request identities remain exact and separate."""
 
+import json
 import re
 from urllib.parse import parse_qsl, urlsplit
 
@@ -17,6 +18,13 @@ def path_family(url, method="GET"):
         path,
         tuple(sorted(k for k, _ in parse_qsl(parsed.query))),
         safe_route(url),
+    )
+
+
+def display_template_key(url, method):
+    """Stable SQL display key; explicit hash routes retain their route context."""
+    return json.dumps(
+        path_family(url, method or "UNKNOWN"), ensure_ascii=False, separators=(",", ":")
     )
 
 

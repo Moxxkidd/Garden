@@ -29,6 +29,14 @@ class ProjectCatalogService:
         ]:
             if value is not None:
                 statement = statement.where(column == value)
+        if query.collection == "core":
+            statement = statement.where(a.kind.in_(["page", "endpoint"]))
+        elif query.collection != "all":
+            statement = statement.where(self._review_filter(a.id, query.collection))
+        if query.template_key is not None:
+            statement = statement.where(
+                func.garden_path_family(a.url, a.method) == query.template_key
+            )
         if query.q:
             statement = statement.where(o.search_text.contains(query.q.casefold(), autoescape=True))
         if query.seen_from is not None:
@@ -46,6 +54,24 @@ class ProjectCatalogService:
                 .exists()
             )
         return statement
+
+    def _review_filter(self, asset_id, collection):
+        if collection == "needs_review":
+            return (
+                select(ProjectAnnotation.needs_review)
+                .where(ProjectAnnotation.asset_id == asset_id)
+                .scalar_subquery()
+                .is_(True)
+            )
+        return (
+            func.coalesce(
+                select(ProjectAnnotation.review_state)
+                .where(ProjectAnnotation.asset_id == asset_id)
+                .scalar_subquery(),
+                "unreviewed",
+            )
+            == collection
+        )
 
     def _counts(self, session, project_id):
         return {
@@ -219,6 +245,20 @@ class ProjectCatalogService:
                         )
                     )
             if query.view == "candidates":
+                if query.collection == "core":
+                    rows = rows.where(model.record["kind"].as_string().in_(["page", "endpoint"]))
+                elif query.collection != "all":
+                    rows = rows.where(self._review_filter(model.asset_id, query.collection))
+                if query.template_key is not None:
+                    rows = rows.where(
+                        model.asset_id.in_(
+                            select(ProjectAsset.id).where(
+                                ProjectAsset.project_id == project_id,
+                                func.garden_path_family(ProjectAsset.url, ProjectAsset.method)
+                                == query.template_key,
+                            )
+                        )
+                    )
                 if query.seen_from is not None or query.seen_to is not None:
                     # Candidate discovery has no observed response timestamp.
                     rows = rows.where(False)
@@ -242,6 +282,8 @@ class ProjectCatalogService:
                     query.seen_to,
                     query.tag,
                     query.original_asset_id,
+                    query.template_key,
+                    query.collection if query.collection != "all" else None,
                 )
             ):
                 endpoint_query = query.model_copy(update={"kind": None, "asset_id": None, "q": ""})
@@ -268,6 +310,23 @@ class ProjectCatalogService:
                         source_candidates = source_candidates.where(column == value)
                 if query.seen_from is not None or query.seen_to is not None:
                     source_candidates = source_candidates.where(False)
+                if query.collection == "core":
+                    source_candidates = source_candidates.where(
+                        ProjectCandidate.record["kind"].as_string().in_(["page", "endpoint"])
+                    )
+                elif query.collection != "all":
+                    source_candidates = source_candidates.where(
+                        self._review_filter(ProjectCandidate.asset_id, query.collection)
+                    )
+                if query.template_key is not None:
+                    source_candidates = source_candidates.where(
+                        ProjectCandidate.asset_id.in_(
+                            select(ProjectAsset.id).where(
+                                func.garden_path_family(ProjectAsset.url, ProjectAsset.method)
+                                == query.template_key
+                            )
+                        )
+                    )
                 if query.tag:
                     tags = func.json_each(ProjectAnnotation.tags).table_valued("value")
                     source_candidates = source_candidates.where(
@@ -424,3 +483,25 @@ class ProjectCatalogService:
             if page * 200 >= result.matched:
                 break
             page += 1
+
+    def reviews(self, session, project_id, asset_ids):
+        ProjectService().get(session, project_id)
+        rows = {
+            r.asset_id: r
+            for r in session.scalars(
+                select(ProjectAnnotation)
+                .join(ProjectAsset, ProjectAsset.id == ProjectAnnotation.asset_id)
+                .where(
+                    ProjectAsset.project_id == project_id, ProjectAnnotation.asset_id.in_(asset_ids)
+                )
+            )
+        }
+        return {
+            aid: dict(
+                state=rows[aid].review_state if aid in rows else "unreviewed",
+                reason=rows[aid].review_reason if aid in rows else "",
+                at=canonical_value(rows[aid].reviewed_at) if aid in rows else None,
+                needs_review=rows[aid].needs_review if aid in rows else False,
+            )
+            for aid in asset_ids
+        }

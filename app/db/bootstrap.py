@@ -23,6 +23,11 @@ _SESSION_FACTORY: sessionmaker[Session] | None = None
 
 
 def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+    from app.services.discovery_scheduling import display_template_key
+
+    dbapi_connection.create_function(
+        "garden_path_family", 2, display_template_key, deterministic=True
+    )
     cursor = dbapi_connection.cursor()
     try:
         cursor.execute("PRAGMA foreign_keys=ON")

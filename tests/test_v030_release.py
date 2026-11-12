@@ -12,11 +12,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 def test_v090_release_metadata_and_cli_version_are_aligned() -> None:
     pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
-    assert 'version = "1.2.0"' in pyproject
-    assert Settings().project_version == "1.2.0"
+    assert 'version = "1.3.0"' in pyproject
+    assert Settings().project_version == "1.3.0"
     result = CliRunner().invoke(app, ["version"])
     assert result.exit_code == 0
-    assert result.stdout.strip() == "Garden 1.2.0"
+    assert result.stdout.strip() == "Garden 1.3.0"
 
 
 def test_v030_preserves_the_quick_scan_network_identity() -> None:

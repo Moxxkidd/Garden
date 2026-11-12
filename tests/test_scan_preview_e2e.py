@@ -66,7 +66,7 @@ def test_browser_preview_edit_confirm_preserves_budget_without_early_requests(
                 )
                 page = context.new_page()
                 page.goto(garden_origin)
-                page.get_by_label("Entry URL").fill(target_origin + "/?query=" + "x" * 80)
+                page.get_by_label("1. 授权入口 / 项目").fill(target_origin + "/?query=" + "x" * 80)
                 page.get_by_text("预算选项", exact=True).click()
                 page.locator("#scan-max_pages").fill("7")
                 page.locator("#scan-max_depth").fill("1")
@@ -138,7 +138,7 @@ def test_browser_preview_edit_confirm_preserves_budget_without_early_requests(
                 assert app.state.scan_service.get_reuse_configuration(run_id) == original
                 # Force server validation beyond the browser's numeric constraint.
                 page.goto(garden_origin)
-                page.get_by_label("Entry URL").fill(target_origin)
+                page.get_by_label("1. 授权入口 / 项目").fill(target_origin)
                 page.get_by_text("预算选项", exact=True).click()
                 page.locator("#scan-max_pages").fill("999")
                 page.locator('form[action="/scans/preview"]').evaluate(
@@ -167,7 +167,7 @@ def test_discovery_presets_show_effective_hybrid_budget_before_submission(app, t
         try:
             page = browser.new_page(viewport={"width": width, "height": 900})
             page.goto(origin)
-            page.get_by_label("Entry URL").fill("http://localhost:8123/")
+            page.get_by_label("1. 授权入口 / 项目").fill("http://localhost:8123/")
             page.get_by_label("发现预设", exact=True).select_option("deep")
             page.get_by_role("button", name="预览扫描", exact=True).click()
             expect(page.get_by_text("浏览器预留 300 次", exact=False)).to_be_visible()

@@ -131,7 +131,7 @@ def scans_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request=request,
         name="scans_list.html",
-        context={"scans": scans, "page_title": "URL Scans"},
+        context={"scans": scans, "page_title": "扫描任务"},
     )
 
 

@@ -5,15 +5,15 @@
   <section class="space-y-6">
     <div class="flex items-end justify-between">
       <div>
-        <p class="text-sm uppercase tracking-[0.18em] text-emerald-700">Automatic pipeline</p>
-        <h1 class="text-3xl font-semibold tracking-tight">URL Scans</h1>
+        <p class="text-sm uppercase tracking-[0.18em] text-emerald-700">采集任务与历史</p>
+        <h1 class="text-3xl font-semibold tracking-tight">扫描任务</h1>
       </div>
-      <a href="/" class="rounded-full bg-slate-900 px-4 py-2 text-sm text-white">New scan</a>
+      <a href="/" class="rounded-full bg-slate-900 px-4 py-2 text-sm text-white">新建任务</a>
     </div>
-    <div class="overflow-hidden rounded-3xl border border-black/10 bg-white shadow-sm">
+    <div class="overflow-x-auto rounded-3xl border border-black/10 bg-white shadow-sm">
       <table class="min-w-full divide-y divide-black/5 text-sm">
         <thead class="bg-stone-50 text-left text-slate-500">
-          <tr><th class="px-5 py-3">ID</th><th class="px-5 py-3">URL</th><th class="px-5 py-3">Status</th><th class="px-5 py-3">Stage</th><th class="px-5 py-3">执行进度</th></tr>
+          <tr><th class="px-5 py-3">ID</th><th class="px-5 py-3">URL</th><th class="px-5 py-3">状态</th><th class="px-5 py-3">阶段</th><th class="px-5 py-3">执行进度</th></tr>
         </thead>
         <tbody class="divide-y divide-black/5">
           {% for scan in scans %}
@@ -22,7 +22,7 @@
               data-scan-detail-url="/scans/{{ scan.id }}"
             >
               <td class="px-5 py-4 font-medium">
-                <a href="/scans/{{ scan.id }}" aria-label="View scan #{{ scan.id }}">#{{ scan.id }}</a>
+                <a href="/scans/{{ scan.id }}" aria-label="查看任务 #{{ scan.id }}">#{{ scan.id }}</a>
               </td>
               <td class="max-w-xl truncate px-5 py-4">{{ scan.normalized_url }}</td>
               <td class="px-5 py-4">{{ status_badge(scan.status) }}</td>
@@ -30,7 +30,7 @@
               <td class="px-5 py-4">{{ format_execution_progress(scan.progress) }}<p class="mt-1 text-xs">{{ coverage_summary(scan.status, scan.completeness, scan.mode) }}</p></td>
             </tr>
           {% else %}
-            <tr><td colspan="5" class="px-5 py-8 text-center text-slate-500">No URL scans yet.</td></tr>
+            <tr><td colspan="5" class="px-5 py-8 text-center text-slate-500">暂无扫描任务。</td></tr>
           {% endfor %}
         </tbody>
       </table>

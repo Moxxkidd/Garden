@@ -31,9 +31,47 @@ def index(request: Request) -> HTMLResponse:
         request=request,
         name="index.html",
         context={
-            "page_title": "Dashboard",
+            "page_title": "概览",
             "dashboard": dashboard,
             "project_name": settings.project_name,
             "project_version": settings.project_version,
+        },
+    )
+
+
+@router.get("/reports", response_class=HTMLResponse, include_in_schema=False)
+def reports(request: Request):
+    from sqlalchemy import select
+
+    from app.models.scan_run import ScanRun
+
+    with session_scope() as session:
+        rows = [
+            dict(id=r.id, url=r.normalized_url, status=r.status)
+            for r in session.scalars(
+                select(ScanRun)
+                .where(ScanRun.report_path.is_not(None))
+                .order_by(ScanRun.id.desc())
+                .limit(50)
+            )
+        ]
+    return templates.TemplateResponse(
+        request=request, name="reports.html", context={"rows": rows, "page_title": "报告"}
+    )
+
+
+@router.get("/settings", response_class=HTMLResponse, include_in_schema=False)
+def settings_page(request: Request):
+    from app.schemas.scan import ScanOptions
+
+    settings = get_settings()
+    options = ScanOptions()
+    return templates.TemplateResponse(
+        request=request,
+        name="settings.html",
+        context={
+            "page_title": "设置",
+            "version": settings.project_version,
+            "budgets": dict(pages=options.max_pages, resources=options.max_resources),
         },
     )

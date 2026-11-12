@@ -1,0 +1,77 @@
+{
+  "baseline_sha": "4839fc81291ed018b92bcfa38691b02a4b0b2a29",
+  "sample": "10000 synthetic assets; SQLite; 15 service-query samples; nearest-rank p95",
+  "note": "Local reference only, not HTTP latency or a service SLA. Final sample ran while local browser verification was active.",
+  "baseline": {
+    "assets": 10000,
+    "python": "3.10.10 (v3.10.10:aad5f6a891, Feb  7 2023, 08:47:40) [Clang 13.0.0 (clang-1300.0.29.30)]",
+    "samples": {
+      "page": {
+        "matched": 10000,
+        "median_ms": 44.21304199786391,
+        "p95_ms": 57.34283300989773
+      },
+      "filter": {
+        "matched": 72,
+        "median_ms": 14.496332994895056,
+        "p95_ms": 45.7812910026405
+      }
+    },
+    "plan": [
+      [
+        5,
+        0,
+        0,
+        "SEARCH project_observations USING INDEX ix_project_observations_project_id (project_id=?)"
+      ],
+      [
+        13,
+        0,
+        0,
+        "SEARCH project_assets USING INDEX sqlite_autoindex_project_assets_1 (id=?)"
+      ]
+    ]
+  },
+  "candidate": {
+    "assets": 10000,
+    "python": "3.10.10 (v3.10.10:aad5f6a891, Feb  7 2023, 08:47:40) [Clang 13.0.0 (clang-1300.0.29.30)]",
+    "platform": "macOS-26.3-arm64-arm-64bit",
+    "iterations": 15,
+    "samples": {
+      "page": {
+        "matched": 10000,
+        "median_ms": 49.932125009945594,
+        "p95_ms": 82.11587500409223
+      },
+      "filter": {
+        "matched": 72,
+        "median_ms": 17.68070799880661,
+        "p95_ms": 47.99254199315328
+      },
+      "core": {
+        "matched": 6666,
+        "median_ms": 35.07808300491888,
+        "p95_ms": 42.37679101061076
+      },
+      "templates": {
+        "matched": 1,
+        "median_ms": 242.31562500062864,
+        "p95_ms": 280.2528329921188
+      }
+    },
+    "plan": [
+      [
+        5,
+        0,
+        0,
+        "SEARCH project_observations USING INDEX ix_project_observations_project_id (project_id=?)"
+      ],
+      [
+        13,
+        0,
+        0,
+        "SEARCH project_assets USING INDEX sqlite_autoindex_project_assets_1 (id=?)"
+      ]
+    ]
+  }
+}

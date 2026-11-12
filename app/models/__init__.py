@@ -74,4 +74,5 @@ from app.models.project_curation import (  # noqa: F401
     ProjectCorrection,
     ProjectCorrectionMember,
     ProjectRelation,
+    ProjectSavedView,
 )

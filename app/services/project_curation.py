@@ -1,5 +1,6 @@
 """Reversible display corrections with immutable observation ownership and audit."""
 
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import func, select
@@ -302,3 +303,186 @@ class ProjectCurationService:
             )
             session.flush()
             return annotation
+
+    def review(self, session, project_id, request):
+        """Only the explicitly selected IDs are changed, in one project revision."""
+        with atomic_import(session):
+            ids = list(dict.fromkeys(request.asset_ids))
+            assets = list(
+                session.scalars(
+                    select(ProjectAsset).where(
+                        ProjectAsset.project_id == project_id, ProjectAsset.id.in_(ids)
+                    )
+                )
+            )
+            if len(assets) != len(ids):
+                raise ResourceNotFoundError("project_asset_not_found")
+            if not request.reason.strip():
+                raise InputValidationError("invalid_review_reason")
+            project = self.projects.bump(session, project_id, request.expected_revision)
+            before = {}
+            now = datetime.now(timezone.utc)
+            for asset in assets:
+                row = session.get(ProjectAnnotation, asset.id)
+                if row is None:
+                    row = ProjectAnnotation(asset_id=asset.id)
+                    session.add(row)
+                    session.flush()
+                before[asset.id] = dict(
+                    state=row.review_state,
+                    reason=row.review_reason,
+                    at=row.reviewed_at.isoformat() if row.reviewed_at else None,
+                    needs_review=row.needs_review,
+                    revision=row.review_revision,
+                )
+                row.review_state = request.state
+                row.review_reason = safe_text(request.reason, limit=2000)
+                row.reviewed_at = now
+                row.review_revision = project.revision
+                row.needs_review = False
+            audit = ProjectAudit(
+                project_id=project_id,
+                action="review",
+                detail=dict(
+                    before=before,
+                    state=request.state,
+                    reason=safe_text(request.reason, limit=2000),
+                    revision=project.revision,
+                    at=now.isoformat(),
+                    asset_ids=ids,
+                ),
+            )
+            session.add(audit)
+            session.flush()
+            return audit
+
+    def undo_review(self, session, project_id, audit_id, expected_revision, reason):
+        with atomic_import(session):
+            audit = session.get(ProjectAudit, audit_id)
+            if not audit or audit.project_id != project_id or audit.action != "review":
+                raise ResourceNotFoundError("project_review_missing")
+            if not reason.strip() or len(reason) > 2000:
+                raise InputValidationError("invalid_review_reason")
+            rows = [session.get(ProjectAnnotation, aid) for aid in audit.detail["asset_ids"]]
+            if any(r.review_revision != audit.detail["revision"] for r in rows):
+                raise ConflictError("review_has_later_changes")
+            project = self.projects.bump(session, project_id, expected_revision)
+            for row in rows:
+                old = audit.detail["before"][row.asset_id]
+                row.review_state, row.review_reason = old["state"], old["reason"]
+                row.reviewed_at = datetime.fromisoformat(old["at"]) if old["at"] else None
+                row.needs_review = row.needs_review or old["needs_review"]
+                row.review_revision = old["revision"]
+            session.add(
+                ProjectAudit(
+                    project_id=project_id,
+                    action="review_undo",
+                    detail=dict(
+                        review_id=audit.id,
+                        revision=project.revision,
+                        asset_ids=audit.detail["asset_ids"],
+                        reason=safe_text(reason, limit=2000),
+                    ),
+                )
+            )
+            session.flush()
+
+    def review_history(self, session, project_id, asset_id):
+        ids = func.json_each(ProjectAudit.detail["asset_ids"]).table_valued("value")
+        audits = list(
+            session.scalars(
+                select(ProjectAudit)
+                .where(
+                    ProjectAudit.project_id == project_id,
+                    ProjectAudit.action.in_(["review", "review_undo"]),
+                    select(1).select_from(ids).where(ids.c.value == asset_id).exists(),
+                )
+                .order_by(ProjectAudit.id.desc())
+            )
+        )
+        selected = {aid for a in audits for aid in a.detail["asset_ids"]}
+        revisions = {
+            r.asset_id: r.review_revision
+            for r in session.scalars(
+                select(ProjectAnnotation).where(ProjectAnnotation.asset_id.in_(selected))
+            )
+        }
+        return [
+            dict(
+                id=a.id,
+                action=a.action,
+                detail=a.detail,
+                at=a.created_at,
+                undoable=a.action == "review"
+                and all(revisions[aid] == a.detail["revision"] for aid in a.detail["asset_ids"]),
+            )
+            for a in audits
+        ]
+
+    def flag_observation_changes(self, session, run):
+        from collections import defaultdict
+
+        from sqlalchemy.orm import aliased
+
+        from app.models.project import ProjectRun
+        from app.services.project_comparison import ProjectComparisonService
+
+        reviewed = (
+            select(ProjectAnnotation.asset_id)
+            .join(ProjectAsset, ProjectAsset.id == ProjectAnnotation.asset_id)
+            .where(
+                ProjectAsset.project_id == run.project_id,
+                ProjectAnnotation.reviewed_at.is_not(None),
+            )
+        )
+        if session.scalar(reviewed.limit(1)) is None:
+            return
+        old, current = aliased(ProjectObservation), aliased(ProjectObservation)
+        ranked = (
+            select(
+                old.asset_id,
+                old.identity_key,
+                old.project_run_id,
+                func.dense_rank()
+                .over(partition_by=[old.asset_id, old.identity_key], order_by=old.seen_at.desc())
+                .label("position"),
+            )
+            .join(ProjectRun, ProjectRun.id == old.project_run_id)
+            .join(
+                current,
+                (current.asset_id == old.asset_id) & (current.identity_key == old.identity_key),
+            )
+            .where(
+                current.project_run_id == run.id,
+                old.seen_at < current.seen_at,
+                ProjectRun.entry_id == run.entry_id,
+                ProjectRun.source == run.source,
+                ProjectRun.status == "complete",
+            )
+            .subquery()
+        )
+        pairs = defaultdict(set)
+        for aid, identity, rid in session.execute(
+            select(ranked.c.asset_id, ranked.c.identity_key, ranked.c.project_run_id).where(
+                ranked.c.position == 1
+            )
+        ):
+            pairs[rid].add((aid, identity))
+        changed = set()
+        for rid, keys in pairs.items():
+            comparison = ProjectComparisonService().compare(session, run.project_id, rid, run.id)
+            changed.update(
+                i["asset_id"]
+                for i in comparison.items
+                if (i["asset_id"], i["identity_key"]) in keys and i["observed_attributes_differ"]
+            )
+        if not changed:
+            return
+        display_ids = select(ProjectObservation.display_asset_id).where(
+            ProjectObservation.project_run_id == run.id, ProjectObservation.asset_id.in_(changed)
+        )
+        for row in session.scalars(
+            select(ProjectAnnotation).where(ProjectAnnotation.asset_id.in_(display_ids))
+        ):
+            row.needs_review = True
+        session.flush()

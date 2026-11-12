@@ -1,23 +1,21 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ page_title or "Garden" }}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <link rel="stylesheet" href="/static/vendor/tailwind-3.4.17.css" />
+    <script src="/static/vendor/htmx-1.9.12.min.js" defer></script>
     <link rel="stylesheet" href="/static/app.css" />
   </head>
   <body class="min-h-screen bg-stone-100 text-slate-900" hx-boost="true">
     <header class="border-b border-black/10 bg-white/80 backdrop-blur">
       <div class="mx-auto flex max-w-6xl items-center justify-between gap-3 flex-wrap px-6 py-4">
         <a href="/" class="text-xl font-semibold tracking-tight">Garden</a>
-        <nav class="flex flex-wrap gap-3 text-sm text-slate-600">
-          <a href="/" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">Dashboard</a>
-          <a href="/scans" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">URL Scans</a>
-          <a href="/identities" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">身份与采集</a>
-          <a href="/projects" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">项目资产库</a>
-          <a href="/assets" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">资产清单</a>
+        <nav aria-label="主导航" class="flex flex-wrap gap-3 text-sm text-slate-600">
+          {% for href,label in [('/projects','项目'),('/scans','任务'),('/assets','资产'),('/identities','身份'),('/reports','报告'),('/settings','设置')] %}
+          <a href="{{ href }}" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">{{ label }}</a>
+          {% endfor %}
         </nav>
       </div>
     </header>
@@ -27,10 +25,10 @@
     <script>
       (function () {
         const units = [
-          { max: 60, fmt: function (n) { return 'just now'; } },
-          { max: 3600, div: 60, suffix: 'm ago' },
-          { max: 86400, div: 3600, suffix: 'h ago' },
-          { max: 604800, div: 86400, suffix: 'd ago' },
+          { max: 60, fmt: function (n) { return '刚刚'; } },
+          { max: 3600, div: 60, suffix: ' 分钟前' },
+          { max: 86400, div: 3600, suffix: ' 小时前' },
+          { max: 604800, div: 86400, suffix: ' 天前' },
         ];
         function friendly(el) {
           var iso = el.getAttribute('data-iso');

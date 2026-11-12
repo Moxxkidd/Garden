@@ -38,7 +38,7 @@ class AssetDeliveryService:
                 raise InputValidationError("变更导出需要明确指定前后项目运行。")
             # Changes have their own two-run scope; do not silently ignore asset filters.
             if any(
-                v is not None and v != ""
+                v is not None and v != "" and not (k == "collection" and v == "all")
                 for k, v in filters.items()
                 if k not in {"sort", "order", "before_run_id", "after_run_id"}
             ):

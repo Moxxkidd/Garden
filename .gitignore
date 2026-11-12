@@ -20,3 +20,5 @@ baselines/
 PLANS.md
 .verification/
 output/playwright/
+
+node_modules/

@@ -44,7 +44,10 @@ class ProjectImportPreview(BaseModel):
 
 
 class ProjectQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     view: Literal["assets", "observations", "candidates", "relations"] = "assets"
+    collection: Literal["all", "core", "keep", "ignore", "unreviewed", "needs_review"] = "all"
+    template_key: str | None = Field(default=None, max_length=8000)
     site: str | None = None
     kind: str | None = None
     method: str | None = None
@@ -144,3 +147,14 @@ class ProjectAnnotationRequest(ProjectRevision):
 
 class ProjectRevokeRequest(ProjectRevision):
     reason: str = Field(min_length=1, max_length=2000)
+
+
+class ProjectReviewRequest(ProjectRevision):
+    asset_ids: list[str] = Field(min_length=1, max_length=200)
+    state: Literal["unreviewed", "keep", "ignore"]
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class ProjectSavedViewRequest(ProjectRevision):
+    name: str = Field(min_length=1, max_length=120)
+    query: ProjectQuery

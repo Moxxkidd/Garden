@@ -44,7 +44,7 @@ def test_discovery_form_catalog_and_report(app, tmp_path, width, javascript):
                 )
                 page = context.new_page()
                 page.goto(garden_origin)
-                page.get_by_label("Entry URL").fill(target_origin)
+                page.get_by_label("1. 授权入口 / 项目").fill(target_origin)
                 page.get_by_text("发现选项", exact=True).click()
                 page.get_by_label("JS 线索", exact=True).select_option("true")
                 page.locator('[name="render_wait_ms"]').fill("0")

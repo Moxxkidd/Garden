@@ -35,7 +35,7 @@ dd {
   font-weight: 600;
 }
 
-/* Identity forms remain readable without JavaScript or the optional CSS CDN. */
+/* Identity forms remain readable without JavaScript. */
 .identity-page { max-width: 64rem; margin: 1.5rem auto; padding: 1rem; line-height: 1.6; }
 .identity-page > section { background: white; border: 1px solid #d7ddd7; border-radius: 1rem; padding: 1.25rem; margin: 1.25rem 0; }
 .identity-page form { display: grid; gap: .8rem; margin: 1rem 0; }
@@ -48,7 +48,7 @@ dd {
 .identity-page a { overflow-wrap: anywhere; }
 .identity-matrix .overflow-x-auto { overflow-x: auto; max-width: 100%; }
 
-/* Project forms remain usable offline and without the CDN JavaScript. */
+/* Project forms remain usable offline and without JavaScript. */
 .project-page { max-width: 1100px; margin: auto; padding: 1.2rem; background: #fff; border: 1px solid #d6ded8; border-radius: 16px; overflow-wrap: anywhere; color: #172b24; line-height: 1.6; }
 .project-page h1 { font-size: 1.8rem; margin: .4rem 0 1rem; font-weight: 700; }
 .project-page h2 { font-size: 1.2rem; margin: .6rem 0; font-weight: 650; }
@@ -73,7 +73,7 @@ body > header nav a { padding: .35rem .6rem; border: 1px solid #c6d2ca; border-r
 body > main { padding: 1.5rem; }
 @media (max-width: 480px) { body > main { padding: .6rem; } body > header > div { padding: .8rem; } }
 
-/* Durable queue forms work without the optional JavaScript/CSS CDN. */
+/* Durable queue forms work without JavaScript. */
 .collection-page { max-width: 64rem; margin: 1rem auto; padding: 1rem; line-height: 1.6; }
 .collection-page section { padding: 1rem; margin: 1rem 0; border: 1px solid var(--border); border-radius: 1rem; background: white; }
 .collection-page form { display: grid; gap: .8rem; margin: 1rem 0; }
@@ -125,3 +125,18 @@ body > main { padding: 1.5rem; }
 .asset-provenance-modal-content .asset-discovery-sources { max-height: none; overflow: visible; }
 .asset-provenance-modal-content p { margin: .6rem 0; }
 .asset-provenance-modal-content a { color: var(--accent); text-decoration: underline; }
+
+/* Workbench: the table owns overflow; other controls always fit a narrow screen. */
+main, section, fieldset { min-width: 0; }
+.project-page input[type="checkbox"] { display: inline-block; width: auto; max-width: none; margin-right: .35rem; }
+.project-page .inline-choice { display: inline-flex; align-items: center; gap: .3rem; margin-right: 1rem; }
+.workbench-table-scroll { max-width: 100%; max-height: 70vh; overflow: auto; border: 1px solid var(--border); border-radius: .5rem; }
+.workbench-table { min-width: 1000px; width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+.workbench-table th, .workbench-table td { text-align: left; padding: .8rem; vertical-align: top; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.workbench-table th { position: sticky; top: 0; z-index: 1; background: #edf3ef; }
+.workbench-table th:first-child { width: 70px; }
+.workbench-table th:nth-child(2) { width: 240px; }
+.workbench-table [hidden] { display: none; }
+.workbench-table small { font-size: .7rem; }
+.review-pending { color: #92400e; font-weight: 650; }
+:focus-visible { outline: 3px solid #4394d0; outline-offset: 2px; }

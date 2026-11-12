@@ -4,10 +4,11 @@
   {% if values.get("rerun_of_run_id") %}<input type="hidden" name="rerun_of_run_id" value="{{ values.rerun_of_run_id }}">{% endif %}
   {% for key in ["project_entry_id", "target_id"] %}{% if values.get(key) %}<input type="hidden" name="{{ key }}" value="{{ values[key] }}">{% endif %}{% endfor %}
   <div>
-    <label class="block text-sm font-medium" for="scan-url">Entry URL · 授权入口</label>
+    <label class="block text-sm font-medium" for="scan-url">1. 授权入口 / 项目</label>
     <input id="scan-url" name="url" type="url" required maxlength="1000" value="{{ values.get('url', '') }}" placeholder="http://127.0.0.1:8080/" class="mt-2 w-full min-w-0 rounded-2xl border border-black/15 px-4 py-3 focus:border-emerald-600" {% if errors.get('url') %}aria-invalid="true" aria-describedby="error-url" autofocus{% endif %} />
     {% if errors.get('url') %}<p id="error-url" class="mt-2 text-sm text-red-700">{{ errors.url }}</p>{% endif %}
   </div>
+  <p>2. 采集模式 / 身份：此入口为匿名扫描；<a class="underline" href="/identities{% if values.get('project_entry_id') %}?project_entry_id={{ values.project_entry_id }}{% endif %}">改用登录身份采集</a>。<a class="underline" href="/projects">从项目入口创建任务</a>可保留项目关联。</p>
   <label class="block text-sm font-medium">发现预设
     <select name="preset" aria-label="发现预设" class="mt-2 block w-full rounded-xl border p-3">
       {% for code, label in [('quick','快速 · HTTP 默认'),('balanced','平衡 · 路径多样性 + HTML / JS / Sitemap'),('deep','浏览器深入 · 按线索触发混合采集')] %}<option value="{{code}}" {% if values.get('preset', 'quick') == code %}selected{% endif %}>{{label}}</option>{% endfor %}

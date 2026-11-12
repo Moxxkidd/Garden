@@ -53,6 +53,10 @@ def test_filters_sort_pagination_and_export_agree(seeded_records, view):
         total = 4 if view == "relations" else 2
         cases = [
             ({}, total),
+            ({"collection": "core"}, total),
+            ({"collection": "unreviewed"}, total),
+            ({"collection": "keep"}, 0),
+            ({"collection": "needs_review"}, 0),
             ({"site": "http://localhost:8111"}, total),
             ({"site": "http://different.invalid"}, 0),
             ({"method": "GET"}, total),

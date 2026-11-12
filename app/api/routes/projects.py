@@ -16,8 +16,10 @@ from app.schemas.projects import (
     ProjectEntryUpdate,
     ProjectImportRequest,
     ProjectQuery,
+    ProjectReviewRequest,
     ProjectRevision,
     ProjectRevokeRequest,
+    ProjectSavedViewRequest,
     ProjectView,
 )
 from app.services.project_catalog import ProjectCatalogService
@@ -205,3 +207,59 @@ async def revoke(project_id: int, correction_id: int, request: Request):
         return correction_view(
             curation.revoke(session, project_id, correction_id, body.expected_revision, body.reason)
         )
+
+
+@router.get("/{project_id}/templates")
+def list_templates(project_id: int, request: Request):
+    from app.services.project_workbench import ProjectWorkbenchService
+
+    with session_scope() as session:
+        return ProjectWorkbenchService().templates(
+            session, project_id, parse_query(request.query_params)
+        )
+
+
+@router.post("/{project_id}/reviews")
+async def review_assets(project_id: int, request: Request):
+    body = await payload(request, ProjectReviewRequest)
+    with session_scope() as session:
+        audit = curation.review(session, project_id, body)
+        return dict(
+            id=audit.id, revision=audit.detail["revision"], asset_ids=audit.detail["asset_ids"]
+        )
+
+
+@router.get("/{project_id}/reviews/{asset_id}")
+def review_detail(project_id: int, asset_id: str):
+    with session_scope() as session:
+        catalog.detail(session, project_id, asset_id)
+        return dict(
+            review=catalog.reviews(session, project_id, [asset_id])[asset_id],
+            history=curation.review_history(session, project_id, asset_id),
+        )
+
+
+@router.post("/{project_id}/reviews/{audit_id}/undo")
+async def undo_review(project_id: int, audit_id: int, request: Request):
+    body = await payload(request, ProjectRevokeRequest)
+    with session_scope() as session:
+        curation.undo_review(session, project_id, audit_id, body.expected_revision, body.reason)
+        return dict(revision=projects.get(session, project_id).revision)
+
+
+@router.get("/{project_id}/views")
+def list_views(project_id: int):
+    from app.services.project_workbench import ProjectWorkbenchService
+
+    with session_scope() as session:
+        return ProjectWorkbenchService().views(session, project_id)
+
+
+@router.post("/{project_id}/views")
+async def save_view(project_id: int, request: Request):
+    from app.services.project_workbench import ProjectWorkbenchService
+
+    body = await payload(request, ProjectSavedViewRequest)
+    with session_scope() as session:
+        row = ProjectWorkbenchService().save_view(session, project_id, body)
+        return dict(id=row.id, name=row.name, query=row.query)

@@ -6,33 +6,32 @@
     <div class="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
       <div class="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
         <p class="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">
-          One URL to a structured report
+          从授权入口到资产清单
         </p>
-        <h1 class="mt-3 text-4xl font-semibold tracking-tight">Start an asset scan</h1>
+        <h1 class="mt-3 text-4xl font-semibold tracking-tight">创建资产扫描</h1>
         <p class="mt-4 max-w-3xl text-base leading-7 text-slate-600">
-          Submit one authorized HTTP or HTTPS entry URL. Garden validates the network destination,
-          discovers and normalizes assets, analyzes passive evidence, and produces a readable report.
+          提交一个已授权的 HTTP 或 HTTPS 入口。Garden 检查网络范围、发现与整理资产，保存来源和被动迹象，并生成可读报告。
         </p>
         {% include "_scan_preview_form.html" %}
       </div>
       <aside class="rounded-3xl border border-black/10 bg-stone-50 p-6 shadow-sm">
-        <h2 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Runtime</h2>
+        <h2 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">运行信息</h2>
         <dl class="mt-4 grid gap-4 text-sm">
           <div>
-            <dt class="text-slate-500">Version</dt>
+            <dt class="text-slate-500">版本</dt>
             <dd class="mt-1 font-medium">{{ project_version }}</dd>
           </div>
           <div>
-            <dt class="text-slate-500">Health Endpoint</dt>
+            <dt class="text-slate-500">健康检查入口</dt>
             <dd class="mt-1 font-medium"><code>/healthz</code></dd>
           </div>
           <div>
-            <dt class="text-slate-500">Target Guardrail</dt>
-            <dd class="mt-1 font-medium">Authorized public + local by default</dd>
+            <dt class="text-slate-500">目标范围</dt>
+            <dd class="mt-1 font-medium">只扫描已授权范围，遵守网络策略</dd>
           </div>
           <div>
-            <dt class="text-slate-500">UI Scope</dt>
-            <dd class="mt-1 font-medium">Start, track, read, and download</dd>
+            <dt class="text-slate-500">操作入口</dt>
+            <dd class="mt-1 font-medium">创建任务、跟踪进度、复核与交付</dd>
           </div>
         </dl>
       </aside>
@@ -40,11 +39,11 @@
 
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
       <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">URL Scans</p>
+        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">扫描任务</p>
         <p class="mt-3 text-3xl font-semibold">{{ dashboard.total_scans }}</p>
       </div>
       <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">Assets</p>
+        <p class="text-xs uppercase tracking-[0.16em] text-slate-500">资产观察</p>
         <p class="mt-3 text-3xl font-semibold">{{ dashboard.total_assets }}</p>
       </div>
       <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
@@ -52,11 +51,11 @@
         <p class="mt-3 text-3xl font-semibold">{{ dashboard.total_findings }}</p>
       </div>
       <div class="rounded-2xl border border-red-200 bg-red-50/50 p-5 shadow-sm">
-        <p class="text-xs uppercase tracking-[0.16em] text-red-700">High Severity</p>
+        <p class="text-xs uppercase tracking-[0.16em] text-red-700">高严重性观察</p>
         <p class="mt-3 text-3xl font-semibold text-red-800">{{ dashboard.high_severity_findings }}</p>
       </div>
       <div class="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm">
-        <p class="text-xs uppercase tracking-[0.16em] text-emerald-700">High Confidence</p>
+        <p class="text-xs uppercase tracking-[0.16em] text-emerald-700">高置信度观察</p>
         <p class="mt-3 text-3xl font-semibold text-emerald-800">{{ dashboard.high_confidence_findings }}</p>
       </div>
     </div>
@@ -64,16 +63,16 @@
     <div class="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
       <div class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold">Recent URL Scans</h2>
-          <a href="/scans" class="text-sm text-slate-500">View all</a>
+          <h2 class="text-lg font-semibold">最近任务</h2>
+          <a href="/scans" class="text-sm text-slate-500">查看全部</a>
         </div>
         <div class="mt-4 overflow-hidden rounded-2xl border border-black/10">
           <table class="min-w-full divide-y divide-black/5 text-sm">
             <thead class="bg-stone-50 text-left text-slate-500">
               <tr>
-                <th class="px-4 py-3">Scan</th>
+                <th class="px-4 py-3">任务</th>
                 <th class="px-4 py-3">URL</th>
-                <th class="px-4 py-3">Status</th>
+                <th class="px-4 py-3">状态</th>
                 <th class="px-4 py-3">执行进度</th>
               </tr>
             </thead>
@@ -86,7 +85,7 @@
                   <td class="px-4 py-3">{{ format_execution_progress(scan.progress) }}<p class="mt-1 text-xs">{{ coverage_summary(scan.status, scan.completeness, scan.mode) }}</p></td>
                 </tr>
               {% else %}
-                <tr><td colspan="4" class="px-4 py-6 text-center text-slate-500">No URL scans yet.</td></tr>
+                <tr><td colspan="4" class="px-4 py-6 text-center text-slate-500">暂无扫描任务。</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -96,8 +95,8 @@
       <div class="space-y-6">
         <div class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
           <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold">Scan Status</h2>
-            <a href="/scans" class="text-sm text-slate-500">View scans</a>
+            <h2 class="text-lg font-semibold">任务状态</h2>
+            <a href="/scans" class="text-sm text-slate-500">查看任务</a>
           </div>
           <div class="mt-4 grid gap-3 sm:grid-cols-2">
             {% for status, count in dashboard.status_breakdown.items() %}
@@ -110,7 +109,7 @@
         </div>
 
         <div class="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
-          <h2 class="text-lg font-semibold">Category Distribution</h2>
+          <h2 class="text-lg font-semibold">关注项类型分布</h2>
           <div class="mt-4 space-y-3 text-sm">
             {% set max_count = dashboard.category_distribution[0][1] if dashboard.category_distribution else 1 %}
             {% for category, count in dashboard.category_distribution %}
@@ -124,7 +123,7 @@
                 </div>
               </div>
             {% else %}
-              <div class="rounded-2xl border border-dashed border-black/10 bg-stone-50 px-4 py-6 text-slate-500">No findings categories yet.</div>
+              <div class="rounded-2xl border border-dashed border-black/10 bg-stone-50 px-4 py-6 text-slate-500">暂无关注项类型。</div>
             {% endfor %}
           </div>
         </div>

@@ -194,3 +194,115 @@ def test_two_origins_project_scan_history_and_download_without_js(
                 raise
             finally:
                 browser.close()
+
+
+def test_workbench_offline_filter_source_review_and_saved_view(app, seeded_records):
+    """One keyboard journey at desktop/narrow widths; all outside requests blocked."""
+    from app.schemas.projects import ProjectQuery
+    from app.services.project_catalog import ProjectCatalogService
+    from tests.helpers.project_assets import project_fixture, source_run
+    from tests.test_project_comparison import ingest
+
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        for path in ["/orders/12", "/orders/34", "/help"]:
+            ingest(session, project, entry, source_run(session, target, path=path))
+        pid = project.id
+        asset_id = next(
+            r["id"]
+            for r in ProjectCatalogService().list(session, pid, ProjectQuery()).items
+            if r["url"].endswith("/orders/12")
+        )
+    with _serve(app) as garden, sync_playwright() as pw:
+        browser = pw.chromium.launch(channel="chromium")
+        context = browser.new_context(viewport={"width": 1440, "height": 1000})
+        outside, errors = [], []
+
+        def local_only(route):
+            if route.request.url.startswith(garden + "/"):
+                route.continue_()
+            else:
+                outside.append(route.request.url)
+                route.abort()
+
+        context.route("**/*", local_only)
+        page = context.new_page()
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.set_default_timeout(8000)
+        artifacts = Path("output/playwright/v130")
+        artifacts.mkdir(parents=True, exist_ok=True)
+        try:
+            page.goto(garden + f"/projects/{pid}")
+            expect(page.get_by_role("heading", name="工作台概览")).to_be_visible()
+            for name in ["项目", "任务", "资产", "身份", "报告", "设置"]:
+                link = page.get_by_role("navigation", name="主导航").get_by_role(
+                    "link", name=name, exact=True
+                )
+                destination = link.get_attribute("href")
+                link.click()
+                expect(page).to_have_url(garden + destination)
+                expect(page.get_by_role("main")).to_be_visible()
+            page.goto(garden + f"/projects/{pid}/entries/{entry.id}/scan")
+            expect(page.get_by_label("发现预设", exact=True)).to_have_value("quick")
+            page.locator('form[action="/scans/preview"] button[type="submit"]').click()
+            expect(page.get_by_role("heading", name="3. 确认范围与预算")).to_be_visible()
+            for width in [1440, 390]:
+                page.set_viewport_size({"width": width, "height": 900})
+                page.goto(garden + f"/projects/{pid}/assets")
+                query = page.get_by_label("关键词", exact=True)
+                query.focus()
+                page.keyboard.type("orders")
+                page.keyboard.press("Enter")
+                expect(page.get_by_text("筛选匹配 2 条", exact=False)).to_be_visible()
+                # Source access by keyboard; no separate duplicated provenance model.
+                source = page.get_by_role("link", name="查看来源详情", exact=True).first
+                source.focus()
+                page.keyboard.press("Enter")
+                expect(page.get_by_role("heading", name="资产历史", exact=True)).to_be_visible()
+                expect(page.get_by_role("link", name="查看来源任务证据")).to_be_visible()
+                page.goto(garden + f"/projects/{pid}/assets?q=orders")
+                selected = page.locator(f'input[value="{asset_id}"][type="checkbox"]')
+                selected.focus()
+                page.keyboard.press("Space")
+                expect(page.get_by_role("status")).to_contain_text("已选 1 个资产")
+                reason = page.get_by_label("复核理由", exact=True)
+                reason.focus()
+                page.keyboard.type(f"fixture {width}")
+                page.get_by_role("button", name="更新选中资产").focus()
+                page.keyboard.press("Enter")
+                expect(
+                    page.locator('td[data-col="review"]').filter(has_text=f"fixture {width}")
+                ).to_contain_text("人工保留")
+                page.goto(garden + f"/projects/{pid}/assets?q=orders&page_size=1")
+                page.get_by_text("保存与打开筛选视图", exact=True).click()
+                page.get_by_label("视图名称", exact=True).fill(f"Orders {width}")
+                page.get_by_role("button", name="保存当前筛选", exact=True).click()
+                expect(page.get_by_text("筛选匹配 2 条", exact=False)).to_be_visible()
+                page.get_by_role("link", name="下一页", exact=True).click()
+                expect(page.get_by_text("筛选匹配 2 条", exact=False)).to_be_visible()
+                page.get_by_text("选择显示列（仅保存在此浏览器）", exact=True).click()
+                page.locator('[data-column="seen"]').uncheck()
+                page.reload()
+                expect(page.locator('th[data-col="seen"]')).to_be_hidden()
+                assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+                page.screenshot(path=str(artifacts / f"workbench-{width}.png"), full_page=True)
+                page.get_by_text("保存与打开筛选视图", exact=True).click()
+                page.get_by_role("link", name=f"Orders {width}", exact=True).click()
+                expect(page.get_by_label("关键词", exact=True)).to_have_value("orders")
+                expect(page.get_by_text("筛选匹配 2 条", exact=False)).to_be_visible()
+            page.goto(garden + f"/projects/{pid}/assets?layout=templates")
+            expect(page.get_by_role("heading", name="GET /orders/{number}")).to_be_visible()
+            page.get_by_role("link", name="展开 2 个实例", exact=True).click()
+            expect(page.get_by_text("筛选匹配 2 条", exact=False)).to_be_visible()
+            page.goto(garden + f"/projects/{pid}/assets/{asset_id}")
+            page.get_by_text("复核历史与撤销", exact=True).click()
+            form = page.locator('form[action$="/undo"]').first
+            form.get_by_label("撤销复核理由").fill("undo latest fixture")
+            form.get_by_role("button", name="撤销这次复核（1 个资产）").click()
+            assert not outside, outside
+            assert not errors, errors
+            context.clear_cookies()
+            page.evaluate("localStorage.clear()")
+        finally:
+            browser.close()

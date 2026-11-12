@@ -19,7 +19,8 @@ from app.schemas.projects import (
     ProjectCorrectionRequest,
     ProjectEntryCreate,
     ProjectImportRequest,
-    ProjectQuery,
+    ProjectReviewRequest,
+    ProjectSavedViewRequest,
     ProjectSourceRef,
     ProjectView,
 )
@@ -28,6 +29,7 @@ from app.services.project_comparison import ProjectComparisonService
 from app.services.project_curation import ProjectCurationService
 from app.services.project_ingestion import ProjectIngestionService
 from app.services.project_presentation import entry_view, run_view
+from app.services.project_workbench import ProjectWorkbenchService
 from app.services.projects import ProjectService
 
 router = APIRouter(tags=["projects"])
@@ -59,7 +61,11 @@ async def form_values(request):
         if len(raw) > 512 * 1024:
             raise InputValidationError("项目表单超过大小限制。")
     try:
-        return dict(parse_qsl(raw.decode("utf-8"), keep_blank_values=True, max_num_fields=50))
+        pairs = parse_qsl(raw.decode("utf-8"), keep_blank_values=True, max_num_fields=250)
+        values = dict(pairs)
+        if "asset_ids" in values:
+            values["asset_ids"] = " ".join(v for k, v in pairs if k == "asset_ids")
+        return values
     except (ValueError, UnicodeError):
         raise InputValidationError("项目表单格式无效。") from None
 
@@ -91,7 +97,8 @@ def detail_page(request: Request, project_id: int):
                 select(Target).where(Target.status == "active").order_by(Target.id)
             )
         ]
-        counts = catalog.list(session, project_id, ProjectQuery(page_size=1)).counts
+        summary = ProjectWorkbenchService().summary(session, project_id)
+        counts = summary["counts"]
     return render(
         request,
         "detail",
@@ -100,16 +107,31 @@ def detail_page(request: Request, project_id: int):
         runs=runs,
         targets=targets,
         counts=counts,
+        summary=summary,
         page_title=project.name,
     )
 
 
 @router.get("/projects/{project_id}/assets", include_in_schema=False)
 def assets_page(request: Request, project_id: int):
-    query = parse_query(request.query_params)
+    layout = request.query_params.get("layout", "instances")
+    if layout not in {"instances", "templates"}:
+        raise InputValidationError("未知清单布局。")
+    query = parse_query({k: v for k, v in request.query_params.items() if k != "layout"})
     with session_scope() as session:
         project = ProjectView.model_validate(projects.get(session, project_id))
-        result = catalog.list(session, project_id, query)
+        workbench = ProjectWorkbenchService()
+        result = (
+            workbench.templates(session, project_id, query)
+            if layout == "templates"
+            else catalog.list(session, project_id, query)
+        )
+        reviews = (
+            catalog.reviews(session, project_id, [r["id"] for r in result.items])
+            if layout == "instances" and query.view == "assets"
+            else {}
+        )
+        views = workbench.views(session, project_id)
 
     def link(path, **changes):
         return path + "?" + urlencode(query.model_dump(mode="json", exclude_none=True) | changes)
@@ -121,8 +143,13 @@ def assets_page(request: Request, project_id: int):
         project=project,
         result=result,
         query=query,
-        previous=link(base, page=query.page - 1) if query.page > 1 else None,
-        next=link(base, page=query.page + 1)
+        layout=layout,
+        reviews=reviews,
+        saved_views=[dict(**v, url=base + "?" + urlencode(v["query"])) for v in views],
+        template_link=lambda key: link(base, template_key=key, page=1),
+        filter_values=query.model_dump(mode="json", exclude_none=True),
+        previous=link(base, page=query.page - 1, layout=layout) if query.page > 1 else None,
+        next=link(base, page=query.page + 1, layout=layout)
         if query.page * query.page_size < result.matched
         else None,
         exports={
@@ -139,7 +166,17 @@ def asset_page(request: Request, project_id: int, asset_id: str):
     with session_scope() as session:
         project = ProjectView.model_validate(projects.get(session, project_id))
         detail = catalog.detail(session, project_id, asset_id)
-    return render(request, "asset_detail", project=project, detail=detail, page_title="资产历史")
+        review = catalog.reviews(session, project_id, [asset_id])[asset_id]
+        history = curation.review_history(session, project_id, asset_id)
+    return render(
+        request,
+        "asset_detail",
+        project=project,
+        detail=detail,
+        review=review,
+        review_history=history,
+        page_title="资产历史",
+    )
 
 
 @router.get("/projects/{project_id}/compare", include_in_schema=False)
@@ -160,7 +197,51 @@ async def mutate(request: Request, project_id: int, action: str):
         values = await form_values(request)
         with session_scope() as session:
             project = ProjectView.model_validate(projects.get(session, project_id))
-            if action == "entries":
+            if action == "reviews":
+                curation.review(
+                    session,
+                    project_id,
+                    ProjectReviewRequest(
+                        asset_ids=values.get("asset_ids", "").split(),
+                        state=values["state"],
+                        reason=values["reason"],
+                        expected_revision=values["expected_revision"],
+                    ),
+                )
+                return redirect(project_id, "/assets")
+            elif action.startswith("reviews/") and action.endswith("/undo"):
+                curation.undo_review(
+                    session,
+                    project_id,
+                    int(action.split("/")[1]),
+                    int(values["expected_revision"]),
+                    values["reason"],
+                )
+                return redirect(project_id, "/assets")
+            elif action == "views":
+                query = parse_query(
+                    {k: v for k, v in values.items() if k not in {"name", "expected_revision"}}
+                )
+                ProjectWorkbenchService().save_view(
+                    session,
+                    project_id,
+                    ProjectSavedViewRequest(
+                        name=values["name"],
+                        query=query,
+                        expected_revision=values["expected_revision"],
+                    ),
+                )
+                return redirect(
+                    project_id,
+                    "/assets?"
+                    + urlencode(query.model_dump(mode="json", exclude_none=True) | {"page": 1}),
+                )
+            elif action.startswith("views/") and action.endswith("/delete"):
+                ProjectWorkbenchService().delete_view(
+                    session, project_id, int(action.split("/")[1]), int(values["expected_revision"])
+                )
+                return redirect(project_id, "/assets")
+            elif action == "entries":
                 projects.add_entry(session, project_id, ProjectEntryCreate(**values))
             elif action.startswith("entries/") and action.endswith("/update"):
                 entry_id = int(action.split("/")[1])
