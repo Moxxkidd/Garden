@@ -188,6 +188,7 @@ def scan_detail_page(request: Request, scan_run_id: int) -> HTMLResponse:
         context={
             "scan": scan,
             "progress_snapshot": progress_snapshot(scan),
+            "manual_run": scan.interaction_mode == "manual",
             "report": report,
             "page_title": f"Scan {scan.id}",
             "execution_text": execution_summary(scan.status),

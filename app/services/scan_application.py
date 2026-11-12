@@ -688,6 +688,7 @@ class ScanApplicationService:
     def _view_data(self, run: ScanRun) -> dict[str, object]:
         return {
             "id": run.id,
+            "interaction_mode": run.options.get("interaction_mode"),
             "live_progress": run.options.get("feedback_version") == 1,
             "mode": run.mode,
             "target_id": run.target_id,

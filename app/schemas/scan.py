@@ -127,6 +127,7 @@ class ScanContextView(BaseModel):
 
 class ScanRunView(BaseModel):
     id: int
+    interaction_mode: Literal["automatic", "manual"] | None = None
     mode: AssessmentMode = AssessmentMode.QUICK
     target_id: int | None = None
     can_reuse_configuration: bool = False

@@ -9,6 +9,8 @@ from app.schemas.scan import ScanOptions
 
 
 class IdentityCollectionRequest(BaseModel):
+    interaction_mode: Literal["automatic", "manual"] = "automatic"
+    manual_login: "ManualLoginRequest | None" = None
     project_entry_id: int | None = Field(default=None, gt=0)
     model_config = ConfigDict(extra="forbid")
     url: str = Field(min_length=1, max_length=2000)
@@ -25,10 +27,27 @@ class IdentityCollectionRequest(BaseModel):
             i <= 0 for i in self.profile_ids
         ):
             raise ValueError("身份 ID 必须为不重复的正整数。")
+        if self.interaction_mode == "manual":
+            if (
+                len(self.profile_ids) != 1
+                or self.include_anonymous
+                or self.options.durable is not None
+            ):
+                raise ValueError("人工浏览须选择一个明确身份，不使用自动队列。")
+            if self.manual_login and self.manual_login.project_entry_id not in {
+                None,
+                self.project_entry_id,
+            }:
+                raise ValueError("人工登录与采集入口必须一致。")
+            if self.manual_login and self.manual_login.profile_id != self.profile_ids[0]:
+                raise ValueError("人工登录与采集身份必须一致。")
+        elif self.manual_login is not None:
+            raise ValueError("额外人工登录配置仅用于显式人工模式。")
         return self
 
 
 class ManualLoginRequest(BaseModel):
+    project_entry_id: int | None = Field(default=None, gt=0)
     model_config = ConfigDict(extra="forbid")
     profile_id: int = Field(gt=0)
     login_url: str = Field(min_length=1, max_length=2000)
@@ -81,6 +100,8 @@ class RecoveryRequest(BaseModel):
 
 
 class LoginAttemptView(BaseModel):
+    project_entry_id: int | None = None
+    profile_id: int | None = None
     id: int
     state: str
     expires_at: datetime
@@ -142,3 +163,27 @@ class IdentityPreviewConfirmation(BaseModel):
 
 class RecoveryConfirmation(RecoveryRequest):
     preview_token: str = Field(min_length=20, max_length=200)
+
+
+class IdentityPlanItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    entry_id: int = Field(gt=0)
+    profile_id: int | None = Field(default=None, gt=0)
+    max_requests: int | None = Field(default=None, ge=1, le=2000)
+    interaction_mode: Literal["automatic", "manual"] = "automatic"
+
+
+class IdentityPlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project_id: int = Field(gt=0)
+    total_requests: int = Field(ge=1, le=40000)
+    items: list[IdentityPlanItem] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def selections(self):
+        keys = [(i.entry_id, i.profile_id) for i in self.items]
+        if len(set(keys)) != len(keys):
+            raise ValueError("同一入口/身份不能重复。")
+        if any(i.interaction_mode == "manual" and i.profile_id is None for i in self.items):
+            raise ValueError("人工浏览必须绑定一个明确身份。")
+        return self

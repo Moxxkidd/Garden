@@ -117,3 +117,54 @@ def test_failed_write_has_no_ready_session_or_partial_file(seeded_records, tmp_p
             service.import_state(session, profile_id, '{"cookies":[],"origins":[]}', config)
         assert session.scalar(select(func.count()).select_from(AuthSession)) == count
     assert not list((tmp_path / "state").glob("*.json"))
+
+
+def test_restore_redirect_hops_each_consume_request_budget(seeded_records, tmp_path):
+    from app.db.bootstrap import session_scope
+    from app.models.target import Target
+    from app.services.identity_health import IdentityHealthStopped
+    from tests.fixtures.identity_site import identity_site
+    from tests.test_scan_preview_e2e import _serve
+
+    site, state = identity_site()
+    state["sessions"]["synthetic"] = "reader"
+    calls = []
+
+    def admit():
+        if len(calls) >= 1:
+            raise IdentityHealthStopped("budget")
+        calls.append(True)
+
+    with _serve(site) as base:
+        with session_scope() as session:
+            session.get(Target, seeded_records["target"].id).base_url = base
+            config = ManualLoginRequest(
+                profile_id=seeded_records["credential"].id,
+                login_url=base + "/login",
+                validate_url=base + "/restore-hop",
+                success_selector="#identity",
+            )
+            raw = json.dumps(
+                {
+                    "cookies": [
+                        {
+                            "name": "identity",
+                            "value": "synthetic",
+                            "domain": "127.0.0.1",
+                            "path": "/",
+                        }
+                    ],
+                    "origins": [],
+                }
+            )
+            service = IdentitySessionService(storage=SessionStorageService(tmp_path / "private"))
+            with pytest.raises(IdentityHealthStopped):
+                service.import_state(
+                    session,
+                    config.profile_id,
+                    raw,
+                    config,
+                    before_request=admit,
+                    before_save=lambda: None,
+                )
+    assert [path for path, _ in state["requests"]] == ["restore-hop"]

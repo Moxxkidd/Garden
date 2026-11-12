@@ -24,6 +24,7 @@ class AssetQuery(BaseModel):
             "sitemap",
             "browser_navigation",
             "browser_request",
+            "manual_browser",
             "hash_route",
             "js_literal",
             "url_import",

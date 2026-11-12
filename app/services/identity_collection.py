@@ -32,6 +32,8 @@ from app.services.discovery_js import extract_js
 from app.services.discovery_sources import parse_seed_input, parse_sitemap
 from app.services.identity_health import IdentityHealthGate, IdentityHealthStopped
 from app.services.identity_sessions import IdentitySessionService
+from app.services.manual_collection import ManualCollectionControl
+from app.services.manual_login import ManualBrowser
 from app.services.project_lifecycle import ProjectLifecycleService
 from app.services.project_source import digest as project_entry_digest
 from app.services.projects import project_url
@@ -46,6 +48,9 @@ class IdentityCollectionService:
     def __init__(self, *, sessions=None, dispatcher=None, report_service=None):
         self.settings = get_settings()
         self.collection_executor = None
+        self.manual_controls = {}
+        self.manual_control_factory = ManualCollectionControl
+        self.manual_driver_factory = ManualBrowser
         self.policy = TargetNetworkPolicy(self.settings)
         self.sessions = sessions or IdentitySessionService(policy=self.policy)
         self.storage = self.sessions.storage
@@ -67,6 +72,8 @@ class IdentityCollectionService:
             self.collection_executor = owner
 
     def shutdown(self):
+        for control in list(self.manual_controls.values()):
+            control.finish.set()
         shutdown = getattr(self.dispatcher, "shutdown", None)
         if shutdown is not None:
             shutdown()
@@ -101,6 +108,8 @@ class IdentityCollectionService:
             if not profile or profile.target_id != target.id:
                 raise InputValidationError("身份不存在或不属于当前目标。")
             profiles.append(profile)
+        if request.manual_login:
+            self.sessions.configuration(session, request.profile_ids[0], request.manual_login)
         options = resolve_scan_options(request.options, self.settings).model_copy(
             update={"collection_mode": "browser"}
         )
@@ -142,6 +151,7 @@ class IdentityCollectionService:
             options={
                 **options.model_dump(exclude={"seed_input", "sitemap_url"}),
                 "feedback_version": 1,
+                "interaction_mode": request.interaction_mode,
             },
             completeness="pending",
             active_checks_enabled=False,
@@ -155,6 +165,7 @@ class IdentityCollectionService:
             0,
             {
                 "entry_url": entry,
+                "manual_login": request.manual_login.model_dump() if request.manual_login else None,
                 "recovery_work": (
                     collection_plan.work
                     if collection_plan and collection_plan.mode == "known_only"
@@ -205,11 +216,14 @@ class IdentityCollectionService:
         from app.services.collection_queue import prepare_queues
 
         prepare_queues(session, run, options, entry, plan=collection_plan)
+        if request.interaction_mode == "manual":
+            self.manual_controls[run.id] = self.manual_control_factory()
         session.commit()
         try:
             self.dispatcher.submit(run.id, self.execute)
         except Exception:
             run.status, run.error_code, run.active_key = "failed", "dispatch_failed", None
+            self.manual_controls.pop(run.id, None)
             session.commit()
         ProjectLifecycleService().reconcile(ProjectSourceRef(source="scan", run_id=run.id))
         return run.id
@@ -233,6 +247,7 @@ class IdentityCollectionService:
         try:
             self._execute(run_id)
         finally:
+            self.manual_controls.pop(run_id, None)
             ProjectLifecycleService().reconcile(ProjectSourceRef(source="scan", run_id=run_id))
 
     def _execute(self, run_id):
@@ -255,7 +270,19 @@ class IdentityCollectionService:
                 self._stage(session, run, "validate", "completed")
                 self._stage(session, run, "establish_contexts", "running")
                 for context in run.contexts:
-                    self._establish(session, context)
+                    control = self.manual_controls.get(run.id)
+                    if control and private.get("manual_login"):
+                        self._manual_login(
+                            session,
+                            run,
+                            context,
+                            private["manual_login"],
+                            control,
+                            options,
+                            deadline,
+                        )
+                    else:
+                        self._establish(session, context)
                 self._stage(session, run, "establish_contexts", "completed")
                 session.commit()
                 self._stage(session, run, "collect", "running")
@@ -305,6 +332,8 @@ class IdentityCollectionService:
                 run.error_code = (
                     "overall_timeout"
                     if isinstance(error, OverallScanTimeout)
+                    else str(error)
+                    if isinstance(error, IdentityHealthStopped)
                     else "identity_run_incomplete"
                 )
                 run.error_message = "身份采集已停止，已知观察保留；请检查身份健康和覆盖限制。"
@@ -380,6 +409,10 @@ class IdentityCollectionService:
 
     def _collect(self, session, run, context, entry, options, private, deadline):
         context.collection_status = "running"
+        manual = self.manual_controls.get(run.id)
+        if manual:
+            context.identity_snapshot = {**context.identity_snapshot, "manual_phase": "observing"}
+            session.commit()
         ledger = DiscoveryLedger(entry, options.max_candidates)
         ledger.add(DiscoveredAsset(url=entry, asset_type="page", source_kind="entry"))
         state = (
@@ -498,7 +531,8 @@ class IdentityCollectionService:
             )
             health_gate = IdentityHealthGate(
                 session_id=context.auth_session_id,
-                request_budget=options.max_browser_requests,
+                request_budget=options.max_browser_requests
+                - (manual.login_requests if manual else 0),
                 validate=validate,
                 persist=persist_batch,
                 admission=guard,
@@ -584,7 +618,7 @@ class IdentityCollectionService:
                         url=result.final_url,
                         asset_type="page",
                         method=result.method,
-                        source_kind="browser_request",
+                        source_kind="manual_browser" if manual else "browser_request",
                     )
                 )
             request_payload = {"url": result.final_url, "method": result.method}
@@ -634,12 +668,16 @@ class IdentityCollectionService:
                     if state
                     else "confirmed"
                 ),
+                "capture_source": "manual" if manual else "automatic",
                 "discovery": {
                     "version": 1,
                     "sources": item.get("sources", []),
                     "source_count": item.get("source_count"),
                 },
             }
+            if manual:
+                capture.capture_source = "manual"
+                capture.replay_status, capture.replay_reason = "not_allowed", "manual_observation"
             ref = self.storage.write_request_payload(run.id, context.id, request_payload)
             capture.asset_id = asset.id
             capture.protected_storage_ref = ref
@@ -658,7 +696,7 @@ class IdentityCollectionService:
             context.request_count += 1
             observed_work.add((result.final_url, result.method))
             pending_work.pop((result.final_url, result.method), None)
-            if health_gate:
+            if health_gate and result.method in {"GET", "HEAD"}:
                 uncertain_work[(evidence.id if evidence else None, asset.id)] = {
                     "url": result.final_url,
                     "method": result.method,
@@ -716,6 +754,10 @@ class IdentityCollectionService:
             ledger.attempted(url, method)
 
         try:
+            if manual and health_gate:
+                # Prove the initial identity before pausing a navigation request.
+                # A fresh Chromium proof must not consume that navigation timeout.
+                health_gate._check()
             outcome = BrowserDiscovery(self.policy).collect(
                 entry,
                 options,
@@ -730,6 +772,7 @@ class IdentityCollectionService:
                 before_send=health_gate.before_send if health_gate else None,
                 on_state_provider=lambda provider: state_provider.__setitem__(0, provider),
                 on_finish=health_gate.finish if health_gate else None,
+                manual=manual,
                 recovery_work=private.get("recovery_work"),
                 allowed_urls=(
                     {x["url"] for x in private["recovery_work"]}
@@ -737,6 +780,24 @@ class IdentityCollectionService:
                     else None
                 ),
             )
+            if manual and manual.state is not None and health_gate.health.status == "ready":
+                from app.schemas.identity import ManualLoginRequest
+
+                proof = ManualLoginRequest.model_validate(
+                    self.storage.read_identity_payload(
+                        session.get(AuthSession, context.auth_session_id).storage_ref
+                    )["verification"]
+                )
+                restored = self.sessions.import_state(
+                    session,
+                    context.credential_profile_id,
+                    manual.state.model_dump_json(),
+                    proof,
+                    before_request=health_gate._admit,
+                    before_save=guard,
+                )
+                if restored.status != "ready":
+                    raise IdentityHealthStopped("manual_final_restore_failed")
             if outcome["stopped_reason"]:
                 warnings.append(outcome["stopped_reason"])
             if runtime is not None:
@@ -778,7 +839,11 @@ class IdentityCollectionService:
                     "completed" if health_gate.health.status == "ready" else "failed"
                 )
                 snapshot = dict(context.identity_snapshot or {})
-                snapshot["request_attempts"] = health_gate.request_count
+                snapshot["request_attempts"] = health_gate.request_count + (
+                    manual.login_requests if manual else 0
+                )
+                if manual:
+                    snapshot["manual_phase"] = "finished"
                 context.identity_snapshot = snapshot
             context.asset_count = len(
                 session.scalars(select(ScanAsset).where(ScanAsset.context_id == context.id)).all()
@@ -787,3 +852,80 @@ class IdentityCollectionService:
             if runtime is not None:
                 runtime.close()
             save(complete=context.completeness == "complete")
+
+    def manual_action(self, session, run_id, action):
+        run = session.get(ScanRun, run_id)
+        control = self.manual_controls.get(run_id)
+        if (
+            not run
+            or run.options.get("interaction_mode") != "manual"
+            or not control
+            or run.status != "running"
+        ):
+            raise InputValidationError("人工浏览会话已结束或不可用。")
+        if action == "observe":
+            control.begin.set()
+        elif action == "stop":
+            control.finish.set()
+        else:
+            raise InputValidationError("未知人工浏览操作。")
+
+    def _manual_login(self, session, run, context, data, control, options, deadline):
+        from playwright.sync_api import Error as PlaywrightError
+
+        from app.schemas.identity import ManualLoginRequest
+
+        config = ManualLoginRequest.model_validate(data)
+        _, target, config = self.sessions.configuration(
+            session, context.credential_profile_id, config
+        )
+
+        def charge():
+            self.pipeline._check_interrupted(session, run.id)
+            if control.finish.is_set():
+                raise ScanInterrupted("manual_stopped")
+            if time.monotonic() >= deadline:
+                raise OverallScanTimeout("Manual login deadline exceeded")
+            if control.login_requests >= options.max_browser_requests:
+                raise IdentityHealthStopped("max_browser_requests")
+            control.login_requests += 1
+
+        driver = self.manual_driver_factory(
+            config, origin(target.base_url), self.policy, before_request=charge
+        )
+        context.identity_snapshot = {**context.identity_snapshot, "manual_phase": "login"}
+        session.commit()
+        try:
+            driver.open()
+            while not control.begin.is_set():
+                self.pipeline._check_interrupted(session, run.id)
+                if control.finish.is_set():
+                    raise ScanInterrupted("manual_stopped")
+                if time.monotonic() >= deadline:
+                    raise OverallScanTimeout("Manual login deadline exceeded")
+                driver.poll()
+            state = driver.snapshot()
+        except PlaywrightError:
+            if control.login_requests >= options.max_browser_requests:
+                raise IdentityHealthStopped("max_browser_requests") from None
+            raise
+        finally:
+            driver.close()
+        context.identity_snapshot = {**context.identity_snapshot, "manual_phase": "verifying"}
+        session.commit()
+        result = self.sessions.import_state(
+            session,
+            context.credential_profile_id,
+            state.model_dump_json(),
+            config,
+            before_request=charge,
+            before_save=lambda: self.pipeline._check_interrupted(session, run.id),
+        )
+        if result.status != "ready":
+            context.status, context.health_status = "failed", result.status
+            context.completeness, context.error_code = "incomplete", result.reason_code
+        else:
+            context.auth_session_id = result.session_id
+            context.status, context.health_status = "ready", "ready"
+            context.login_status, context.session_validation_status = "completed", "completed"
+        session.commit()

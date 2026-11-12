@@ -379,7 +379,9 @@ class AssetCatalogService:
                     evidence_ids=sorted(evidence_ids[asset.id]),
                     source_url=source_url,
                     provenance_note=(
-                        "来自已有扫描资产记录；可按关联证据和请求 ID 追溯。原始发现链未记录。"
+                        "人工浏览观察：请求由用户及浏览器产生；不用于自动重放。"
+                        if attrs.get("capture_source") == "manual"
+                        else "来自已有扫描资产记录；可按关联证据和请求 ID 追溯。原始发现链未记录。"
                     ),
                 )
             )

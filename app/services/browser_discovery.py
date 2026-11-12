@@ -8,10 +8,16 @@ from hashlib import sha256
 from time import monotonic
 from urllib.parse import urlsplit
 
-from app.core.errors import InputValidationError, OverallScanTimeout, TargetPolicyError
+from app.core.errors import (
+    InputValidationError,
+    OverallScanTimeout,
+    ScanInterrupted,
+    TargetPolicyError,
+)
 from app.schemas.scan import FetchResult, ScanOptions
 from app.services.authenticated_network import AuthenticatedNetworkGuard
 from app.services.discovery_html import parse_html
+from app.services.identity_health import IdentityHealthStopped
 from app.services.scan_network import TargetNetworkPolicy
 
 
@@ -48,6 +54,7 @@ class BrowserDiscovery:
         on_state_provider=None,
         on_finish=None,
         durable=None,
+        manual=None,
     ) -> dict:
         from playwright.sync_api import Error as PlaywrightError
         from playwright.sync_api import sync_playwright
@@ -69,6 +76,8 @@ class BrowserDiscovery:
         redirect_depths: dict[str, int] = {}
 
         def check() -> None:
+            if manual and manual.settling:
+                return
             if errors:
                 raise errors[0]
             if monotonic() >= deadline:
@@ -90,6 +99,8 @@ class BrowserDiscovery:
                 normalized = self._route_url(url)
                 self.guard.ensure_allowed(base, normalized)
             except (TargetPolicyError, InputValidationError, ValueError):
+                return
+            if manual is not None:
                 return
             if allowed_urls is not None and normalized not in allowed_urls:
                 return
@@ -117,7 +128,9 @@ class BrowserDiscovery:
 
         with sync_playwright() as playwright:
             try:
-                browser = playwright.chromium.launch(headless=True, channel="chromium")
+                browser = playwright.chromium.launch(
+                    headless=manual.headless if manual else True, channel="chromium"
+                )
             except PlaywrightError as error:
                 raise BrowserUnavailableError(
                     "Chromium could not start. Install it with: "
@@ -243,7 +256,7 @@ class BrowserDiscovery:
                         elif redirects > options.max_redirects:
                             allowed, reason = False, "max_redirects"
                             stopped = stopped or reason
-                        elif method not in {"GET", "HEAD"}:
+                        elif manual is None and method not in {"GET", "HEAD"}:
                             allowed, reason = False, "non_readonly_method"
                         elif stopped in {"max_browser_requests", "max_candidates"}:
                             allowed, reason = False, stopped
@@ -269,7 +282,7 @@ class BrowserDiscovery:
                                 if kind == "Document"
                                 else ("api" if kind in {"XHR", "Fetch"} else "resource"),
                                 "method": method,
-                                "source_kind": "browser_request",
+                                "source_kind": "manual_browser" if manual else "browser_request",
                                 "source_url": None,
                                 "route_url": None,
                                 "auto_visit": allowed,
@@ -339,7 +352,7 @@ class BrowserDiscovery:
                             route.abort()
                             return
                         self.guard.ensure_allowed(base, route.request.url)
-                        if route.request.method not in {"GET", "HEAD"}:
+                        if manual is None and route.request.method not in {"GET", "HEAD"}:
                             route.abort()
                             return
                     except (PlaywrightError, TargetPolicyError, InputValidationError):
@@ -433,6 +446,59 @@ class BrowserDiscovery:
                 page.on("response", response_started)
                 page.on("requestfailed", request_failed)
                 page.on("requestfinished", request_finished)
+                if manual:
+
+                    def manual_document():
+                        try:
+                            _, links = parse_html(
+                                page.url, page.content(), limit=options.max_candidates
+                            )
+                            for item in links:
+                                item["auto_visit"] = False
+                                item["skipped_reason"] = "manual_not_visited"
+                                candidate(item)
+                        except PlaywrightError:
+                            return
+
+                    page.on("domcontentloaded", manual_document)
+                    # One navigation comes from the explicit start action. No discovery traversal.
+                    route_window = start_url
+                    try:
+                        page.goto(
+                            start_url,
+                            wait_until="domcontentloaded",
+                            timeout=(options.request_timeout_seconds or 15) * 1000,
+                        )
+                        if manual.on_open:
+                            manual.on_open(page)
+                        while not manual.finish.is_set() and stopped not in {
+                            "max_browser_requests",
+                            "max_candidates",
+                        }:
+                            check()
+                            if page.is_closed():
+                                stopped = "manual_window_closed"
+                                break
+                            page.wait_for_timeout(50)
+                    except PlaywrightError:
+                        try:
+                            check()
+                        except (
+                            IdentityHealthStopped,
+                            ScanInterrupted,
+                            OverallScanTimeout,
+                        ) as error:
+                            manual.failure = error
+                        stopped = stopped or (
+                            "manual_window_closed"
+                            if page.is_closed()
+                            else "manual_navigation_error"
+                        )
+                    except (IdentityHealthStopped, ScanInterrupted, OverallScanTimeout) as error:
+                        manual.failure = error
+                    manual.settling = True
+                    queue.clear()
+                    stopped = stopped or "manual_stopped"
                 while (queue or durable is not None) and stopped not in {
                     "max_browser_requests",
                     "max_candidates",
@@ -526,8 +592,12 @@ class BrowserDiscovery:
                 if durable_responses is not None:
                     durable_responses.close()
                 check()
-                if on_finish:
+                if on_finish and not (manual and manual.failure):
                     on_finish()
+                if manual and not page.is_closed():
+                    manual.state = current_identity_state()
+                if manual and manual.failure:
+                    raise manual.failure
             finally:
                 if on_checkpoint:
                     on_checkpoint(

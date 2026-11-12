@@ -86,7 +86,7 @@ def test_stamp_existing_database_preserves_rows(tmp_path):
 
     with engine.connect() as connection:
         assert connection.scalar(text("select count(*) from targets")) == 1
-        assert connection.scalar(text("select version_num from alembic_version")) == "0013"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0014"
 
 
 def test_legacy_scan_assets_are_backfilled_into_anonymous_context(tmp_path):
@@ -180,7 +180,7 @@ def test_unified_assessment_migration_round_trip(tmp_path):
 
     upgrade_database(url)
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0013"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0014"
 
 
 def test_application_requires_explicit_stamp_for_unversioned_legacy_database(tmp_path, monkeypatch):
@@ -234,7 +234,7 @@ def test_application_auto_migrates_fresh_database_in_development(tmp_path, monke
         assert client.get("/healthz").status_code == 200
 
     with create_engine(url).connect() as connection:
-        assert connection.scalar(text("select version_num from alembic_version")) == "0013"
+        assert connection.scalar(text("select version_num from alembic_version")) == "0014"
 
 
 def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
@@ -247,7 +247,7 @@ def test_database_cli_upgrade_and_current(tmp_path, monkeypatch):
     current_result = runner.invoke(cli_app, ["db", "current"])
 
     assert upgrade_result.exit_code == 0
-    assert "0013" in current_result.stdout
+    assert "0014" in current_result.stdout
 
 
 def test_database_cli_stamp_existing_preserves_legacy_rows(tmp_path, monkeypatch):
@@ -622,7 +622,7 @@ def test_known_context_drift_upgrade_preserves_data_and_uniqueness(tmp_path, sha
     assert backup is not None and backup.is_file()
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT name FROM targets")) == "keep"
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0013"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0014"
     inspector = inspect(engine)
     assert "temporary_secret_ref" in {c["name"] for c in inspector.get_columns("scan_contexts")}
     unique = inspector.get_unique_constraints("scan_contexts") + [
@@ -670,4 +670,46 @@ def test_workbench_upgrade_preserves_legacy_annotation_without_inventing_review(
         ).one()
         assert tuple(row) == ('["reviewed"]', "keep old note", "unreviewed", None, 0)
         assert connection.scalar(text("SELECT COUNT(*) FROM project_saved_views")) == 0
+    engine.dispose()
+
+
+def test_identity_plan_migration_preserves_old_request_source_as_unknown(tmp_path):
+    url = f"sqlite:///{tmp_path / 'identity-upgrade.db'}"
+    upgrade_database(url, "0013")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        # These rows are synthetic; do not infer how an old captured request originated.
+        connection.execute(
+            text(
+                "INSERT INTO scan_runs(id,input_url,normalized_url,status,current_"
+                "stage,progress,options,retry_count,created_at,updated_at) VALUES "
+                "(1,'http://localhost/','http://localhost/','completed','report',1"
+                "00,'{}',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO scan_contexts(id,scan_run_id,kind,context_key,status,"
+                "login_status,session_validation_status,collection_status,complete"
+                "ness,asset_count,request_count,failure_count,created_at,updated_a"
+                "t) VALUES (1,1,'anonymous','anonymous','completed','not_required'"
+                ",'not_required','completed','complete',0,0,0,CURRENT_TIMESTAMP,CU"
+                "RRENT_TIMESTAMP)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO scan_requests(scan_run_id,source_context_id,method,no"
+                "rmalized_redacted_url,header_names,fingerprint,replay_allowed,rep"
+                "lay_status,protected_storage_ref,created_at,updated_at) VALUES (1"
+                ",1,'GET','http://localhost/','[]','synthetic',0,'pending','',CURR"
+                "ENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+            )
+        )
+    backup = upgrade_database(url)
+    assert backup and backup.is_file()
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT capture_source FROM scan_requests")) is None
+        assert connection.scalar(text("SELECT COUNT(*) FROM identity_plans")) == 0
+        assert connection.scalar(text("SELECT method FROM scan_requests")) == "GET"
     engine.dispose()

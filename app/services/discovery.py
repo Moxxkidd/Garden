@@ -15,6 +15,7 @@ SOURCE_KINDS = {
     "sitemap": "站点地图",
     "browser_navigation": "浏览器导航",
     "browser_request": "浏览器请求",
+    "manual_browser": "人工浏览观察",
     "hash_route": "前端路由",
     "js_literal": "JS 线索",
     "url_import": "URL 导入",

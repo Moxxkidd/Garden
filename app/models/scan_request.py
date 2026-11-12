@@ -49,6 +49,9 @@ class ScanRequest(TimestampMixin, Base):
     normalized_redacted_url: Mapped[str] = mapped_column(String(1000))
     header_names: Mapped[list[str]] = mapped_column(MutableList.as_mutable(JSON), default=list)
     fingerprint: Mapped[str] = mapped_column(String(128), index=True)
+    capture_source: Mapped[str | None] = mapped_column(
+        String(20), default="automatic", nullable=True
+    )
     replay_allowed: Mapped[bool] = mapped_column(Boolean, default=False)
     replay_status: Mapped[str] = mapped_column(String(40), default="pending", index=True)
     replay_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

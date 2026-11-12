@@ -23,10 +23,14 @@ class IdentityPreviewService:
         self.previews = {}
         self.lock = threading.Lock()
 
-    def _binding(self, session, request):
+    def binding(self, session, request):
         target = session.get(Target, request.target_id, populate_existing=True)
         if not target or target.status != "active":
             raise InputValidationError("目标不存在或不可用。")
+        if request.manual_login:
+            self.collection.sessions.configuration(
+                session, request.profile_ids[0], request.manual_login
+            )
         entry = self.collection.policy.normalize_url(request.url)
         if origin(entry) != origin(target.base_url):
             raise InputValidationError("采集入口必须与目标同源。")
@@ -67,7 +71,7 @@ class IdentityPreviewService:
         return hashlib.sha256(json.dumps(records, sort_keys=True).encode()).hexdigest(), labels
 
     def preview(self, session, request):
-        binding, profiles = self._binding(session, request)
+        binding, profiles = self.binding(session, request)
         token = secrets.token_urlsafe(32)
         with self.lock:
             self.previews = {k: v for k, v in self.previews.items() if v[0] > self.clock()}
@@ -84,7 +88,22 @@ class IdentityPreviewService:
             "durable": request.options.durable.model_dump() if request.options.durable else None,
             "max_pages": request.options.max_pages,
             "max_browser_requests": request.options.max_browser_requests,
-            "note": "预览不访问目标。确认后仅 GET/HEAD；身份验证请求也占用请求预算。",
+            "interaction_mode": request.interaction_mode,
+            "manual_login": request.manual_login is not None,
+            "auth_origins": sorted(
+                {
+                    origin(request.url),
+                    *(origin(u) for u in request.manual_login.allowed_auth_origins),
+                }
+            )
+            if request.manual_login
+            else [],
+            "note": (
+                "人工浏览只记录你和浏览器产生的请求，可能包含 POST；"
+                "不会自动点击或重放。登录/恢复验证也计入预算。"
+                if request.interaction_mode == "manual"
+                else "预览不访问目标。确认后仅 GET/HEAD；身份验证请求也占用请求预算。"
+            ),
         }
 
     def start(self, session, token):
@@ -93,7 +112,7 @@ class IdentityPreviewService:
             if not item or item[0] <= self.clock():
                 raise InputValidationError("预览已过期，请重新预览。")
             _, request, binding = item
-            if self._binding(session, request)[0] != binding:
+            if self.binding(session, request)[0] != binding:
                 raise InputValidationError("目标、身份或会话已变更，请重新预览。")
             self.previews.pop(token)
         return self.collection.start(session, request)

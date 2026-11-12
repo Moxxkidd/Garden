@@ -22,9 +22,10 @@ TERMINAL = {"ready", "failed", "cancelled", "expired", "interrupted"}
 
 
 class ManualBrowser:
-    def __init__(self, config, target_origin, policy, *, headless=False):
+    def __init__(self, config, target_origin, policy, *, headless=False, before_request=None):
         self.config, self.target_origin, self.policy = config, target_origin, policy
         self.headless = headless
+        self.before_request = before_request
         self.pw = self.browser = self.context = self.page = None
 
     def open(self):
@@ -42,6 +43,8 @@ class ManualBrowser:
                     route.abort()
                     return
                 self.policy.ensure_destination_allowed(value)
+                if self.before_request:
+                    self.before_request()
                 route.continue_()
             except Exception:
                 route.abort()
@@ -103,6 +106,7 @@ class _Worker:
     def run(self):
         driver = None
         result = None
+        phase = "open_browser"
         try:
             driver = self.service.driver_factory(
                 self.config, self.base, self.service.sessions.policy
@@ -121,11 +125,13 @@ class _Worker:
                     continue
                 if command == "confirm":
                     self.service._state(self.id, "validating_restore")
+                    phase = "snapshot"
                     state = driver.snapshot()
                     self.check()
                     # Close the original browser before restoring; all proof comes from a fresh one.
                     driver.close()
                     driver = None
+                    phase = "restore"
                     with session_scope() as session:
                         result = self.service.sessions.import_state(
                             session,
@@ -144,7 +150,9 @@ class _Worker:
                     break
         except Exception:
             self.service._state(
-                self.id, "cancelled" if self.stop.is_set() else "failed", "manual_login_unavailable"
+                self.id,
+                "cancelled" if self.stop.is_set() else "failed",
+                "manual_login_" + phase + "_failed",
             )
         finally:
             if driver:
@@ -196,7 +204,7 @@ class ManualLoginService:
                 state="created",
                 expires_at=datetime.now(timezone.utc) + timedelta(seconds=900),
                 owner_token=self._owner,
-                configuration={"target_id": target.id},
+                configuration={"target_id": target.id, "project_entry_id": config.project_entry_id},
             )
             session.add(record)
             session.flush()
@@ -221,6 +229,8 @@ class ManualLoginService:
     def _view(self, record):
         return LoginAttemptView(
             id=record.id,
+            profile_id=record.profile_id,
+            project_entry_id=record.configuration.get("project_entry_id"),
             state=record.state,
             expires_at=record.expires_at,
             session_id=record.session_id,

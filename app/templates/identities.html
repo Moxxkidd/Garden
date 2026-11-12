@@ -4,9 +4,15 @@
 <h1 class="text-3xl font-semibold">身份与资产采集</h1>
 <p>匿名或任一账号均可独立采集；同角色账号保持独立。登录成功不自动开始扫描。</p>
 <section class="rounded-2xl bg-white p-6 space-y-4">
+<h2>身份引导：登录 → 新上下文验证 → 采集 → 缺口补采</h2>
+{% if project_entry %}<p>绑定入口：{{ project_entry.name }} · {{ project_entry.entry_url }}</p>{% endif %}
+{% for p in profiles if not project_entry or p.target_id == project_entry.target_id %}<article><h3>{{ p.name }} · {{ p.flow.label }}</h3><p>最近恢复验证：{{ p.flow.checked_at or '未记录' }}（保存状态，非实时保证）</p>{% if p.flow.replacement and p.flow.replacement.reason_code %}<p>最近替换未完成：{{ p.flow.replacement.reason_code }}；旧有效会话继续保留。请核对正向成功条件或重新登录。</p>{% endif %}{% if p.flow.state == 'ready' %}<a href="#collection-start">继续选择采集方式与预算</a>{% else %}<a href="#identity-login">去登录或导入，完成新上下文验证</a>{% endif %}</article>{% endfor %}
+</section>
+<section id="identity-login" class="rounded-2xl bg-white p-6 space-y-4">
 <h2 class="text-xl font-semibold">1. 建立身份</h2>
 <p>登录窗口打开在 <strong>Garden 所在电脑</strong>，验证码、短信或扫码由你完成。远程部署请导入状态；导入后仍须通过新浏览器恢复验证。</p>
 <form method="post" action="/identities/auth/login" class="grid gap-4 sm:grid-cols-2" autocomplete="off">
+{% if project_entry %}<input type="hidden" name="project_entry_id" value="{{ project_entry.id }}">{% endif %}
 <label>身份<select required name="profile_id" class="block w-full border rounded p-2">{% for p in profiles %}<option value="{{ p.id }}">{{ p.name }} · {{ p.role }} · 目标 #{{ p.target_id }} · 身份 #{{ p.id }}</option>{% endfor %}</select></label>
 <label>登录地址<input required type="url" name="login_url" class="block w-full border rounded p-2"></label>
 <label>登录后的验证地址<input required type="url" name="validate_url" class="block w-full border rounded p-2"></label>
@@ -24,11 +30,14 @@
 </section>
 <section class="rounded-2xl bg-white p-6 space-y-4"><h2 class="text-xl font-semibold">2. 检查已保存状态</h2>
 {% for s in states %}<div class="flex flex-wrap items-center gap-3 border-b py-2"><span>会话 #{{ s.id }} · 身份 #{{ s.profile_id }} · {{ s.status }}</span><form method="post" action="/identities/sessions/{{ s.id }}/validate"><button class="border rounded px-3 py-1">重新验证</button></form><form method="post" action="/identities/sessions/{{ s.id }}/revoke"><button class="border rounded px-3 py-1">撤销状态</button></form></div>{% else %}<p>尚无已验证状态。匿名采集无需登录。</p>{% endfor %}</section>
-<section class="rounded-2xl bg-white p-6 space-y-4"><h2 class="text-xl font-semibold">3. 预览并开始采集</h2>
+<section id="collection-start" class="rounded-2xl bg-white p-6 space-y-4"><h2 class="text-xl font-semibold">3. 预览并开始采集</h2>
 <form method="post" action="/identities/preview" class="grid gap-4">
 {% if project_entry %}<input type="hidden" name="project_entry_id" value="{{ project_entry.id }}"><p>关联项目入口 #{{ project_entry.id }} · {{ project_entry.name }}</p>{% endif %}
 <label>目标<select required name="target_id" class="border p-2">{% for t in targets %}<option value="{{ t.id }}" {% if project_entry and project_entry.target_id == t.id %}selected{% endif %}>{{ t.name }} #{{ t.id }}</option>{% endfor %}</select></label>
 <label>采集入口<input required type="url" name="url" value="{{ project_entry.entry_url if project_entry else '' }}" class="block w-full border rounded p-2"></label>
+<label>交互方式<select name="interaction_mode"><option value="automatic">自动只读采集（GET/HEAD）</option><option value="manual">显式人工浏览（记录用户请求，可能含 POST）</option></select></label>
+<details><summary>人工模式：先在受控窗口登录并验证（可选）</summary><label><input type="checkbox" name="manual_login_enabled"> 本次先人工登录；额外登录域仅在该窗口生效</label><label>人工登录地址<input name="manual_login_url" type="url"></label><label>人工恢复验证地址<input name="manual_validate_url" type="url"></label><label>人工成功元素<input name="manual_success_selector"></label><label>人工成功文本<input name="manual_success_text"></label><label>额外登录 origin（空格分隔）<input name="manual_auth_origins"></label><p>只选一个身份，关闭自动队列。关闭原登录窗口并恢复验证后，另开独立窗口供你浏览；Garden 不会自动点击、提交或重放。</p></details>
+<label>本任务时间上限（秒）<input type="number" name="overall_timeout_seconds" min="1" max="1800" value="300"></label><label>每身份请求总上限（含登录与恢复验证）<input type="number" min="1" max="2000" name="max_browser_requests" value="300"></label>
 <fieldset><legend>选择身份（最多 10 个）</legend><label class="block"><input type="checkbox" name="anonymous" value="1"> 匿名</label>{% for p in profiles %}<label class="block"><input type="checkbox" name="profile_ids" value="{{ p.id }}"> {{ p.name }} · {{ p.role }} · 目标 #{{ p.target_id }} · 身份 #{{ p.id }}</label>{% endfor %}</fieldset>
 {% include "collection/_options.html" %}
 <label>每身份页面预算<input type="number" required min="1" max="500" name="max_pages" value="50" class="border p-2"></label>

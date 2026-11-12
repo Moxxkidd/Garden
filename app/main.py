@@ -33,6 +33,9 @@ async def lifespan(app: FastAPI):
 
     app.state.identity_collection = IdentityCollectionService()
     app.state.identity_preview = IdentityPreviewService(app.state.identity_collection)
+    from app.services.identity_plans import IdentityPlanService
+
+    app.state.identity_plans = IdentityPlanService(app.state.identity_preview)
     app.state.manual_login = ManualLoginService(sessions=app.state.identity_collection.sessions)
     purged = app.state.scan_service.purge_expired_temporary_secrets(max_age_seconds=900)
     if purged:

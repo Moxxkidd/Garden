@@ -25,10 +25,13 @@ from app.schemas.identity import (
 )
 from app.schemas.scan import ScanOptions
 from app.services.collection_presentation import COLLECTION_FIELDS, collection_form_options
+from app.services.identity_flow import identity_flow
+from app.services.scan_result_presentation import execution_summary
 
 router = APIRouter(tags=["identities"])
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[2] / "templates"))
 templates.env.globals["collection_fields"] = COLLECTION_FIELDS
+templates.env.globals["execution_summary"] = execution_summary
 _HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
 
 
@@ -161,10 +164,29 @@ def identity_page(request: Request):
                 raise InputValidationError("项目入口不存在。")
             ProjectService().validate_entry(session, entry.project_id, entry_id)
             project_entry = entry_view(session, entry)
-        targets = [{"id": t.id, "name": t.name} for t in session.scalars(select(Target))]
+        targets = [
+            {"id": t.id, "name": t.name}
+            for t in session.scalars(
+                select(Target).where(Target.id == project_entry["target_id"])
+                if project_entry
+                else select(Target)
+            )
+        ]
         profiles = [
-            {"id": p.id, "name": p.name, "role": p.role, "target_id": p.target_id}
-            for p in session.scalars(select(CredentialProfile))
+            {
+                "id": p.id,
+                "name": p.name,
+                "role": p.role,
+                "target_id": p.target_id,
+                "flow": identity_flow(session, p.id),
+            }
+            for p in session.scalars(
+                select(CredentialProfile).where(
+                    CredentialProfile.target_id == project_entry["target_id"]
+                )
+                if project_entry
+                else select(CredentialProfile)
+            )
         ]
         states = [
             {
@@ -239,6 +261,18 @@ async def form_preview(request: Request):
     form = await form_data(request)
     try:
         data = IdentityCollectionRequest(
+            interaction_mode=one(form, "interaction_mode", "automatic"),
+            manual_login=ManualLoginRequest(
+                profile_id=form.get("profile_ids", [None])[0],
+                project_entry_id=one(form, "project_entry_id") or None,
+                login_url=one(form, "manual_login_url"),
+                validate_url=one(form, "manual_validate_url"),
+                success_selector=one(form, "manual_success_selector") or None,
+                success_text=one(form, "manual_success_text") or None,
+                allowed_auth_origins=one(form, "manual_auth_origins").split(),
+            )
+            if "manual_login_enabled" in form
+            else None,
             url=one(form, "url"),
             target_id=one(form, "target_id"),
             project_entry_id=one(form, "project_entry_id") or None,
@@ -246,11 +280,15 @@ async def form_preview(request: Request):
             include_anonymous="anonymous" in form,
             options=ScanOptions(
                 max_pages=one(form, "max_pages", "50"),
+                max_browser_requests=one(form, "max_browser_requests", "300"),
+                overall_timeout_seconds=one(form, "overall_timeout_seconds", "300"),
                 durable=collection_form_options({key: one(form, key) for key in form}),
             ),
         )
     except (ValidationError, ValueError):
-        raise InputValidationError("请填写目标、入口，并选择身份或匿名。") from None
+        raise InputValidationError(
+            "请填写目标、入口和身份；人工浏览只选一个身份且不开启自动队列，人工登录须提供正向成功条件。"
+        ) from None
     with session_scope() as session:
         preview = request.app.state.identity_preview.preview(session, data)
     return templates.TemplateResponse(
@@ -266,7 +304,13 @@ async def form_start(request: Request):
     form = await form_data(request)
     with session_scope() as session:
         run_id = request.app.state.identity_preview.start(session, one(form, "preview_token"))
-    return RedirectResponse(f"/scans/{run_id}", status_code=303, headers=_HEADERS)
+    with session_scope() as session:
+        manual = session.get(ScanRun, run_id).options.get("interaction_mode") == "manual"
+    return RedirectResponse(
+        f"/identities/runs/{run_id}/manual" if manual else f"/scans/{run_id}",
+        status_code=303,
+        headers=_HEADERS,
+    )
 
 
 @router.post("/identities/auth/{action}")
@@ -275,6 +319,7 @@ async def form_auth(request: Request, action: str):
     try:
         config = ManualLoginRequest(
             profile_id=one(form, "profile_id"),
+            project_entry_id=one(form, "project_entry_id") or None,
             login_url=one(form, "login_url"),
             validate_url=one(form, "validate_url"),
             success_selector=one(form, "success_selector") or None,
@@ -394,3 +439,123 @@ async def form_recovery(request: Request, action: str):
             run_id = service.start(session, data, one(form, "preview_token"))
             return RedirectResponse(f"/scans/{run_id}", status_code=303, headers=_HEADERS)
     raise InputValidationError("补采操作无效。")
+
+
+@router.get("/identities/runs/{run_id}/manual", response_class=HTMLResponse)
+def manual_collection_page(request: Request, run_id: int):
+    with session_scope() as session:
+        run = session.get(ScanRun, run_id)
+        if not run or run.options.get("interaction_mode") != "manual":
+            raise InputValidationError("此任务不是人工浏览采集。")
+        data = dict(
+            id=run.id,
+            status=run.status,
+            url=run.normalized_url,
+            phase=(run.contexts[0].identity_snapshot or {}).get("manual_phase", "preparing"),
+            request_count=(run.contexts[0].identity_snapshot or {}).get("request_attempts"),
+            context_id=run.contexts[0].id,
+            reason=run.error_code or run.contexts[0].error_code,
+        )
+    return templates.TemplateResponse(
+        request=request, name="manual_collection.html", context={"run": data}, headers=_HEADERS
+    )
+
+
+@router.post("/identities/runs/{run_id}/manual/{action}")
+def manual_collection_action(request: Request, run_id: int, action: str):
+    check_origin(request)
+    with session_scope() as session:
+        services(request)[0].manual_action(session, run_id, action)
+    return RedirectResponse(f"/identities/runs/{run_id}/manual", status_code=303, headers=_HEADERS)
+
+
+@router.post("/api/identity-plans/preview")
+async def preview_plan(request: Request):
+    from app.schemas.identity import IdentityPlanRequest
+
+    body = await payload(request, IdentityPlanRequest)
+    with session_scope() as session:
+        return request.app.state.identity_plans.preview(session, body)
+
+
+@router.post("/api/identity-plans")
+async def start_plan(request: Request):
+    body = await payload(request, IdentityPreviewConfirmation)
+    with session_scope() as session:
+        return request.app.state.identity_plans.start(session, body.preview_token)
+
+
+@router.get("/api/identity-plans/{plan_id}")
+def show_plan(request: Request, plan_id: int):
+    with session_scope() as session:
+        return request.app.state.identity_plans.view(session, plan_id)
+
+
+@router.get("/projects/{project_id}/identity-plan", response_class=HTMLResponse)
+def plan_page(request: Request, project_id: int):
+    from app.models.project import Project
+    from app.services.projects import ProjectService
+
+    with session_scope() as session:
+        project = session.get(Project, project_id)
+        entries = [
+            dict(id=e.id, name=e.name, target_id=e.target_id, url=e.entry_url)
+            for e in ProjectService().entries(session, project_id)
+        ]
+        profiles = [
+            dict(id=p.id, name=p.name, target_id=p.target_id)
+            for p in session.scalars(select(CredentialProfile))
+        ]
+    return templates.TemplateResponse(
+        request=request,
+        name="identity_plan.html",
+        context=dict(project=project, entries=entries, profiles=profiles),
+        headers=_HEADERS,
+    )
+
+
+@router.post("/identities/projects/{project_id}/plan/preview", response_class=HTMLResponse)
+async def plan_form_preview(request: Request, project_id: int):
+    from app.schemas.identity import IdentityPlanItem, IdentityPlanRequest
+
+    form = await form_data(request)
+    try:
+        items = [
+            IdentityPlanItem(
+                entry_id=eid,
+                profile_id=one(form, "profile_" + eid) or None,
+                interaction_mode=one(form, "mode_" + eid, "automatic"),
+                max_requests=one(form, "budget_" + eid) or None,
+            )
+            for eid in form.get("entry_ids", [])
+        ]
+        body = IdentityPlanRequest(
+            project_id=project_id, total_requests=one(form, "total_requests"), items=items
+        )
+    except (ValueError, ValidationError):
+        raise InputValidationError("请选择入口、匹配身份及有效预算。") from None
+    with session_scope() as session:
+        preview = request.app.state.identity_plans.preview(session, body)
+    return templates.TemplateResponse(
+        request=request,
+        name="identity_plan_preview.html",
+        context={"preview": preview},
+        headers=_HEADERS,
+    )
+
+
+@router.post("/identities/plans/start")
+async def plan_form_start(request: Request):
+    form = await form_data(request)
+    with session_scope() as session:
+        plan = request.app.state.identity_plans.start(session, one(form, "preview_token"))
+    return RedirectResponse(f"/identities/plans/{plan['id']}", status_code=303, headers=_HEADERS)
+
+
+@router.get("/identities/plans/{plan_id}", response_class=HTMLResponse)
+def plan_result(request: Request, plan_id: int):
+    with session_scope() as session:
+        plan = request.app.state.identity_plans.view(session, plan_id)
+    return templates.TemplateResponse(
+        request=request, name="identity_plan_result.html", context={"plan": plan}, headers=_HEADERS
+    )

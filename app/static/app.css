@@ -140,3 +140,4 @@ main, section, fieldset { min-width: 0; }
 .workbench-table small { font-size: .7rem; }
 .review-pending { color: #92400e; font-weight: 650; }
 :focus-visible { outline: 3px solid #4394d0; outline-offset: 2px; }
+.manual-banner { overflow-wrap: anywhere; position: sticky; top: 0; z-index: 2; padding: 1rem; border: 2px solid #16674a; border-radius: .7rem; background: #f0faf3; }
