@@ -6,6 +6,24 @@ from app.core.settings import get_settings
 from app.services.collection_executor import CollectionExecutor
 
 
+def test_submission_allows_background_owner_cleanup():
+    from concurrent.futures import ThreadPoolExecutor
+
+    from app.services.collection_executor import executor_operation
+
+    database_url = get_settings().database_url
+    previous = CollectionExecutor(database_url)
+    previous.acquire()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            with executor_operation(database_url):
+                # Inline collection waits for browser/HTTP workers. Their finalizers
+                # must be able to release an older owner while submission is guarded.
+                worker.submit(previous.close).result(timeout=5)
+    finally:
+        previous.close()
+
+
 def test_only_one_process_can_own_durable_execution_and_last_close_releases_it():
     first = CollectionExecutor(get_settings().database_url)
     second = CollectionExecutor(get_settings().database_url)

@@ -151,6 +151,8 @@ def main():
         "addopts=",
         "-o",
         "junit_family=legacy",
+        "-o",
+        "faulthandler_timeout=120",
         f"--junitxml={xml_path}",
         *targets,
     ]

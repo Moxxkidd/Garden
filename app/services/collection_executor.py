@@ -12,6 +12,7 @@ from app.core.errors import ConflictError, InputValidationError
 
 _owners = {}
 _mutex = threading.RLock()
+_operation_mutex = threading.RLock()
 
 
 class CollectionExecutor:
@@ -76,7 +77,9 @@ class CollectionExecutor:
 @contextmanager
 def executor_operation(database_url):
     """Serialize admission/maintenance under the existing process ownership lock."""
-    with _mutex:
+    # A submission can wait for browser/HTTP workers. Keep owner bookkeeping
+    # available to their cleanup/finalizers while the operation stays serialized.
+    with _operation_mutex:
         owner = CollectionExecutor(database_url)
         owner.acquire()
         try:
