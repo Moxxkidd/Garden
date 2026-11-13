@@ -149,9 +149,14 @@ def test_formal_cli_creates_durable_queue_with_requested_limits(tmp_path, monkey
             )
             assert result.returncode == 0, result.stdout + result.stderr
             run_id = re.search(r"/scans/(\d+)", result.stdout).group(1)
-            queue = httpx.get(
-                f"http://127.0.0.1:{port}/api/scans/{run_id}/queue", trust_env=False
-            ).json()[0]
+            runtime = manager.ensure(ui_port=port)
+            response = httpx.get(
+                f"http://127.0.0.1:{port}/api/scans/{run_id}/queue",
+                headers={"Authorization": f"Bearer {runtime.session_token}"},
+                trust_env=False,
+            )
+            assert response.status_code == 200, response.text
+            queue = response.json()[0]
             assert queue["options"] == {
                 "max_requests": 7,
                 "max_work": 10,
