@@ -18,6 +18,7 @@ from app.db.bootstrap import session_scope
 from app.models.delivery_export import DeliveryExport
 from app.schemas.delivery import DeliveryExportRequest
 from app.services.asset_delivery import AssetDeliveryService
+from app.services.collection_executor import guarded_submission
 from app.services.delivery_files import PdfUnavailableError, render_snapshot
 from app.services.scan_application import ThreadedScanDispatcher
 
@@ -41,6 +42,7 @@ class ExportCancelled(RuntimeError):
 class ExportJobService:
     def __init__(self, *, base_directory=None, dispatcher=None):
         settings = get_settings()
+        self.settings = settings
         paths = formal_runtime_paths()
         self.directory = (
             Path(base_directory)
@@ -51,10 +53,19 @@ class ExportJobService:
         self.dispatcher = dispatcher or ThreadedScanDispatcher(
             settings.scan_max_concurrent_tasks, database_url=settings.database_url
         )
+        self.collection_executor = None
         self.controls = {}
         self.lock = threading.RLock()
         self.delivery = AssetDeliveryService()
 
+    def ensure_collection_executor(self):
+        if self.collection_executor is None:
+            from app.services.collection_executor import CollectionExecutor
+
+            self.collection_executor = CollectionExecutor(get_settings().database_url)
+            self.collection_executor.acquire()
+
+    @guarded_submission
     def submit(self, session, project_id, request: DeliveryExportRequest, *, inline=False):
         request = request.model_copy(update={"query": request.query.model_copy(update={"page": 1})})
         metadata = self.delivery.metadata(
@@ -253,3 +264,6 @@ class ExportJobService:
 
     def shutdown(self):
         self.dispatcher.shutdown()
+        if self.collection_executor is not None:
+            self.collection_executor.close()
+            self.collection_executor = None

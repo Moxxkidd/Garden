@@ -7,6 +7,7 @@ from typer.main import get_command, get_group
 
 _GROUPS = {
     "queue": "queue",
+    "storage": "storage",
     "projects": "projects",
     "identities": "identities",
     "assets": "assets",

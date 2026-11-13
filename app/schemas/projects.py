@@ -117,6 +117,7 @@ class ProjectView(BaseModel):
     description: str
     status: str
     revision: int
+    freshness_days: int = 7
 
 
 class ProjectCreate(BaseModel):

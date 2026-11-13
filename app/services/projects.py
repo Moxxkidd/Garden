@@ -77,7 +77,27 @@ class ProjectService:
     def archive(self, session, project_id, expected_revision):
         project = self.bump(session, project_id, expected_revision)
         project.status = "archived"
+        from app.services.project_schedule import pause_schedules
+
+        pause_schedules(session, project_id, "project_archived")
         session.flush()
+        return project
+
+    def restore(self, session, project_id, expected_revision):
+        project = self.get(session, project_id)
+        result = session.execute(
+            update(Project)
+            .where(
+                Project.id == project_id,
+                Project.status == "archived",
+                Project.revision == expected_revision,
+            )
+            .values(status="active", revision=expected_revision + 1)
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            raise ConflictError("project_revision_changed")
+        session.refresh(project)
         return project
 
     def get_entry(self, session, project_id, entry_id):
@@ -128,6 +148,9 @@ class ProjectService:
             raise ResourceNotFoundError("project_entry_not_found")
         values = self._entry_values(session, request)
         self.bump(session, entry.project_id, expected_revision)
+        from app.services.project_schedule import pause_schedules
+
+        pause_schedules(session, entry.project_id, "entry_changed")
         for key, value in values.items():
             setattr(entry, key, value)
         session.flush()

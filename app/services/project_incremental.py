@@ -224,6 +224,9 @@ class ProjectIncrementalService:
         seen = set()
         recent_count = 0
         now = self.clock()
+        stale_days = request.stale_after_days
+        if stale_days is None:
+            stale_days = session.get(Project, request.project_id).freshness_days
         history = session.execute(
             select(CollectionWork, CollectionQueue, ScanRun)
             .join(CollectionQueue, CollectionQueue.id == CollectionWork.queue_id)
@@ -268,7 +271,7 @@ class ProjectIncrementalService:
             if when is not None and when.tzinfo is None:
                 when = when.replace(tzinfo=timezone.utc)
             if row.state == "observed" and not important and when is not None:
-                if (now - when).total_seconds() < request.stale_after_days * 86400:
+                if (now - when).total_seconds() < stale_days * 86400:
                     recent_count += 1
                     continue
             reason, priority = (
@@ -326,4 +329,19 @@ class ProjectIncrementalService:
             recent_count=recent_count,
             truncated=total > len(work),
             options=request.options.model_dump(),
+            source_scopes=[
+                dict(
+                    project_run_id=r.id,
+                    source_run_id=r.run_id,
+                    scope=r.snapshot.get("scope"),
+                    budget=r.snapshot.get("comparison_metadata", {}).get("budget"),
+                )
+                for r in session.scalars(
+                    select(ProjectRun).where(
+                        ProjectRun.project_id == request.project_id,
+                        ProjectRun.source == "scan",
+                        ProjectRun.run_id.in_({w["source_run_id"] for w in work}),
+                    )
+                )
+            ],
         )

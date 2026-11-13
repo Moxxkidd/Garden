@@ -51,7 +51,7 @@ def guarded(function):
 def emit(value):
     if hasattr(value, "model_dump"):
         value = value.model_dump(mode="json")
-    typer.echo(json.dumps(value, ensure_ascii=False, indent=2))
+    typer.echo(json.dumps(value, ensure_ascii=False, indent=2, default=str))
 
 
 @app.command("create")
@@ -63,9 +63,15 @@ def create(name: str, description: str = ""):
 
 @app.command("list")
 @guarded
-def list_projects():
+def list_projects(include_archived: bool = False):
     with session_scope() as session:
-        emit([ProjectView.model_validate(p).model_dump() for p in projects.list(session)])
+        emit(
+            [
+                ProjectView.model_validate(p).model_dump()
+                for p in projects.list(session)
+                if include_archived or p.status == "active"
+            ]
+        )
 
 
 @app.command("show")
@@ -500,3 +506,33 @@ def deliver(
             write_cli_export(stream, output)
     if output is not None and format in {"pdf", "zip"}:
         console.print(f"已写入文件：{output}", markup=False)
+
+
+@app.command("freshness")
+@guarded
+def freshness(project_id: int, days: int | None = None, revision: int | None = None):
+    from app.services.project_freshness import ProjectFreshnessService
+
+    with session_scope() as session:
+        service = ProjectFreshnessService()
+        if days is not None:
+            if revision is None:
+                raise InputValidationError("修改新鲜度需要 --revision。")
+            service.configure(session, project_id, days, revision)
+        emit(service.view(session, project_id))
+
+
+@app.command("restore")
+@guarded
+def restore(project_id: int, revision: int = typer.Option(..., min=0)):
+    with session_scope() as session:
+        emit(ProjectView.model_validate(projects.restore(session, project_id, revision)))
+
+
+@app.command("schedules")
+@guarded
+def schedules(project_id: int):
+    from app.services.project_schedule import ProjectScheduleService
+
+    with session_scope() as session:
+        emit(ProjectScheduleService().list(session, project_id))

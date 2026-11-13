@@ -78,3 +78,4 @@ from app.models.project_curation import (  # noqa: F401
     ProjectRelation,
     ProjectSavedView,
 )
+from app.models.project_schedule import ProjectSchedule as ProjectSchedule

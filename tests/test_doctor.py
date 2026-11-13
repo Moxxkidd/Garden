@@ -55,7 +55,7 @@ def test_doctor_reads_revision_without_repair_or_sidecar_files(tmp_path, monkeyp
     result = runner.invoke(app, ["doctor", "--json"])
     check = next(c for c in json.loads(result.stdout)["checks"] if c["id"] == "database")
     assert check["status"] == "action_required"
-    assert "0003" in check["message"] and "0015" in check["message"]
+    assert "0003" in check["message"] and "0016" in check["message"]
     assert database.read_bytes() == before
     assert set(tmp_path.iterdir()) == files_before
 
@@ -115,7 +115,7 @@ def test_doctor_skips_remote_or_unsupported_database_without_leaking_values(monk
     )
 
 
-@pytest.mark.parametrize("revision, status", [("0015", "ok"), ("FUTURE_SECRET", "unknown")])
+@pytest.mark.parametrize("revision, status", [("0016", "ok"), ("FUTURE_SECRET", "unknown")])
 def test_doctor_distinguishes_current_and_unknown_database_revision(
     tmp_path, monkeypatch, revision, status
 ):
@@ -278,7 +278,7 @@ def ready_doctor(tmp_path, monkeypatch):
         connection.execute(
             "CREATE TABLE scan_contexts (id INTEGER PRIMARY KEY, temporary_secret_ref TEXT UNIQUE)"
         )
-        connection.execute("INSERT INTO alembic_version VALUES ('0015')")
+        connection.execute("INSERT INTO alembic_version VALUES ('0016')")
     chromium = tmp_path / "chromium"
     chromium.write_text("fixture executable")
     chromium.chmod(0o700)
@@ -458,13 +458,13 @@ def test_version_override_is_ignored_across_cli_web_and_doctor(monkeypatch):
 
     monkeypatch.setenv("GARDEN_PROJECT_VERSION", "0.0.0-FAKE")
     clear_settings_cache()
-    assert Settings().project_version == "1.5.0"
-    assert create_app().version == "1.5.0"
+    assert Settings().project_version == "1.6.0"
+    assert create_app().version == "1.6.0"
     result = runner.invoke(app, ["--version"])
-    assert "Garden 1.5.0" in result.stdout
+    assert "Garden 1.6.0" in result.stdout
     result = runner.invoke(app, ["doctor", "--json"])
     installation = next(c for c in json.loads(result.stdout)["checks"] if c["id"] == "installation")
-    assert "1.5.0" in installation["message"]
+    assert "1.6.0" in installation["message"]
     assert "已忽略" in installation["message"]
     assert "FAKE" not in installation["message"]
 
@@ -475,7 +475,7 @@ def test_doctor_known_drift_is_read_only_even_with_current_revision(tmp_path, mo
     database = tmp_path / "drift.db"
     with sqlite3.connect(database) as connection:
         connection.execute("CREATE TABLE alembic_version (version_num TEXT)")
-        connection.execute("INSERT INTO alembic_version VALUES ('0015')")
+        connection.execute("INSERT INTO alembic_version VALUES ('0016')")
         connection.execute("CREATE TABLE scan_contexts (id INTEGER PRIMARY KEY)")
     before = database.read_bytes()
     files_before = set(tmp_path.iterdir())

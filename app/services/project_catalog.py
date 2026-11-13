@@ -1,5 +1,7 @@
 """SQL-filtered project views over immutable observations, never live target state."""
 
+from datetime import datetime, timezone
+
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import aliased
 
@@ -15,6 +17,9 @@ from app.services.projects import ProjectService
 
 
 class ProjectCatalogService:
+    def __init__(self, *, clock=None):
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
+
     def _observations(self, project_id, query):
         o, a = ProjectObservation, ProjectAsset
         statement = select(o).join(a, a.id == o.display_asset_id).where(o.project_id == project_id)
@@ -193,6 +198,12 @@ class ProjectCatalogService:
             items, matched = self._asset_rows(
                 session, statement, query, include_latest=include_latest
             )
+            from app.services.project_freshness import age_label
+
+            for item in items:
+                item["freshness"] = age_label(
+                    item["last_seen"], self.clock(), project.freshness_days
+                )
         elif query.view == "observations":
             matched = session.scalar(select(func.count()).select_from(statement.subquery()))
             order = {

@@ -73,9 +73,13 @@ def parse_query(values):
 
 
 @router.get("")
-def list_projects():
+def list_projects(include_archived: bool = False):
     with session_scope() as session:
-        return [ProjectView.model_validate(p) for p in projects.list(session)]
+        return [
+            ProjectView.model_validate(p)
+            for p in projects.list(session)
+            if include_archived or p.status == "active"
+        ]
 
 
 @router.post("")

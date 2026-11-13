@@ -25,6 +25,7 @@ from app.schemas.identity import IdentityCollectionRequest, SessionHealthView
 from app.schemas.projects import ProjectSourceRef
 from app.schemas.scan import DiscoveredAsset
 from app.services.browser_discovery import BrowserDiscovery
+from app.services.collection_executor import guarded_submission
 from app.services.collection_runtime import CollectionOwnershipLost
 from app.services.coverage_identity import redacted_observed_url
 from app.services.discovery import DiscoveryLedger, origin, safe_route
@@ -81,6 +82,7 @@ class IdentityCollectionService:
             self.collection_executor.close()
             self.collection_executor = None
 
+    @guarded_submission
     def start(
         self, session, request: IdentityCollectionRequest, *, recovery=None, collection_plan=None
     ):

@@ -15,6 +15,7 @@ from app.api.routes.health import router as health_router
 from app.api.routes.identities import router as identities_router
 from app.api.routes.inventory import router as inventory_router
 from app.api.routes.jobs import router as jobs_router
+from app.api.routes.maintenance import router as maintenance_router
 from app.api.routes.pages import router as pages_router
 from app.api.routes.project_pages import router as project_pages_router
 from app.api.routes.projects import router as projects_router
@@ -24,6 +25,7 @@ from app.api.routes.sessions import router as sessions_router
 from app.api.routes.targets import router as targets_router
 
 api_router = APIRouter()
+api_router.include_router(maintenance_router)
 api_router.include_router(delivery_router)
 api_router.include_router(collection_queue_router)
 api_router.include_router(collection_pages_router)

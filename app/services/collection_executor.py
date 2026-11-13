@@ -2,6 +2,8 @@
 
 import os
 import threading
+from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
 
 from sqlalchemy.engine import make_url
@@ -69,3 +71,25 @@ class CollectionExecutor:
             self.close()
         except Exception:
             pass
+
+
+@contextmanager
+def executor_operation(database_url):
+    """Serialize admission/maintenance under the existing process ownership lock."""
+    with _mutex:
+        owner = CollectionExecutor(database_url)
+        owner.acquire()
+        try:
+            yield
+        finally:
+            owner.close()
+
+
+def guarded_submission(function):
+    @wraps(function)
+    def invoke(self, *args, **kwargs):
+        with executor_operation(self.settings.database_url):
+            self.ensure_collection_executor()
+            return function(self, *args, **kwargs)
+
+    return invoke

@@ -13,7 +13,7 @@
       <div class="mx-auto flex max-w-6xl items-center justify-between gap-3 flex-wrap px-6 py-4">
         <a href="/" class="text-xl font-semibold tracking-tight">Garden</a>
         <nav aria-label="主导航" class="flex flex-wrap gap-3 text-sm text-slate-600">
-          {% for href,label in [('/projects','项目'),('/scans','任务'),('/assets','资产'),('/identities','身份'),('/reports','报告'),('/settings','设置')] %}
+          {% for href,label in [('/projects','项目'),('/scans','任务'),('/assets','资产'),('/identities','身份'),('/reports','报告'),('/storage','数据管理'),('/settings','设置')] %}
           <a href="{{ href }}" class="rounded-full border border-black/10 px-3 py-1.5 hover:bg-stone-100">{{ label }}</a>
           {% endfor %}
         </nav>

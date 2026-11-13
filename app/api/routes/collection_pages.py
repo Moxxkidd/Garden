@@ -113,6 +113,7 @@ def incremental_form(request: Request, project_id: int, entry_id: int):
 
     with session_scope() as session:
         entry = ProjectService().validate_entry(session, project_id, entry_id)
+        freshness_days = ProjectService().get(session, project_id).freshness_days
         profiles = [
             {"id": p.id, "name": p.name}
             for p in session.scalars(
@@ -127,6 +128,7 @@ def incremental_form(request: Request, project_id: int, entry_id: int):
         profiles=profiles,
         defaults=CollectionOptions().model_dump(),
         page_title="项目增量计划",
+        freshness_days=freshness_days,
     )
 
 
@@ -143,7 +145,7 @@ async def incremental_preview(request: Request, project_id: int, entry_id: int):
             project_id=project_id,
             entry_id=entry_id,
             profile_id=values.get("profile_id") or None,
-            stale_after_days=values.get("stale_after_days", 30),
+            stale_after_days=values.get("stale_after_days") or None,
             important_asset_ids=values.get("important_asset_ids", "").split(),
             mode=values.get("mode", "known_only"),
             options={k: v for k, v in values.items() if k in CollectionOptions.model_fields},

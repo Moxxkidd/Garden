@@ -73,7 +73,11 @@ async def form_values(request):
 @router.get("/projects", include_in_schema=False)
 def list_page(request: Request):
     with session_scope() as session:
-        values = [ProjectView.model_validate(p) for p in projects.list(session)]
+        values = [
+            ProjectView.model_validate(p)
+            for p in projects.list(session)
+            if p.status == "active" or request.query_params.get("include_archived") == "true"
+        ]
     return render(request, "list", projects=values, page_title="项目资产库")
 
 

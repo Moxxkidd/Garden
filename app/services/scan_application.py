@@ -38,6 +38,7 @@ from app.schemas.scan import (
     ScanStageView,
 )
 from app.schemas.scan_comparison import ScanComparison
+from app.services.collection_executor import guarded_submission
 from app.services.coverage_gaps import explain_coverage_gaps
 from app.services.project_lifecycle import ProjectLifecycleService
 from app.services.scan_network import HttpScanGateway, TargetNetworkPolicy
@@ -186,6 +187,7 @@ class ScanApplicationService:
         )
         return ScanRunView.model_validate(assessment.model_dump())
 
+    @guarded_submission
     def start_assessment(
         self, request: AssessmentStartRequest, *, collection_plan=None
     ) -> AssessmentRunView:

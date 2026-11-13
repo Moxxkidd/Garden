@@ -47,9 +47,18 @@ async def lifespan(app: FastAPI):
 
     app.state.export_jobs = ExportJobService()
     app.state.export_jobs.interrupt_active()
+    from app.services.local_data import LocalDataService
+    from app.services.project_schedule import ProjectScheduleService
+
+    app.state.project_schedules = ProjectScheduleService(
+        scans=app.state.scan_service, identities=app.state.identity_collection
+    )
+    app.state.local_data = LocalDataService()
+    app.state.project_schedules.start()
     try:
         yield
     finally:
+        app.state.project_schedules.shutdown()
         app.state.export_jobs.shutdown()
         app.state.manual_login.shutdown()
         app.state.identity_collection.shutdown()

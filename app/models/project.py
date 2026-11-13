@@ -14,6 +14,7 @@ class Project(TimestampMixin, Base):
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default="active")
     revision: Mapped[int] = mapped_column(Integer, default=0)
+    freshness_days: Mapped[int] = mapped_column(Integer, default=7, server_default="7")
 
 
 class ProjectEntry(TimestampMixin, Base):
