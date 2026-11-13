@@ -27,7 +27,9 @@ def prepare(paths, bundle, expected_version, configuration, instance):
         paths, "backup", dict(destination=str(root / "data")), expected_instance=instance
     )
     previous = root / "Garden.app"
-    subprocess.run(["/usr/bin/ditto", str(bundle), str(previous)], check=True)
+    subprocess.run(
+        ["/usr/bin/ditto", "--noextattr", "--norsrc", str(bundle), str(previous)], check=True
+    )
     plan = root / "plan.json"
     payload = dict(
         schema="garden-app-update-v1",
@@ -118,7 +120,10 @@ def recover(plan_path):
         # Keep the failed program for diagnosis, leave data completely untouched.
         failed = plan_path.parent / "failed.app"
         os.rename(plan["bundle"], failed)
-        subprocess.run(["/usr/bin/ditto", plan["previous"], plan["bundle"]], check=True)
+        subprocess.run(
+            ["/usr/bin/ditto", "--noextattr", "--norsrc", plan["previous"], plan["bundle"]],
+            check=True,
+        )
         Path(str(plan_path) + ".result").write_text("program_rolled_back; data_not_reverted")
         subprocess.Popen(
             [str(executable), "--config", plan["configuration"]],

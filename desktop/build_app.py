@@ -44,7 +44,13 @@ def main():
     if stage.exists():
         shutil.rmtree(stage)
     stage.mkdir()
-    subprocess.run(["/usr/bin/ditto", str(app), str(stage / "Garden.app")], check=True)
+    subprocess.run(
+        ["/usr/bin/ditto", "--noextattr", "--norsrc", str(app), str(stage / "Garden.app")],
+        check=True,
+    )
+    subprocess.run(
+        ["codesign", "--verify", "--deep", "--strict", str(stage / "Garden.app")], check=True
+    )
     (stage / "Applications").symlink_to("/Applications")
     app_version = json.loads((ROOT / "desktop/package.json").read_text())["version"]
     dmg = bundle / f"dmg/Garden_{app_version}_aarch64.dmg"
