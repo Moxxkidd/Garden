@@ -1,0 +1,1 @@
+{"identifier":"setup","description":"Only the packaged settings window can invoke local shell controls. The remote WebUI has no native capability.","windows":["setup"],"permissions":["core:default"]}

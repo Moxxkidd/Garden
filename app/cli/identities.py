@@ -37,7 +37,19 @@ def config(profile_id, login_url, validate_url, success_selector, success_text):
 
 def remote(api_url, path, data=None, method="POST"):
     try:
-        response = httpx.request(method, api_url.rstrip("/") + path, json=data, timeout=30)
+        from app.cli.paths import GardenPaths
+        from app.cli.web_runtime import WebRuntimeManager
+
+        manager = WebRuntimeManager(paths=GardenPaths.from_environment())
+        runtime = manager._load_state()
+        headers = {}
+        if runtime is not None and api_url.rstrip("/") == runtime.base_url:
+            if not manager._is_healthy(runtime):
+                raise InputValidationError("本地实例握手未通过；未发送身份操作。")
+            headers["Authorization"] = "Bearer " + runtime.session_token
+        response = httpx.request(
+            method, api_url.rstrip("/") + path, json=data, headers=headers, timeout=30
+        )
         response.raise_for_status()
         typer.echo(json.dumps(response.json(), ensure_ascii=False, indent=2))
     except (httpx.HTTPError, ValueError):

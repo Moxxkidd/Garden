@@ -289,7 +289,11 @@ def check_browser() -> DoctorCheck:
     )
     try:
         process = subprocess.run(
-            [sys.executable, "-I", "-B", "-c", script],
+            (
+                [sys.executable, "browser-info"]
+                if getattr(sys, "frozen", False)
+                else [sys.executable, "-I", "-B", "-c", script]
+            ),
             capture_output=True,
             text=True,
             timeout=5,

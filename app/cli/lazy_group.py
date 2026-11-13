@@ -25,7 +25,7 @@ _GROUPS = {
     "baseline": "baseline",
     "db": "database",
 }
-_COMMANDS = {"scan", "coverage", "stop"}
+_COMMANDS = {"scan", "coverage", "stop", "ui"}
 
 
 class GardenCommandGroup(TyperGroup):

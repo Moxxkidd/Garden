@@ -63,6 +63,9 @@ def test_ensure_reuses_healthy_server_and_rejects_different_explicit_port(monkey
     paths.server_state_file.write_text(
         json.dumps(
             {
+                "version": __import__(
+                    "app.core.version", fromlist=["project_version"]
+                ).project_version(),
                 "pid": 4212,
                 "port": 8123,
                 "home": str(paths.home),
@@ -103,6 +106,7 @@ def test_ensure_removes_stale_state_before_starting(monkeypatch, tmp_path):
     )
     manager = WebRuntimeManager(paths=paths, default_port=8000)
     monkeypatch.setattr(manager, "_is_healthy", lambda runtime: False)
+    monkeypatch.setattr(manager, "_is_process_alive", lambda pid: False)
     monkeypatch.setattr(manager, "_is_port_available", lambda port: port == 8000)
     monkeypatch.setattr(manager, "_start_process", lambda port: Process())
     monkeypatch.setattr(manager, "_wait_for_health", lambda port: True)
@@ -139,3 +143,85 @@ def test_stop_only_terminates_a_healthy_recorded_server(monkeypatch, tmp_path):
     assert manager.stop() is True
     assert killed == [4214]
     assert not paths.server_state_file.exists()
+
+
+def test_healthz_is_not_an_instance_handshake(monkeypatch, tmp_path):
+    """An unrelated HTTP 200 must never authorize reuse or termination."""
+    from app.cli.web_runtime import WebRuntime, WebRuntimeError, WebRuntimeManager
+
+    manager = WebRuntimeManager(paths=GardenPaths(tmp_path))
+    runtime = WebRuntime(pid=1234, port=8123, home=str(tmp_path), started_at="now")
+    manager._write_state(runtime)
+    monkeypatch.setattr(manager, "_is_process_alive", lambda pid: True)
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            return b'{"status":"ok"}'
+
+    monkeypatch.setattr("app.cli.web_runtime.urlopen", lambda *args, **kwargs: Response())
+    with pytest.raises(WebRuntimeError, match="握手"):
+        manager.ensure()
+    assert manager.stop() is False
+    assert manager.paths.server_state_file.exists()
+
+
+def test_managed_session_requires_matching_origin_and_instance(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    monkeypatch.setenv("GARDEN_RUNTIME_TOKEN", "synthetic-test-session")
+    monkeypatch.setenv("GARDEN_RUNTIME_INSTANCE", "synthetic-instance")
+    monkeypatch.setenv("GARDEN_RUNTIME_PORT", "8123")
+    monkeypatch.setenv("GARDEN_HOME", str(tmp_path))
+    client = TestClient(create_app(), base_url="http://127.0.0.1:8123")
+    assert client.get("/_garden/runtime").status_code == 401
+    headers = {"Authorization": "Bearer synthetic-test-session"}
+    assert (
+        client.get(
+            "/_garden/runtime", headers={**headers, "Origin": "https://evil.invalid"}
+        ).status_code
+        == 403
+    )
+    for site, expected in [("same-origin", 200), ("cross-site", 403)]:
+        response = client.get(
+            "/_garden/runtime",
+            headers={**headers, "Origin": "null", "Sec-Fetch-Site": site},
+        )
+        assert response.status_code == expected
+    handshake = client.get("/_garden/runtime", headers=headers).json()
+    assert handshake["application"] == "garden"
+    assert handshake["home"] == str(tmp_path.resolve())
+    assert handshake["instance_id"] == "synthetic-instance"
+    assert client.post("/_garden/session/exchange", headers=headers).status_code == 204
+    assert client.get("/_garden/runtime").status_code == 200
+
+
+def test_app_owner_cannot_stop_a_replacement_cli_instance(monkeypatch, tmp_path):
+    from app.cli.desktop import control
+    from app.cli.web_runtime import WebRuntime, WebRuntimeError, WebRuntimeManager
+
+    paths = GardenPaths(tmp_path)
+    WebRuntimeManager(paths=paths)._write_state(
+        WebRuntime(pid=1234, port=8123, home=str(tmp_path), started_at="now", instance_id="new-cli")
+    )
+    with pytest.raises(WebRuntimeError, match="实例已变化"):
+        control(paths, "stop", expected_instance="previous-app")
+
+
+def test_sidecar_version_must_match_app_before_opening_data(tmp_path):
+    from app.cli.desktop import connect
+    from app.cli.web_runtime import WebRuntimeError
+
+    paths = GardenPaths(tmp_path / "not-created")
+    with pytest.raises(WebRuntimeError, match="App.*引擎.*不一致"):
+        connect(paths, initialize=True, expected_version="synthetic-other-version")
+    assert not paths.home.exists()

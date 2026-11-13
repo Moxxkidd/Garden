@@ -206,35 +206,38 @@ def test_ctrl_c_cancels_scan_stops_only_owned_ui_and_exits_130(monkeypatch):
     assert calls == [("cancel", 7), "stop"]
 
 
-def test_stop_interrupts_active_scans_and_stops_ui(monkeypatch):
+def test_stop_quiesces_only_the_authenticated_instance(monkeypatch):
     calls = []
-
-    class Service:
-        def __init__(self, **kwargs):
-            pass
-
-        def interrupt_active_scans(self):
-            calls.append("interrupt")
-            return 2
-
-        def shutdown(self):
-            calls.append("shutdown")
+    runtime = SimpleNamespace(base_url="http://127.0.0.1:8123", session_token="synthetic")
 
     class Manager:
         def __init__(self, **kwargs):
             pass
 
+        def _load_state(self):
+            return runtime
+
+        def _is_healthy(self, record):
+            return record is runtime
+
         def stop(self):
             calls.append("stop")
             return True
 
-    monkeypatch.setattr(stop_cli, "ScanApplicationService", Service)
+    class Api:
+        def __init__(self, base_url, session_token):
+            assert base_url == runtime.base_url and session_token == runtime.session_token
+
+        def _request_json(self, method, path, payload):
+            calls.append((method, path, payload))
+            return {"idle": True}
+
+    monkeypatch.setattr("app.cli.local_api.LocalScanApi", Api)
     monkeypatch.setattr(stop_cli, "WebRuntimeManager", Manager)
     result = runner.invoke(app, ["stop"])
-
     assert result.exit_code == 0
-    assert calls == ["stop", "interrupt", "shutdown"]
-    assert "已中断 2 个活动扫描" in result.stdout
+    assert calls == [("POST", "/_garden/quiesce", {"cancel": True}), "stop"]
+    assert "本机 Garden Web UI 已停止" in result.stdout
 
 
 def test_legacy_result_with_100_percent_does_not_claim_complete_coverage(run_terminal_scan):

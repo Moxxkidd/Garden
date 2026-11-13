@@ -44,7 +44,7 @@
   </form>
   <section class="overflow-hidden rounded-3xl border border-black/10 bg-white">
     <p class="px-5 pt-4 text-xs text-slate-500 sm:hidden">宽表格可左右滑动，查看变体与来源详情。</p>
-    <div class="flex flex-wrap gap-4 border-b p-5 text-sm"><strong>导出全部匹配记录（{{ result.matched }} 条）</strong><a href="{{ json_url }}" hx-boost="false" class="underline">下载 JSON</a><a href="{{ csv_url }}" hx-boost="false" class="underline">下载 CSV</a></div>
+    <div class="flex flex-wrap gap-4 border-b p-5 text-sm"><strong>导出全部匹配记录（{{ result.matched }} 条）</strong><a href="{{ json_url }}" download hx-boost="false" class="underline">下载 JSON</a><a href="{{ csv_url }}" download hx-boost="false" class="underline">下载 CSV</a></div>
     {% if query.view == 'grouped' %}
     {% include 'asset_groups_table.html' %}
     {% else %}

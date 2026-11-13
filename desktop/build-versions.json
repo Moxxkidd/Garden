@@ -1,0 +1,48 @@
+{
+  "rust": "1.100.0",
+  "rust_components": {
+    "rustc": {
+      "xz_url": "https://static.rust-lang.org/dist/2026-11-12/rustc-1.100.0-aarch64-apple-darwin.tar.xz",
+      "xz_hash": "3fcd7f1709f62dda58bf4db2dcfd630a451e750aadaaa551a21cc4a627a37b4c"
+    },
+    "cargo": {
+      "xz_url": "https://static.rust-lang.org/dist/2026-11-12/cargo-1.100.0-aarch64-apple-darwin.tar.xz",
+      "xz_hash": "7e18265d2d2cda8dec6cac4d0faa3bbafe927b401e5185350abc7d669f9adafb"
+    },
+    "rust-std": {
+      "xz_url": "https://static.rust-lang.org/dist/2026-11-12/rust-std-1.100.0-aarch64-apple-darwin.tar.xz",
+      "xz_hash": "9345645b6f56eea28bf8cc2c0f628a61d507a688f91c1bec5ae6bfad216a16c7"
+    },
+    "rustfmt": {
+      "xz_url": "https://static.rust-lang.org/dist/2026-11-12/rustfmt-1.100.0-aarch64-apple-darwin.tar.xz",
+      "xz_hash": "dd5f60c6b87c9fae4bfa706d3b20ce648f9e5c595473aa9a4cfb31cec7a7a8fa"
+    }
+  },
+  "target": "aarch64-apple-darwin",
+  "python": "3.12.14",
+  "pyinstaller": "6.22.3",
+  "playwright": "1.58.0",
+  "tauri_cli": "2.12.4",
+  "crates": {
+    "tauri": "2.12.5",
+    "tauri-build": "2.7.4",
+    "tauri-plugin-updater": "2.14.1",
+    "tauri-plugin-dialog": "2.8.4",
+    "tauri-plugin-notification": "2.8.1",
+    "tauri-plugin-opener": "2.7.3",
+    "tauri-plugin-single-instance": "2.5.5"
+  },
+  "chromium": {
+    "name": "chromium",
+    "revision": "1208",
+    "installByDefault": true,
+    "browserVersion": "145.0.7632.6",
+    "title": "Chrome for Testing"
+  },
+  "browser_resources": [
+    "chromium-1208",
+    "ffmpeg-1011",
+    "chromium_headless_shell-1208"
+  ],
+  "macos_minimum": "26.0"
+}

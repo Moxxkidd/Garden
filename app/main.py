@@ -82,6 +82,9 @@ def create_app() -> FastAPI:
             response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
+    from app.core.local_session import configure_local_session
+
+    configure_local_session(app)
     register_exception_handlers(app)
     app.mount(
         "/static",

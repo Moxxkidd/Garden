@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
+import secrets
 import signal
 import socket
 import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from app.cli.paths import GardenPaths
 from app.core.version import project_version
@@ -29,10 +32,16 @@ class WebRuntime:
     home: str
     started_at: str
     version: str | None = None
+    instance_id: str = ""
+    session_token: str = ""
 
     @property
     def base_url(self) -> str:
         return f"http://127.0.0.1:{self.port}"
+
+    @property
+    def browser_url(self) -> str:
+        return f"{self.base_url}/_garden/session#{self.session_token}"
 
 
 class WebRuntimeManager:
@@ -51,6 +60,14 @@ class WebRuntimeManager:
         self.started_by_this_command = False
 
     def ensure(self, *, ui_port: int | None = None) -> WebRuntime:
+        self.paths.ensure_directories()
+        # Serialize startup only; the engine retains the existing executor ownership.
+        with (self.paths.runtime_dir / "start.lock").open("a") as lock:
+            os.chmod(lock.name, 0o600)
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            return self._ensure(ui_port=ui_port)
+
+    def _ensure(self, *, ui_port: int | None = None) -> WebRuntime:
         existing = self._load_state()
         if existing is not None:
             if self._is_healthy(existing):
@@ -59,8 +76,18 @@ class WebRuntimeManager:
                         f"Garden Web UI 已在端口 {existing.port} 运行；"
                         "请使用相同端口或先执行 garden stop。"
                     )
+                if existing.version != project_version():
+                    raise WebRuntimeError(
+                        f"已有 Garden {existing.version} 与当前 {project_version()} 不一致；"
+                        "请用原版本停止服务后重试。"
+                    )
                 self.started_by_this_command = False
                 return existing
+            if self._is_process_alive(existing.pid):
+                raise WebRuntimeError(
+                    "已有进程未通过 Garden 实例握手（可能为旧版本或不同引擎）；"
+                    "请用原版本停止服务后重试。未接管或终止该进程。"
+                )
             self._remove_state()
 
         if ui_port is not None:
@@ -70,19 +97,23 @@ class WebRuntimeManager:
         elif self._is_port_available(self.default_port):
             candidate_ports = [self.default_port]
         else:
-            candidate_ports = [self._reserve_free_port() for _ in range(3)]
+            candidate_ports = [self._reserve_free_port()]
 
         last_error: WebRuntimeError | None = None
         for port in candidate_ports:
+            self._starting = WebRuntime(
+                pid=0,
+                port=port,
+                home=str(self.paths.home.resolve()),
+                started_at=datetime.now(timezone.utc).isoformat(),
+                version=project_version(),
+                instance_id=secrets.token_urlsafe(24),
+                session_token=secrets.token_urlsafe(32),
+            )
             process = self._start_process(port)
+            self._starting = replace(self._starting, pid=process.pid)
             if self._wait_for_health(port):
-                runtime = WebRuntime(
-                    pid=process.pid,
-                    port=port,
-                    home=str(self.paths.home),
-                    version=project_version(),
-                    started_at=datetime.now(timezone.utc).isoformat(),
-                )
+                runtime = self._starting
                 self._write_state(runtime)
                 self.started_by_this_command = True
                 return runtime
@@ -107,18 +138,22 @@ class WebRuntimeManager:
                 home=str(payload["home"]),
                 started_at=str(payload["started_at"]),
                 version=payload.get("version"),
+                instance_id=payload.get("instance_id", ""),
+                session_token=payload.get("session_token", ""),
             )
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            return None
-        if runtime.home != str(self.paths.home):
-            return None
+            raise WebRuntimeError("本地实例状态无法读取；请核对 runtime/server.json。") from None
+        if Path(runtime.home).resolve() != self.paths.home.resolve():
+            raise WebRuntimeError("本地实例数据目录不匹配；未启动另一引擎。")
         return runtime
 
     def _write_state(self, runtime: WebRuntime) -> None:
         self.paths.ensure_directories()
         temp_path = self.paths.runtime_dir / ".server.json.tmp"
-        temp_path.write_text(json.dumps(asdict(runtime), sort_keys=True), encoding="utf-8")
-        temp_path.chmod(0o600)
+        descriptor = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            os.fchmod(handle.fileno(), 0o600)
+            json.dump(asdict(runtime), handle, sort_keys=True)
         temp_path.replace(self.paths.server_state_file)
         self.paths.server_pid_file.write_text(f"{runtime.pid}\n", encoding="utf-8")
         self.paths.server_pid_file.chmod(0o600)
@@ -132,7 +167,6 @@ class WebRuntimeManager:
 
         runtime = self._load_state()
         if runtime is None or not self._is_healthy(runtime):
-            self._remove_state()
             return False
         try:
             os.killpg(runtime.pid, signal.SIGTERM)
@@ -153,29 +187,33 @@ class WebRuntimeManager:
         return True
 
     def _is_healthy(self, runtime: WebRuntime) -> bool:
+        if not runtime.instance_id or not runtime.session_token:
+            return False
         if not self._is_process_alive(runtime.pid):
             return False
+        request = Request(
+            f"{runtime.base_url}/_garden/runtime",
+            headers={"Authorization": f"Bearer {runtime.session_token}"},
+        )
         try:
-            with urlopen(f"{runtime.base_url}/healthz", timeout=0.5) as response:  # noqa: S310
-                return response.status == 200
-        except (URLError, TimeoutError, OSError):
+            with urlopen(request, timeout=0.5) as response:  # noqa: S310 - fixed loopback
+                payload = json.loads(response.read())
+            return payload == dict(
+                application="garden",
+                version=runtime.version,
+                home=runtime.home,
+                instance_id=runtime.instance_id,
+                pid=runtime.pid,
+            )
+        except (URLError, TimeoutError, OSError, ValueError):
             return False
 
     def _wait_for_health(self, port: int) -> bool:
-        runtime = WebRuntime(
-            pid=0,
-            port=port,
-            home=str(self.paths.home),
-            started_at="",
-        )
         deadline = time.monotonic() + self.startup_timeout_seconds
         while time.monotonic() < deadline:
-            try:
-                with urlopen(f"{runtime.base_url}/healthz", timeout=0.5) as response:  # noqa: S310
-                    if response.status == 200:
-                        return True
-            except (URLError, TimeoutError, OSError):
-                time.sleep(0.1)
+            if self._is_healthy(self._starting):
+                return True
+            time.sleep(0.1)
         return False
 
     @staticmethod
@@ -208,21 +246,31 @@ class WebRuntimeManager:
         environment.update(
             {
                 "GARDEN_CLI_RUNTIME": "1",
-                "GARDEN_HOME": str(self.paths.home),
+                "GARDEN_HOME": str(self.paths.home.resolve()),
+                "GARDEN_RUNTIME_TOKEN": self._starting.session_token,
+                "GARDEN_RUNTIME_INSTANCE": self._starting.instance_id,
+                "GARDEN_RUNTIME_PORT": str(port),
+                "PYINSTALLER_RESET_ENVIRONMENT": "1",
             }
         )
+        command = (
+            [sys.executable, "serve", "--home", str(self.paths.home.resolve()), "--port", str(port)]
+            if getattr(sys, "frozen", False)
+            else [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "app.main:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ]
+        )
         with self.paths.web_log_file.open("a", encoding="utf-8") as log_file:
+            os.chmod(log_file.name, 0o600)
             return subprocess.Popen(
-                [
-                    sys.executable,
-                    "-m",
-                    "uvicorn",
-                    "app.main:app",
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    str(port),
-                ],
+                command,
                 env=environment,
                 stdin=subprocess.DEVNULL,
                 stdout=log_file,

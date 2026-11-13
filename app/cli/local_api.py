@@ -20,8 +20,18 @@ class LocalApiError(GardenError):
 
 
 class LocalScanApi:
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, *, session_token: str | None = None) -> None:
         self.base_url = base_url.rstrip("/")
+        if session_token is None:
+            from app.cli.paths import formal_runtime_paths
+            from app.cli.web_runtime import WebRuntimeManager
+
+            paths = formal_runtime_paths()
+            runtime = WebRuntimeManager(paths=paths)._load_state() if paths else None
+            session_token = (
+                runtime.session_token if runtime and runtime.base_url == self.base_url else ""
+            )
+        self.session_token = session_token
 
     def start_scan(
         self, url: str, options: ScanOptions, *, project_entry_id: int | None = None
@@ -75,14 +85,17 @@ class LocalScanApi:
         payload: dict[str, object] | None = None,
     ):
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
+        headers = {"content-type": "application/json"} if data else {}
+        if self.session_token:
+            headers["Authorization"] = f"Bearer {self.session_token}"
         request = Request(
             f"{self.base_url}{path}",
             data=data,
             method=method,
-            headers={"content-type": "application/json"} if data else {},
+            headers=headers,
         )
         try:
-            with urlopen(request, timeout=5) as response:  # noqa: S310 - loopback URL only
+            with urlopen(request, timeout=120 if path == "/_garden/quiesce" else 5) as response:  # noqa: S310 - loopback URL only
                 return json.loads(response.read())
         except HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")

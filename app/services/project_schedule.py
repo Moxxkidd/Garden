@@ -240,6 +240,8 @@ class ProjectScheduleService:
 
     def tick(self):
         with self.lock, executor_operation(get_settings().database_url), session_scope() as session:
+            if self.stop.is_set():
+                return
             rows = list(
                 session.scalars(
                     select(ProjectSchedule)

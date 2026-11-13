@@ -756,7 +756,7 @@ class IdentityCollectionService:
             ledger.attempted(url, method)
 
         try:
-            if manual and health_gate:
+            if health_gate:
                 # Prove the initial identity before pausing a navigation request.
                 # A fresh Chromium proof must not consume that navigation timeout.
                 health_gate._check()

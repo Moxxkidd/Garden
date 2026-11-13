@@ -13,6 +13,7 @@ from app.core.errors import ConflictError, InputValidationError
 _owners = {}
 _mutex = threading.RLock()
 _operation_mutex = threading.RLock()
+_quiescing = set()
 
 
 class CollectionExecutor:
@@ -92,7 +93,17 @@ def guarded_submission(function):
     @wraps(function)
     def invoke(self, *args, **kwargs):
         with executor_operation(self.settings.database_url):
+            if self.settings.database_url in _quiescing:
+                raise ConflictError("local_runtime_stopping")
             self.ensure_collection_executor()
             return function(self, *args, **kwargs)
 
     return invoke
+
+
+def quiesce_submissions(database_url, enabled):
+    """Called under executor_operation by the managed local shutdown/update gate."""
+    if enabled:
+        _quiescing.add(database_url)
+    else:
+        _quiescing.discard(database_url)
