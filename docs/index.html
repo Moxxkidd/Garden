@@ -201,7 +201,7 @@ pre{
 }
 .fade-in-up.visible{opacity:1;transform:translateY(0)}
 
-.doc-main{margin-left:var(--sidebar-w);flex:1;min-height:calc(100vh - var(--nav-h))}
+.doc-main{margin-left:var(--sidebar-w);flex:1;min-width:0;min-height:calc(100vh - var(--nav-h))}
 .doc-content{max-width:700px;margin:0 auto;padding:40px 48px 80px}
 
 .doc-content h1{font-size:1.75rem;font-weight:700;letter-spacing:-.01em;margin-bottom:0}
@@ -247,6 +247,8 @@ pre{
 
 /* ── mobile ── */
 @media(max-width:768px){
+  nav .inner{padding:0 16px}
+  .search-box{width:120px}
   .hero h1{font-size:1.75rem}
   .grid2,.grid3,.checks{grid-template-columns:1fr}
   .menu-btn{display:flex}
@@ -599,43 +601,28 @@ const TREE=[
 /* ── doc content ── */
 var PAGES={
 intro:{b:'快速开始 > 简介',h:`
-<h1>简介</h1>
-<div class="meta-row"><div>字数<span>450</span></div><div>阅读时间<span>3 min</span></div></div>
-
-<p>Garden is an <strong>application-service-first</strong> asset workflow for authorized targets. A user submits one URL and receives persisted progress, structured evidence, findings, coverage, failures, and a readable report.</p>
-
-<p>Web, HTTP API, and <code>gardenctl scan</code> all call the same <code>ScanApplicationService.start_scan</code>; no adapter owns hidden orchestration.</p>
-
-<h2>核心工作流</h2>
-<pre>URL &rarr; validate/network preflight &rarr; discover &rarr; collect
-    &rarr; normalize &rarr; analyze &rarr; report</pre>
-
-<p>核心 URL 流程持久化 ScanRun、六阶段状态、资产、脱敏证据、被动 findings、失败与覆盖缺口，并直接生成 Markdown 资产报告。原有 target、credential、session、inventory 和 retest 数据继续服务高级认证工作流。</p>
-
-<h2>推荐使用顺序</h2>
-<pre>$ gardenctl scan --url http://127.0.0.1:8888/
-
-# or run the explicit workflow:
-$ gardenctl healthcheck
-$ gardenctl target add          # or target import
-$ gardenctl cred add
-$ gardenctl login test
-$ gardenctl inventory build
-$ gardenctl checks run
-$ gardenctl findings list
-$ gardenctl evidence list
-$ gardenctl findings update-status
-$ gardenctl retest run
-$ gardenctl findings export      # or report generate</pre>
-
-<div class="tip">普通用户只提交一次 URL；需要登录态和人工复测时，才进入保留的高级认证工作流。</div>
+<h1>Garden 2.0 使用入口</h1>
+<p>从已授权 URL 发现资产，按 origin、身份与时间保留观察，再整理并交付清单。当前源码 2.0.0、数据库 head 0016；完整候选验收与正式发布分别记录，尚未打 tag、创建 Release 或上传包。</p>
+<h2>1 · 快速扫描</h2>
+<p>运行 <code>garden ui</code> 打开首页，输入授权入口，选择快速、平衡或浏览器深入预设；查看同源范围和最终预算后确认。</p>
+<pre>garden scan http://127.0.0.1:8080/ --preset balanced</pre>
+<h2>2 · 登录与多入口采集</h2>
+<p>在「身份」打开独立人工登录窗口，自行完成验证码；显式确认后关闭原上下文并恢复验证，再预览采集。项目计划分别绑定每个入口的身份和固定配额，不借用预算。人工浏览可记录用户实际 POST，自动模式不点击业务按钮或重放人工 POST。</p>
+<h2>3 · 整理与交接</h2>
+<p>在「项目」筛选清单，选择明确资产并填写复核理由；生成完整 JSON、可读 CSV、HTML、PDF 或 ZIP。周期复查默认关闭，需明确开启；私有备份可能含登录秘密，只恢复到选定空目录，不能公开交接。</p>
+<pre>garden projects deliver 1 --format zip --output delivery.zip</pre>
+<div class="tip">执行结束 / 100% 不代表覆盖完整；人工保留不证明业务有效。已观察、候选、未知和缺口分别呈现，已生成也不等于用户已保存。</div>
+<h2>平台与证据</h2>
+<p>核心 Python ≥3.10；macOS App 为 26.0+ / Apple Silicon 本地 Beta，捆绑 Python 3.12 与 Chromium。正式签名、公证、更新渠道、外部机器与再分发许可仍待独立发布准备。</p>
+<p><a href="release-v2.md">操作、升级与限制</a> · <a href="versions/v2.0.0.md">候选 SHA、包摘要与本轮验收</a></p>
+<p>下列传统 target / credential / inventory / findings 命令仍作为高级兼容工作流保留，不是普通 URL 扫描或手工登录采集的必需步骤。</p>
 `},
 install:{b:'快速开始 > 安装',h:`
 <h1>安装</h1>
 <div class="meta-row"><div>字数<span>200</span></div><div>阅读时间<span>2 min</span></div></div>
 
 <h2>前置依赖</h2>
-<ul class="check-list"><li>Python 3.10+</li><li>Node.js 18+（用于 Playwright 浏览器自动化）</li></ul>
+<ul class="check-list"><li>核心包 Python ≥3.10</li><li>Chromium 由 python -m playwright install chromium 安装；普通 Python 安装不要求额外 Node.js</li><li>macOS App 捆绑运行时，仅支持 Apple Silicon / macOS 26.0+ 本地 Beta，未正式发布</li></ul>
 
 <h2>克隆与安装</h2>
 <pre>$ git clone https://github.com/Moxxkidd/Garden.git
@@ -1070,7 +1057,8 @@ export:{b:'证据与报告 > 导出格式',h:`
 <h1>导出格式</h1>
 <div class="meta-row"><div>字数<span>150</span></div><div>阅读时间<span>1 min</span></div></div>
 
-<p>导出逻辑模块化，Findings、Inventory、Evidence、Report 各有独立的 exporter。</p>
+<p>当前项目「资产交付」共用概要、资产与证据；按固定修订分块生成 JSON、可读 CSV、HTML、PDF 或 ZIP。PDF 需要 Chromium 和中文字体，私有会话不进入公开包。已生成与用户保存分别表达。</p><pre>garden projects deliver 1 --format readable_csv --output assets.csv
+garden projects deliver 1 --format zip --output delivery.zip</pre><p>下面保留传统 Findings / Inventory / Evidence 导出兼容命令。</p>
 
 <h2>Findings export</h2>
 <pre>$ gardenctl findings export --format md
@@ -1091,7 +1079,7 @@ report:{b:'证据与报告 > 报告生成',h:`
 <h1>报告生成</h1>
 <div class="meta-row"><div>字数<span>100</span></div><div>阅读时间<span>1 min</span></div></div>
 
-<p>为某个 job 生成汇总 Markdown 报告，包含 job 元信息、inventory 摘要、findings 列表和 evidence 引用。</p>
+<p>当前项目交付报告分为概要、资产、证据，分别显示主体、身份观察、人工复核及覆盖缺口。旧 Markdown 文件保持原样；下面的 job 报告命令继续兼容。</p>
 
 <h2>CLI 操作</h2>
 <pre>$ gardenctl report generate --job 2 --format md</pre>
@@ -1381,7 +1369,7 @@ document.addEventListener('DOMContentLoaded',function(){
         e.target.style.transform='translateY(0)';
       }
     });
-  },{threshold:.15});
+  },{threshold:0});
   targets.forEach(function(el){
     el.style.opacity='0';
     el.style.transform='translateY(16px)';
