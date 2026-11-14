@@ -7,18 +7,20 @@ from sqlalchemy.exc import OperationalError
 from app.core.errors import ConflictError
 
 
-def ensure_read_snapshot(session):
+def ensure_read_snapshot(session, *, write=False):
     connection = session.connection()
     if connection.dialect.name == "sqlite":
         # Legacy pysqlite does not begin on SELECT or SAVEPOINT; a released
         # outermost SAVEPOINT would otherwise commit behind the caller's back.
         if not connection.connection.driver_connection.in_transaction:
-            connection.exec_driver_sql("BEGIN")
+            # Known write operations reserve the writer before taking a snapshot.
+            # Read-only exports still use a deferred transaction.
+            connection.exec_driver_sql("BEGIN IMMEDIATE" if write else "BEGIN")
 
 
 @contextmanager
 def atomic_import(session):
-    ensure_read_snapshot(session)
+    ensure_read_snapshot(session, write=True)
     try:
         with session.begin_nested():
             yield

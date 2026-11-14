@@ -16,6 +16,22 @@ URL
   → Markdown 报告
 ```
 
+## v2.0.0：完整验收与发布准备
+
+当前源码版本 **2.0.0**，数据库 head **0016**，核心 Python **≥3.10**。本版冻结功能，核对 v1.0 真实结构升级、完整用户旅程和最终候选包；准备状态与 CI、正式发布分别记录。尚未打 tag、创建 Release 或上传包。macOS App 仍是 **26.0+ / Apple Silicon 本地 Beta**，捆绑 Python 3.12 与 Chromium，未完成 Developer ID 签名、公证或外部干净机器验收。
+
+从三个入口开始：
+
+1. **快速扫描**：运行 `garden scan http://127.0.0.1:8080/ --preset balanced`，或用 `garden ui` 打开首页，预览范围与预算后确认。仅使用已授权目标。
+2. **登录采集**：在「身份」打开人工登录窗口，自己完成验证码；显式确认后关闭原上下文并恢复验证，再预览并提交采集。多个入口在项目中分别绑定身份和固定配额。
+3. **整理与交接**：在「项目」清单筛选、复核保留或忽略，再生成完整 JSON、可读 CSV、HTML、PDF 或 ZIP。私有备份用于恢复，不能当公开交接包。
+
+执行结束或 100% 不表示覆盖完整；人工保留也不证明业务有效。已有响应、候选、未知、缺口与身份观察继续分别保留。文件「已生成」和用户实际保存是两个结果。
+
+[本版操作示例与升级步骤](docs/release-v2.md) · [完整验收记录](docs/versions/v2.0.0.md) · [质量门禁](docs/quality/README.md) · [桌面构建与限制](desktop/README.md)
+
+以下为各版实现沿革；其中测试数量、迁移编号和性能数字只属于对应历史版本，本版结果见上面的完整验收记录。
+
 ## v1.7.0：macOS App Beta
 
 本轮本地 Beta 为 macOS 26.0+ / Apple Silicon 桌面入口：Tauri 2 窗口捆绑 Python 3.12 与匹配 Chromium，沿用现有 WebUI 和用户数据目录。CLI、浏览器与 App 通过带本地会话的实例握手共享引擎；首次使用明确选择目录、创建或备份升级，退出时区分后台继续与停止收尾。
@@ -134,7 +150,7 @@ python scripts/quality_baseline.py
 python scripts/quality_baseline.py --full
 ```
 
-默认输出 `.verification/quality/quality.md` 与 `quality.json`。CI 的两个 Python 任务也保存同类报告。**合成测试通过不代表真实站点发现率 100%，也不代表已发布。** 当前为 v1.0.0 发布准备，仍需远端 Linux CI 验证；无新增依赖、数据库迁移或扫描动作。[验收口径与发布检查](docs/quality/README.md)。
+默认输出 `.verification/quality/quality.md` 与 `quality.json`。CI 的两个 Python 任务也保存同类报告。**合成测试通过不代表真实站点发现率 100%，也不代表已发布。** 该历史版本建立质量基线；当前候选的 CI 状态见 v2.0.0 实施记录。该片没有新增依赖、数据库迁移或扫描动作。[验收口径与发布检查](docs/quality/README.md)。
 
 ## v0.9.0：资产交付与集成
 
@@ -147,7 +163,7 @@ garden projects deliver 1 --dataset changes --before-run-id 2 --after-run-id 3
 garden projects deliver 1 --dataset observations --format openapi
 ```
 
-OpenAPI 是已观察接口的推断草稿，不猜测鉴权、正文或响应 schema。旧快照未记录的请求变体明确为未知，不读取私有材料补猜。原有导出接口保持兼容，无新增数据库迁移；当前迁移仍为 `0011`。[交付契约、分页示例与限制](docs/asset-delivery-v1.md)。尚未发布。
+OpenAPI 是已观察接口的推断草稿，不猜测鉴权、正文或响应 schema。旧快照未记录的请求变体明确为未知，不读取私有材料补猜。原有导出接口保持兼容，无新增数据库迁移；该历史版本的迁移为 `0011`。[交付契约、分页示例与限制](docs/asset-delivery-v1.md)。尚未发布。
 
 ## v0.8.0：持久队列与增量补采
 

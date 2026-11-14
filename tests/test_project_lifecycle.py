@@ -52,6 +52,54 @@ def test_binding_failure_is_separate_from_source_status(seeded_records):
         lifecycle.retry(mid)
 
 
+def test_background_index_waits_for_writer_before_reading_project(seeded_records):
+    """A finishing identity task must not lose indexing to a concurrent writer."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from sqlalchemy import event
+
+    from app.db.bootstrap import get_engine
+
+    lifecycle = ProjectLifecycleService()
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, entry = project_fixture(session, target)
+        run = source_run(session, target)
+        ref = ProjectSourceRef(source="scan", run_id=run.id)
+        lifecycle.attach(session, entry.id, ref)
+        pid = project.id
+    engine = get_engine()
+    with engine.connect() as connection:
+        connection.exec_driver_sql("PRAGMA journal_mode=WAL")
+    attempted, committed = threading.Event(), threading.Event()
+    main_thread = threading.get_ident()
+
+    def before_write(connection, cursor, statement, parameters, context, many):
+        if threading.get_ident() != main_thread and (
+            statement.startswith("BEGIN IMMEDIATE") or statement.startswith("UPDATE projects")
+        ):
+            attempted.set()
+            assert committed.wait(5), "concurrent writer did not commit"
+
+    event.listen(engine, "before_cursor_execute", before_write)
+    try:
+        with engine.connect() as writer, ThreadPoolExecutor(max_workers=1) as pool:
+            writer.exec_driver_sql("UPDATE projects SET revision=revision+1 WHERE id=?", (pid,))
+            future = pool.submit(lifecycle.reconcile, ref)
+            assert attempted.wait(5), "index did not reach its write boundary"
+            writer.commit()
+            committed.set()
+            future.result(timeout=5)
+    finally:
+        committed.set()
+        event.remove(engine, "before_cursor_execute", before_write)
+    with session_scope() as session:
+        membership = ProjectIngestionService().runs(session, pid)[0]
+        assert membership.status == "complete"
+        assert membership.observation_count == 1
+
+
 def test_real_quick_pipeline_indexes_selected_project(seeded_records, tmp_path):
     import httpx
 

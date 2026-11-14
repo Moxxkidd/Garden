@@ -1,1 +1,21 @@
-{% extends 'base.html' %}{% block content %}<section class="project-page"><h1>设置</h1><p>Garden {{ version }} · 此页只读，不修改运行配置。</p><h2>默认预算</h2><p>页面上限 {{ budgets.pages }} · 静态资源上限 {{ budgets.resources }}</p><p>新任务使用快速、平衡或浏览器深入预设；实际生效预算在开始前展示。</p><h2>本地显示</h2><p>资产表格列选择保存在本浏览器；命名筛选视图保存在所属项目。</p><p>页面使用包内固定 CSS 与 HTMX 资源，无需访问 CDN。</p><p><a href="/identities">管理身份</a> · <a href="/projects">项目工作台</a></p></section>{% endblock %}
+{% extends 'base.html' %}
+{% block content %}
+<section class="project-page">
+<h1>设置</h1>
+<p>Garden {{ version }} · 此页只读，不修改运行配置。</p>
+<h2>从三个入口开始</h2>
+<ol>
+<li><a href="/">快速扫描</a>：输入已授权入口，预览同源范围和最终预算，再确认开始。快速、平衡、浏览器深入预设可按需选择。</li>
+<li><a href="/identities">登录采集</a>：打开人工登录窗口，自己完成验证码；明确确认后在新上下文恢复验证，再预览采集。保存了文件不等于身份可用。多入口在项目中分别绑定身份和固定预算。</li>
+<li><a href="/projects">整理与交接</a>：筛选项目清单，复核保留或忽略，生成完整 JSON、可读 CSV、HTML、PDF 或 ZIP；PDF 需要 Chromium 与中文字体。</li>
+</ol>
+<p>执行结束或进度 100% 不代表覆盖完整。请同时看身份、范围、预算和未覆盖提示；候选未请求，未知不等于不存在。人工保留是整理选择，不是业务有效性证明。</p>
+<p>已生成表示 Garden 文件就绪，发起下载不代表已保存。App 在文件实际保存后才显示保存成功。</p>
+<h2>默认预算</h2>
+<p>页面上限 {{ budgets.pages }} · 静态资源上限 {{ budgets.resources }}。实际生效预算在开始前展示。</p>
+<h2>本地显示与数据</h2>
+<p>资产表格列选择保存在本浏览器；命名筛选视图保存在所属项目。CSS 与 HTMX 使用包内资源，无需访问 CDN。</p>
+<p><a href="/storage">数据管理</a>的私有备份可能含登录秘密，不能用于公开交接。恢复只写入选定空目录并暂停周期计划；当前服务不会自动切换。</p>
+<p>核心 Python ≥3.10；macOS App 为 26.0+ / Apple Silicon 本地 Beta，捆绑 Python 3.12 和 Chromium。正式签名、公证、更新渠道和发布尚未完成。</p>
+</section>
+{% endblock %}

@@ -326,6 +326,19 @@ pre{
 </section>
 
 <div class="extra" id="identity-collection" style="margin-bottom:48px;scroll-margin-top:80px">
+  <div class="tag">v2.0.0 · 完整验收与发布准备</div>
+  <h2>从授权入口，到可追溯的资产交接</h2>
+  <p>当前源码 2.0.0，迁移 0016；功能冻结，候选验收与正式发布分别记录。核心 Python ≥3.10，macOS App 仍是 26.0+ / Apple Silicon 本地 Beta，捆绑 Python 3.12 与 Chromium。</p>
+  <div class="grid-3">
+    <div class="item"><h3>1 · 快速扫描</h3><p>首页输入授权 URL，选择预设并预览同源边界与预算。CLI 使用 garden scan URL --preset balanced。</p></div>
+    <div class="item"><h3>2 · 登录采集</h3><p>人工完成验证码，显式确认后在新上下文恢复验证。项目多入口分别绑定身份与固定配额，再确认提交。</p></div>
+    <div class="item"><h3>3 · 整理与交接</h3><p>筛选资产、复核选择，生成 JSON、可读 CSV、HTML、PDF 或离线 ZIP。私有备份用于恢复，不能公开交接。</p></div>
+  </div>
+  <p>执行结束 / 100% 不代表覆盖完整；人工保留不证明业务有效。已观察、候选、未知与缺口分别保留；文件已生成不等于用户已保存。</p>
+  <p><a href="release-v2.md">操作示例与升级</a> · <a href="versions/v2.0.0.md">本候选验收与包摘要</a> · 未打 tag、创建 Release 或上传包；正式签名、公证与外部干净机器验证尚未完成。</p>
+  <details><summary>查看本候选的合成旅程截图</summary><figure><img src="quality/v2-assets/plan-desktop.png" alt="本候选的双入口身份及固定预算预览" loading="lazy" style="width:100%;height:auto"><figcaption>双入口分别绑定身份，提交前显示固定配额。</figcaption></figure><figure><img src="quality/v2-assets/delivery-desktop.png" alt="本候选概要、资产与证据统一交付页面" loading="lazy" style="width:100%;height:auto"><figcaption>统一概要、身份观察与人工选择；截图来自合成本机站点。</figcaption></figure></details>
+  <p>下列为历史实现沿革；历史测试数量和迁移编号只代表当时版本。</p>
+
   <div class="tag">v1.7.0 · macOS App Beta</div>
   <h2>把同一套资产工作台装进本地 App</h2>
   <p>本轮 macOS 26.0+ / Apple Silicon 入口捆绑 Python 3.12 和匹配 Chromium，不依赖用户安装 Python 或源码。CLI、浏览器与 App 通过实例握手共享引擎；首次使用明确选择数据目录、创建或备份升级，数据独立于程序。</p>
@@ -363,7 +376,7 @@ pre{
   <h2>用可重复的证据，验收资产清单</h2>
   <p>发现、归并、可信度、数据完整性、持续更新、边界控制六维检查，复用真实本地浏览器和合成身份站点。报告列明分子、分母、提交与运行环境；失败、跳过或未执行均不能算通过。</p>
   <p>固定语料的召回率不能用于真实站点。已观察、候选、未知和未覆盖内容继续分别呈现；本版没有扩大扫描范围或开启自动重放。</p>
-  <p><a href="quality/README.md">质量验收与报告使用说明</a> · v1.0.0 发布准备 · 尚未发布</p>
+  <p><a href="quality/README.md">质量验收与报告使用说明</a> · 历史 v1.0 基线，当前候选见 v2.0.0 记录</p>
   <div class="tag">v0.9.0 · 资产交付</div>
   <h2>把筛选好的清单交给下一步工作流</h2>
   <p>分别交付资产主体、请求变体、身份观察、候选、关系与变更。JSON Schema 明确字段，分页绑定项目修订；清单变化时提示重读，避免悄悄漏行。</p>

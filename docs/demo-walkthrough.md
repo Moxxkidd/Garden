@@ -1,5 +1,7 @@
 # Demo Walkthrough
 
+当前用户主流程与本候选证据见 [v2.0 操作示例](release-v2.md)。下面保留原高级 CLI 流程供已有用户查阅。
+
 > This is the optional advanced authenticated-workflow walkthrough. The primary
 > product flow now starts from the Web home page, `POST /api/scans`, or
 > `gardenctl scan --url URL` and requires no commands below. See

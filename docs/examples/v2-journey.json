@@ -1,0 +1,69 @@
+{
+  "status": "passed",
+  "version": "2.0.0",
+  "anonymous_run": 1,
+  "plan_statuses": [
+    "completed",
+    "completed"
+  ],
+  "allocated": [
+    20,
+    20
+  ],
+  "delivery_summary": {
+    "matched_records": 5,
+    "asset_count": 5,
+    "observation_count": 5,
+    "categories": {
+      "page": 5
+    },
+    "identities": [
+      {
+        "key": "target:1:origin:http://127.0.0.1:60658:anonymous",
+        "name": null,
+        "observation_count": 1
+      },
+      {
+        "key": "target:1:profile:1",
+        "name": "admin-primary",
+        "observation_count": 2
+      },
+      {
+        "key": "target:2:profile:2",
+        "name": "Second reader",
+        "observation_count": 2
+      }
+    ],
+    "review": {
+      "keep": 1,
+      "ignore": 0,
+      "unreviewed": 4,
+      "needs_review": 0
+    },
+    "execution": {
+      "completed": 3
+    },
+    "coverage": {
+      "sources": 3,
+      "incomplete_sources": 1,
+      "unknown_sources": 0,
+      "unindexed_sources": 0
+    }
+  },
+  "recheck_run": 4,
+  "restart_catch_up": false,
+  "restored_counts": {
+    "project_assets": 5,
+    "project_observations": 6,
+    "auth_sessions": 3
+  },
+  "restored_schedules_enabled": 0,
+  "current_directory_changed": false,
+  "offline_requests": [],
+  "elapsed_seconds": 30.23,
+  "artifacts": {
+    "delivery.pdf": "b8d35616d8906b3eb218f4ac4182313c28ea490124ad54dd16edc518f93b6da8",
+    "delivery.zip": "19da13a4574adb69198d99ade13ca19299143fc8be2861d1f017f37702bf668f"
+  },
+  "scope": "Synthetic loopback fixture; not a real-site completeness claim"
+}
