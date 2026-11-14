@@ -38,38 +38,38 @@ def main():
     app = bundle / "macos/Garden.app"
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
     # Native DMG creation avoids Finder automation; this is the single local packaging path.
-    stage = ROOT / ".verification/dmg-root"
-    import shutil
+    import tempfile
 
-    if stage.exists():
-        shutil.rmtree(stage)
-    stage.mkdir()
-    subprocess.run(
-        ["/usr/bin/ditto", "--noextattr", "--norsrc", str(app), str(stage / "Garden.app")],
-        check=True,
-    )
-    subprocess.run(
-        ["codesign", "--verify", "--deep", "--strict", str(stage / "Garden.app")], check=True
-    )
-    (stage / "Applications").symlink_to("/Applications")
     app_version = json.loads((ROOT / "desktop/package.json").read_text())["version"]
     dmg = bundle / f"dmg/Garden_{app_version}_aarch64.dmg"
     dmg.parent.mkdir(exist_ok=True)
-    subprocess.run(
-        [
-            "hdiutil",
-            "create",
-            "-volname",
-            "Garden",
-            "-srcfolder",
-            str(stage),
-            "-format",
-            "UDZO",
-            "-ov",
-            str(dmg),
-        ],
-        check=True,
-    )
+    # File Provider can add FinderInfo after verification in Documents. Stage
+    # outside that managed tree so the image preserves the verified signature.
+    with tempfile.TemporaryDirectory(prefix="garden-dmg-", dir="/private/tmp") as directory:
+        stage = Path(directory)
+        subprocess.run(
+            ["/usr/bin/ditto", "--noextattr", "--norsrc", str(app), str(stage / "Garden.app")],
+            check=True,
+        )
+        subprocess.run(
+            ["codesign", "--verify", "--deep", "--strict", str(stage / "Garden.app")], check=True
+        )
+        (stage / "Applications").symlink_to("/Applications")
+        subprocess.run(
+            [
+                "hdiutil",
+                "create",
+                "-volname",
+                "Garden",
+                "-srcfolder",
+                str(stage),
+                "-format",
+                "UDZO",
+                "-ov",
+                str(dmg),
+            ],
+            check=True,
+        )
 
     artifacts = []
     for file in [dmg]:
