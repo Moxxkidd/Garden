@@ -1,0 +1,330 @@
+{
+  "schema_version": "quality-v1",
+  "corpus_version": "synthetic-v1",
+  "sha": "8146a4345bb8e29dec606727590b8b3ff5042cb5",
+  "dirty": false,
+  "python": "3.12.16",
+  "platform": "Linux-7.0.0-1019-azure-x86_64-with-glibc2.43",
+  "created_at": "2026-11-14T06:14:18.183547+00:00",
+  "mode": "full",
+  "command": [
+    "/opt/hostedtoolcache/Python/3.12.16/x64/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-o",
+    "addopts=",
+    "-o",
+    "junit_family=legacy",
+    "-o",
+    "faulthandler_timeout=120",
+    "--junitxml=/home/runner/work/Garden/Garden/.verification/quality/junit.xml",
+    "tests"
+  ],
+  "elapsed_seconds": 1019.1,
+  "status": "passed",
+  "pytest_exit_code": 0,
+  "executed": 993,
+  "dimensions": [
+    {
+      "name": "发现能力",
+      "checks": [
+        {
+          "node": "tests/test_quality_corpus.py::test_fixed_browser_discovery_metrics",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_quality_corpus.py::test_fixed_browser_discovery_metrics",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_collection_browser_e2e.py::test_browser_sitemap_discovers_and_visits_hidden_asset",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_collection_browser_e2e.py::test_browser_sitemap_discovers_and_visits_hidden_asset",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_collection_identity_e2e.py::test_identity_health_and_business_share_durable_request_budget",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_collection_identity_e2e.py::test_identity_health_and_business_share_durable_request_budget[False-None]",
+              "status": "passed"
+            },
+            {
+              "node": "tests/test_collection_identity_e2e.py::test_identity_health_and_business_share_durable_request_budget[True-None]",
+              "status": "passed"
+            },
+            {
+              "node": "tests/test_collection_identity_e2e.py::test_identity_health_and_business_share_durable_request_budget[False-2]",
+              "status": "passed"
+            }
+          ]
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "归并准确性",
+      "checks": [
+        {
+          "node": "tests/test_quality_corpus.py::test_fixed_grouping_metrics",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_quality_corpus.py::test_fixed_grouping_metrics",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_asset_grouping.py::test_grouping_keeps_origin_method_path_and_query_multiplicity",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_asset_grouping.py::test_grouping_keeps_origin_method_path_and_query_multiplicity",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_asset_validity.py::test_identical_responses_do_not_combine_identity_contexts",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_asset_validity.py::test_identical_responses_do_not_combine_identity_contexts",
+              "status": "passed"
+            }
+          ]
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "结果可信度",
+      "checks": [
+        {
+          "node": "tests/test_asset_validity.py::test_passive_signals_keep_origin_context_and_response_differences",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_asset_validity.py::test_passive_signals_keep_origin_context_and_response_differences",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_asset_validity.py::test_login_fallback_and_redirect_alias_require_evidence",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_asset_validity.py::test_login_fallback_and_redirect_alias_require_evidence",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_coverage_gaps.py::test_failed_identity_has_unknown_coverage_without_exposing_exception",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_coverage_gaps.py::test_failed_identity_has_unknown_coverage_without_exposing_exception",
+              "status": "passed"
+            }
+          ]
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "数据完整性",
+      "checks": [
+        {
+          "node": "tests/test_asset_delivery.py::test_variants_survive_source_removal_and_legacy_is_unknown",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_asset_delivery.py::test_variants_survive_source_removal_and_legacy_is_unknown",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_asset_delivery.py::test_delivery_api_cli_web_schema_and_escaped_summary",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_asset_delivery.py::test_delivery_api_cli_web_schema_and_escaped_summary",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_asset_surfaces.py::test_large_export_and_context_filter_do_not_truncate_or_reorder",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_asset_surfaces.py::test_large_export_and_context_filter_do_not_truncate_or_reorder",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_project_export.py::test_exports_preserve_failed_zero_observation_coverage",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_project_export.py::test_exports_preserve_failed_zero_observation_coverage",
+              "status": "passed"
+            }
+          ]
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "持续更新",
+      "checks": [
+        {
+          "node": "tests/test_project_comparison.py::test_missing_requires_complete_comparable_coverage",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_project_comparison.py::test_missing_requires_complete_comparable_coverage[False-not_observed]",
+              "status": "passed"
+            },
+            {
+              "node": "tests/test_project_comparison.py::test_missing_requires_complete_comparable_coverage[True-unknown]",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_collection_resume.py::test_known_work_resume_creates_linked_run_and_preserves_original_report",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_collection_resume.py::test_known_work_resume_creates_linked_run_and_preserves_original_report[False]",
+              "status": "passed"
+            },
+            {
+              "node": "tests/test_collection_resume.py::test_known_work_resume_creates_linked_run_and_preserves_original_report[True]",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_collection_identity_e2e.py::test_queued_identity_change_requires_new_confirmation",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_collection_identity_e2e.py::test_queued_identity_change_requires_new_confirmation[replace]",
+              "status": "passed"
+            },
+            {
+              "node": "tests/test_collection_identity_e2e.py::test_queued_identity_change_requires_new_confirmation[revoke]",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_identity_finalization.py::test_response_finishing_during_final_identity_proof_is_not_left_uncertain",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_identity_finalization.py::test_response_finishing_during_final_identity_proof_is_not_left_uncertain[False]",
+              "status": "passed"
+            },
+            {
+              "node": "tests/test_identity_finalization.py::test_response_finishing_during_final_identity_proof_is_not_left_uncertain[True]",
+              "status": "passed"
+            }
+          ]
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "边界控制",
+      "checks": [
+        {
+          "node": "tests/test_discovery_browser.py::test_real_browser_dynamic_hash_and_readonly_boundary",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_discovery_browser.py::test_real_browser_dynamic_hash_and_readonly_boundary",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_authenticated_network_boundaries.py::test_authenticated_inventory_blocks_cross_origin_redirect_before_request",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_authenticated_network_boundaries.py::test_authenticated_inventory_blocks_cross_origin_redirect_before_request",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_collection_http.py::test_durable_http_uses_real_scan_entry_and_retains_uncovered_work",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_collection_http.py::test_durable_http_uses_real_scan_entry_and_retains_uncovered_work",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "node": "tests/test_asset_surfaces.py::test_invalid_and_missing_scopes_never_fall_back_to_all_assets",
+          "status": "passed",
+          "results": [
+            {
+              "node": "tests/test_asset_surfaces.py::test_invalid_and_missing_scopes_never_fall_back_to_all_assets",
+              "status": "passed"
+            }
+          ]
+        }
+      ],
+      "status": "passed"
+    }
+  ],
+  "metrics": {
+    "discovery_recall": {
+      "counts": {
+        "numerator": 3,
+        "denominator": 3
+      },
+      "ratio": 1.0,
+      "status": "passed",
+      "definition": "固定浏览器语料中已观察到的预期路径 / 三个预期路径；不包含真实站点。"
+    },
+    "candidate_confirmation": {
+      "counts": {
+        "numerator": 3,
+        "denominator": 3
+      },
+      "ratio": 1.0,
+      "status": "passed",
+      "definition": "固定浏览器语料中已观察的可自动访问同源 GET 候选路径 / 该类候选路径；按路径去重，不含 POST。"
+    },
+    "false_merge_rate": {
+      "counts": {
+        "numerator": 0,
+        "denominator": 20
+      },
+      "ratio": 0.0,
+      "status": "passed",
+      "definition": "固定归并语料中被错误合并的不同路由族样本对 / 全部不同路由族样本对；不是参数值语义准确率。"
+    }
+  },
+  "nonpassing": []
+}

@@ -1,0 +1,105 @@
+{
+  "version": "2.0.0",
+  "source_head": "8146a4345bb8e29dec606727590b8b3ff5042cb5",
+  "source_dirty": false,
+  "release_state": "local candidate; not released",
+  "build_platform": "macOS-26.3-arm64-arm-64bit",
+  "pins": {
+    "rust": "1.100.0",
+    "rust_components": {
+      "rustc": {
+        "xz_url": "https://static.rust-lang.org/dist/2026-11-12/rustc-1.100.0-aarch64-apple-darwin.tar.xz",
+        "xz_hash": "3fcd7f1709f62dda58bf4db2dcfd630a451e750aadaaa551a21cc4a627a37b4c"
+      },
+      "cargo": {
+        "xz_url": "https://static.rust-lang.org/dist/2026-11-12/cargo-1.100.0-aarch64-apple-darwin.tar.xz",
+        "xz_hash": "7e18265d2d2cda8dec6cac4d0faa3bbafe927b401e5185350abc7d669f9adafb"
+      },
+      "rust-std": {
+        "xz_url": "https://static.rust-lang.org/dist/2026-11-12/rust-std-1.100.0-aarch64-apple-darwin.tar.xz",
+        "xz_hash": "9345645b6f56eea28bf8cc2c0f628a61d507a688f91c1bec5ae6bfad216a16c7"
+      },
+      "rustfmt": {
+        "xz_url": "https://static.rust-lang.org/dist/2026-11-12/rustfmt-1.100.0-aarch64-apple-darwin.tar.xz",
+        "xz_hash": "dd5f60c6b87c9fae4bfa706d3b20ce648f9e5c595473aa9a4cfb31cec7a7a8fa"
+      }
+    },
+    "target": "aarch64-apple-darwin",
+    "python": "3.12.14",
+    "pyinstaller": "6.22.3",
+    "playwright": "1.58.0",
+    "tauri_cli": "2.12.4",
+    "crates": {
+      "tauri": "2.12.5",
+      "tauri-build": "2.7.4",
+      "tauri-plugin-updater": "2.14.1",
+      "tauri-plugin-dialog": "2.8.4",
+      "tauri-plugin-notification": "2.8.1",
+      "tauri-plugin-opener": "2.7.3",
+      "tauri-plugin-single-instance": "2.5.5"
+    },
+    "chromium": {
+      "name": "chromium",
+      "revision": "1208",
+      "installByDefault": true,
+      "browserVersion": "145.0.7632.6",
+      "title": "Chrome for Testing"
+    },
+    "browser_resources": [
+      "chromium-1208",
+      "ffmpeg-1011",
+      "chromium_headless_shell-1208"
+    ],
+    "macos_minimum": "26.0"
+  },
+  "artifacts": [
+    {
+      "name": "garden-2.0.0-py3-none-any.whl",
+      "bytes": 619247,
+      "sha256": "2b22f20f2dc023770448651dcc4cb21d62f6d51d92571798ca88e8ebef72fddd"
+    },
+    {
+      "name": "garden-2.0.0.tar.gz",
+      "bytes": 7324425,
+      "sha256": "2e837af6b7eb02ba307a42563cfd92767586575515d1f4dccd1b0e7a92cabdd3"
+    },
+    {
+      "name": "Garden_2.0.0_aarch64.dmg",
+      "bytes": 469396322,
+      "sha256": "2ce85997bef9f2f7a6cf10dc378da1e7169d0f62ae0175fa01f7efbb93ff8e9e"
+    }
+  ],
+  "resource_audit": {
+    "resource_files_compared": 347,
+    "migration_count": 16,
+    "wheel_entries": 351,
+    "sdist_entries": 630,
+    "unwanted_entries": []
+  },
+  "macos_audit": {
+    "macho_count": 99,
+    "unexpected_external_libraries": [],
+    "migration_count": 16,
+    "minimum_system": "26.0"
+  },
+  "app_bytes": 994490772,
+  "notices": {
+    "python": 46,
+    "rust": 303
+  },
+  "native_app": {
+    "cold_process_to_render_seconds": 3.204,
+    "subjects": 5,
+    "observations": 6,
+    "restored_schedule_enabled": false,
+    "native_settings_and_project_navigation": true,
+    "csv_saved": {
+      "rows": 5,
+      "bytes": 13410,
+      "sha256": "8c9aa84d9373561a0f5a6280b624b569408caf72fa72a903e33a0dd1b6ad83d7"
+    }
+  },
+  "formal_signing": false,
+  "notarized": false,
+  "uploaded": false
+}

@@ -28,7 +28,7 @@ URL
 
 执行结束或 100% 不表示覆盖完整；人工保留也不证明业务有效。已有响应、候选、未知、缺口与身份观察继续分别保留。文件「已生成」和用户实际保存是两个结果。
 
-[本版操作示例与升级步骤](docs/release-v2.md) · [完整验收记录](docs/versions/v2.0.0.md) · [质量门禁](docs/quality/README.md) · [桌面构建与限制](desktop/README.md)
+[本版操作示例与升级步骤](docs/release-v2.md) · [最终验收报告](docs/quality/v2.0.0-acceptance-2026-11-14.md) · [实施记录](docs/versions/v2.0.0.md) · [质量门禁](docs/quality/README.md) · [桌面构建与限制](desktop/README.md)
 
 以下为各版实现沿革；其中测试数量、迁移编号和性能数字只属于对应历史版本，本版结果见上面的完整验收记录。
 
