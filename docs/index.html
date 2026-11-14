@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Garden — 扫描与统一资产清单</title>
+<title>Garden 2.0 — 资产发现、整理与交付</title>
+<meta name="description" content="从已授权入口发现资产，汇集匿名与登录态观察，完成项目整理、人工复核、离线交付与持续复查。Garden 2.0 发布准备完成，macOS App 为本地 Beta。"/>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231e5f48'/%3E%3Cpath d='M18 34c0-11 8-19 22-20-1 13-8 22-20 22m0 0c7 1 13 5 16 12M20 36v14' fill='none' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E"/>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -260,9 +261,38 @@ pre{
   .sidebar.mobile-open{transform:translateX(0)}
   .doc-main{margin-left:0}
   .doc-content{padding:24px 20px 60px}
-  #docs .overlay{display:block!important}
 }
 #docs .overlay{display:none;position:fixed;top:var(--nav-h);left:0;right:0;bottom:0;background:rgba(0,0,0,.3);z-index:35}
+
+/* Current product overview */
+nav .logo{text-decoration:none}
+:focus-visible{outline:2px solid var(--c-accent);outline-offset:4px}
+.hero .version{display:inline-block;font-size:12px;color:var(--c-accent);background:rgba(30,95,72,.06);border:1px solid rgba(30,95,72,.15);border-radius:20px;padding:5px 13px;margin-bottom:20px}
+.hero h1{max-width:760px}
+.hero .lead{max-width:630px}
+.status-row{display:grid;grid-template-columns:repeat(3,1fr);max-width:976px;margin:0 auto 12px;border:1px solid var(--c-border);border-radius:6px;background:var(--c-bg)}
+.status-row div{padding:16px 20px;font-size:13px;color:var(--c-muted)}
+.status-row strong{display:block;color:var(--c-text);font-size:15px;margin-bottom:2px}
+.overview-section{margin-bottom:48px}
+.overview-section p{font-size:14px;line-height:1.8;color:var(--c-muted);margin:10px 0}
+.overview-section h3{font-size:15px}
+.overview-section .card a{display:inline-block;margin-top:12px;color:var(--c-accent);font-size:13px}
+.product-shot{border:1px solid var(--c-border);border-radius:6px;overflow:hidden;background:var(--c-bg)}
+.product-shot img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;object-position:top;border-bottom:1px solid var(--c-border)}
+.product-shot figcaption{padding:14px 18px;color:var(--c-muted);font-size:13px}
+.doc-content table{border-collapse:collapse;width:100%;font-size:13px;margin:16px 0}
+.doc-content th,.doc-content td{border-bottom:1px solid var(--c-border);text-align:left;vertical-align:top;padding:10px 8px}
+.doc-content th{color:var(--c-text)}
+.doc-content td{color:var(--c-muted)}
+.doc-content img{max-width:100%;height:auto}
+.sidebar a.link{text-decoration:none}
+.sidebar button.group-head{width:100%;border:0;background:none;font:inherit;text-align:left}
+@media(max-width:768px){
+  .feat .grid{grid-template-columns:1fr}
+  .status-row{grid-template-columns:1fr;margin:0 24px 12px}
+  .status-row div+div{border-top:1px solid var(--c-border)}
+  #docs .overlay.open{display:block}
+}
 </style>
 </head>
 <body>
@@ -271,14 +301,14 @@ pre{
 <nav>
   <div class="inner">
     <div style="display:flex;align-items:center;gap:8px">
-      <button class="menu-btn" id="menuBtn" onclick="toggleSidebar()" aria-label="Menu">
+      <button class="menu-btn" id="menuBtn" onclick="toggleSidebar()" aria-label="打开文档目录" aria-expanded="false">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
       </button>
-      <div class="logo" onclick="showHome()">Garden</div>
+      <a class="logo" href="#" onclick="showHome();return false">Garden</a>
     </div>
     <div style="display:flex;align-items:center;gap:12px">
-      <input class="search-box" placeholder="Search docs&hellip;" id="searchInput"/>
-      <a class="links" onclick="showDocs('intro')" style="cursor:pointer">Docs</a>
+      <input class="search-box" placeholder="搜索文档…" aria-label="搜索文档" id="searchInput"/>
+      <a class="links" href="#docs/intro" onclick="showDocs('intro');return false">文档</a>
       <a class="gh" href="https://github.com/Moxxkidd/Garden" target="_blank">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
         GitHub
@@ -288,253 +318,80 @@ pre{
 </nav>
 
 <!-- ── HOME ── -->
-<div id="home">
-
+<main id="home">
 <div class="bg-grid"></div>
 <div class="hero-wrap">
-  <div class="orb orb-1"></div>
-  <div class="orb orb-2"></div>
-  <div class="orb orb-3"></div>
-<section class="hero">
-  <h1>Garden: 从扫描到<em>统一资产清单</em></h1>
-  <p class="lead">提交一次已授权入口，自动完成预检、发现、采集、分析和证据报告；Web、API、CLI 共用同一核心服务。</p>
-  <div class="btns">
-    <button class="btn pri" onclick="showDocs('intro')">Read the docs</button>
-    <a class="btn" href="https://github.com/Moxxkidd/Garden" target="_blank">View on GitHub</a>
-  </div>
-</section>
+  <div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
+  <section class="hero">
+    <span class="version">v2.0.0 · 发布准备完成</span>
+    <h1>从一个入口<br>到可交付的<em>资产清单</em></h1>
+    <p class="lead">发现页面、接口与资源，汇集匿名与登录态观察。用同一套项目清单完成筛选、人工复核、报告交付与后续复查。</p>
+    <div class="btns">
+      <a class="btn pri" href="#docs/install" onclick="showDocs('install');return false">安装与开始</a>
+      <a class="btn" href="#docs/quickstart" onclick="showDocs('quickstart');return false">走一遍使用流程</a>
+      <a class="btn" href="https://github.com/Moxxkidd/Garden">查看源码</a>
+    </div>
+  </section>
 </div>
-
-
-
-<section class="feat">
+<div class="status-row" aria-label="当前版本状态">
+  <div><strong>2.0.0 / 迁移 0016</strong>核心 Python ≥3.10，WebUI / CLI / API 共用引擎</div>
+  <div><strong>两套环境各 993 项通过</strong>最终候选 Linux Python 3.10 / 3.12，<a href="#docs/release-status" onclick="showDocs('release-status');return false">查看验收范围</a></div>
+  <div><strong>macOS App 本地 Beta</strong>Apple Silicon / 26.0+，正式签名、公证与发行待完成</div>
+</div>
+<section class="feat" aria-label="当前能力">
   <div class="grid">
-    <div class="item">
-      <div class="label">One URL</div>
-      <h3>一次提交</h3>
-      <p>普通用户只需输入 HTTP(S) URL；不需要创建 target、复制任务 ID 或手动运行中间 CLI。</p>
-    </div>
-    <div class="item">
-      <div class="label">End-to-end</div>
-      <h3>完整工作流闭环</h3>
-      <p><code>validate → discover → collect → normalize → analyze → report</code> 六阶段持久化执行，进度、失败、覆盖缺口和报告位置均可查询。</p>
-    </div>
-    <div class="item">
-      <div class="label">Safe by default</div>
-      <h3>安全护栏默认开启</h3>
-      <p>默认允许已授权公网与本机目标、不做破坏性检查、secret 不直接存储、evidence 默认脱敏、所有关键操作记审计日志。</p>
-    </div>
+    <article class="item"><div class="label">发现</div><h3>有界采集，保留来源</h3><p>快速、平衡与浏览器深入预设；结合页面、Sitemap、JS 与导入线索，按路径族分配预算。未请求线索保留为候选。</p></article>
+    <article class="item"><div class="label">身份</div><h3>匿名与登录态分开观察</h3><p>自行完成验证码后恢复验证，再采集登录态资产。显式人工浏览记录用户实际请求，自动采集不重放人工 POST。</p></article>
+    <article class="item"><div class="label">多入口</div><h3>每个入口有明确配额</h3><p>项目计划统一预览入口、身份和预算，按独立单 origin 子任务执行，结果汇入同一项目，不跨身份借用预算。</p></article>
+    <article class="item"><div class="label">整理</div><h3>一份清单，保留多份观察</h3><p>主体、请求变体、身份观察、候选与关系分别保留。筛选、保存视图、批量复核并撤销；模板仅改变展示。</p></article>
+    <article class="item"><div class="label">交付</div><h3>从概要追溯到证据</h3><p>三层报告与完整 JSON、可读 CSV、HTML、PDF、ZIP。固定筛选与修订，分块生成，不只导出当前屏幕的一页。</p></article>
+    <article class="item"><div class="label">持续更新</div><h3>看变化，也能备份恢复</h3><p>记录时效与变化，显式开启固定间隔复查；重启不补发。私有备份恢复到空目录，计划暂停，保留人工选择。</p></article>
   </div>
 </section>
-
-<div class="extra" id="identity-collection" style="margin-bottom:48px;scroll-margin-top:80px">
-  <div class="tag">v2.0.0 · 完整验收与发布准备</div>
-  <h2>从授权入口，到可追溯的资产交接</h2>
-  <p>当前源码 2.0.0，迁移 0016；功能冻结，候选验收与正式发布分别记录。核心 Python ≥3.10，macOS App 仍是 26.0+ / Apple Silicon 本地 Beta，捆绑 Python 3.12 与 Chromium。</p>
-  <div class="grid-3">
-    <div class="item"><h3>1 · 快速扫描</h3><p>首页输入授权 URL，选择预设并预览同源边界与预算。CLI 使用 garden scan URL --preset balanced。</p></div>
-    <div class="item"><h3>2 · 登录采集</h3><p>人工完成验证码，显式确认后在新上下文恢复验证。项目多入口分别绑定身份与固定配额，再确认提交。</p></div>
-    <div class="item"><h3>3 · 整理与交接</h3><p>筛选资产、复核选择，生成 JSON、可读 CSV、HTML、PDF 或离线 ZIP。私有备份用于恢复，不能公开交接。</p></div>
+<section class="extra overview-section" id="identity-collection">
+  <div class="tag">从采集到交付</div><h2>按你的任务选择入口</h2>
+  <div class="grid3">
+    <article class="card"><h3>1 · 快速扫描</h3><p>输入已授权 URL，选择预设，检查同源边界和实际预算后开始。普通扫描可独立运行。</p><a href="#docs/discovery" onclick="showDocs('discovery');return false">发现策略与预算 →</a></article>
+    <article class="card"><h3>2 · 登录与多入口</h3><p>导入或人工建立登录态，在新上下文验证后采集；多个入口分别绑定身份和固定配额。</p><a href="#docs/login" onclick="showDocs('login');return false">登录、验证码与恢复验证 →</a></article>
+    <article class="card"><h3>3 · 整理与交接</h3><p>在项目清单复核筛选结果，以概要、资产和证据交付。需要长期维护时再显式启用复查。</p><a href="#docs/projects" onclick="showDocs('projects');return false">项目清单与人工复核 →</a></article>
   </div>
-  <p>执行结束 / 100% 不代表覆盖完整；人工保留不证明业务有效。已观察、候选、未知与缺口分别保留；文件已生成不等于用户已保存。</p>
-  <p><a href="release-v2.md">操作示例与升级</a> · <a href="versions/v2.0.0.md">本候选验收与包摘要</a> · 未打 tag、创建 Release 或上传包；正式签名、公证与外部干净机器验证尚未完成。</p>
-  <details><summary>查看本候选的合成旅程截图</summary><figure><img src="quality/v2-assets/plan-desktop.png" alt="本候选的双入口身份及固定预算预览" loading="lazy" style="width:100%;height:auto"><figcaption>双入口分别绑定身份，提交前显示固定配额。</figcaption></figure><figure><img src="quality/v2-assets/delivery-desktop.png" alt="本候选概要、资产与证据统一交付页面" loading="lazy" style="width:100%;height:auto"><figcaption>统一概要、身份观察与人工选择；截图来自合成本机站点。</figcaption></figure></details>
-  <p>下列为历史实现沿革；历史测试数量和迁移编号只代表当时版本。</p>
-
-  <div class="tag">v1.7.0 · macOS App Beta</div>
-  <h2>把同一套资产工作台装进本地 App</h2>
-  <p>本轮 macOS 26.0+ / Apple Silicon 入口捆绑 Python 3.12 和匹配 Chromium，不依赖用户安装 Python 或源码。CLI、浏览器与 App 通过实例握手共享引擎；首次使用明确选择数据目录、创建或备份升级，数据独立于程序。</p>
-  <p>菜单连接扫描、项目、报告与设置。关闭活动任务窗口可以继续后台，或停止新增请求后收尾；不会终止 CLI 持有的外部实例。只有文件真正复制到所选位置后才提示保存成功。</p>
-  <p>更新由用户检查并确认，官方 updater 校验签名与绑定版本后备份安装；新程序启动失败回退程序，数据恢复另行确认空目录及备份后修改损失。默认不检查外部更新、不请求通知权限。</p>
-  <p><a href="versions/v1.7.0.md">本地 Beta 实施与验收记录</a> · 正式签名、公证、更新渠道与发布尚未执行</p>
-  <div class="tag">v1.6.0 · 持续更新与数据管理</div>
-  <h2>明确资产时效，显式开启复查，安全管理本地数据</h2>
-  <p>默认 7 天未观察标为较旧，仅作时间提示；变化仍使用原比较语义，未再次观察不等于删除，人工选择不会因变旧而重置。增量预览说明旧证据、缺口与本轮预算。</p>
-  <p>周期计划默认关闭，预览后明确允许自动发送；固定 1—168 小时，绑定入口、身份和预算。服务停机不补发，同项目活动任务跳过，配置或身份失效时暂停，归档恢复不自动恢复发送。</p>
-  <p>本地私有备份固定 SQLite 与引用材料，可能含会话秘密；恢复只写入空目录，核对后再明确切换。清理先预览数量与空间，只处理生成产物和无引用临时材料，保留历史观察、备注、人工选择与引用证据。</p>
-  <p><a href="versions/v1.6.0.md">实施与验收证据</a> · 迁移 0016 · 尚未正式发布</p>
-  <div class="tag">v1.5.0 · 报告与资产交付</div>
-  <h2>从筛选清单到可读报告与离线交接包</h2>
-  <p>概要、资产、证据共用同一投影，分别解释主体数、身份观察、人工复核与覆盖缺口。分块生成完整文件，提交时固定查询和项目修订；完成后才开放下载，点击只提示已发起下载，不冒充已保存到用户磁盘。</p>
-  <p>旧 delivery-v1 与机器 CSV 保留，新增按身份观察逐行输出的可读 CSV。离线 HTML 自带样式，PDF 复用 Chromium，ZIP 带清单、报告、来源索引、schema 和范围/身份/已保存预算/版本信息；不含 Cookie、私有会话或原始正文。浏览器不可用只影响 PDF，取消或失败不提供半成品。</p>
-  <p><a href="versions/v1.5.0.md">实施与验收证据</a> · 迁移 0015 · 尚未正式发布</p>
-  <div class="tag">v1.4.0 · 身份采集与多入口</div>
-  <h2>明确身份、入口和预算，再开始采集</h2>
-  <p>登录、验证码、新上下文恢复验证、采集和补采连续引导。人工浏览模式打开独立受控 Chromium，记录用户及浏览器实际产生的 GET/POST，持续提供停止入口；不自动点击、提交或重放，POST 不进入自动补采。</p>
-  <p>多个项目入口分别绑定身份并分配固定配额，提交前查看全部范围与总预算。登录域与资产 origin 分开，额外域只用于显式人工登录；子任务不借用预算，观察仍聚合到原项目。身份失效后保留不完整历史，重新登录后显式预览定向补采。</p>
-  <p><a href="versions/v1.4.0.md">实施与合成旅程证据</a> · 迁移 0014 · 未验证通用厂商 SSO · 尚未发布</p>
-  <div class="tag">v1.3.0 · 资产工作台与 WebUI</div>
-  <h2>从观察记录整理自己的资产清单</h2>
-  <p>项目概览串起最近任务、分类、身份保存状态和覆盖缺口。核心页面/API、候选、人工保留与忽略分别浏览；路径模板聚合数字/日期路径，展开仍保留原资产 ID、方法、站点和身份差异。</p>
-  <p>每页默认 50 条，支持排序、固定表头、浏览器列偏好与项目命名筛选。批量复核仅作用于明确勾选的 ID，理由与历史可追溯、可撤销；再次观察变化时保留原选择并提示复核。人工保留不等于业务有效。</p>
-  <p>页面运行使用包内固定 CSS/HTMX，无需外网 CDN。<a href="versions/v1.3.0.md">实施与验收记录</a> · 迁移 0013 · 尚未发布</p>
-  <div class="tag">v1.2.0 · 有效发现与预算调度</div>
-  <h2>把有限预算留给不同功能路径</h2>
-  <p>快速、平衡、浏览器深入三个预设，提交前展开实际参数。多样性调度优先新路径族，再按页面、Sitemap、JS、导入轮转；日期、数字和同参数名组合按上限采样，精确 URL 与身份仍分别保留。</p>
-  <p>明确混合模式仅面向匿名单入口：浏览器预留总预算的 30%（向下取整并受浏览器上限约束），仅有 Hash 路由线索或入口只有脚本而无普通同源可访链接时启动。静态页面将预留还给 HTTP；重定向、重试和子请求共用同一预算与截止时间。</p>
-  <p>CLI、Web 与报告统一解释来源、贡献和未请求原因。零浏览器额度或 Chromium 不可用如实保留缺口；不自动点击业务按钮，不把声明候选当作有效资产。</p>
-  <p><a href="versions/v1.2.0.md">实现与固定预算实测</a> · 无新增依赖或迁移 · 尚未发布</p>
-  <div class="tag">v1.0.0 · 质量基线</div>
-  <h2>用可重复的证据，验收资产清单</h2>
-  <p>发现、归并、可信度、数据完整性、持续更新、边界控制六维检查，复用真实本地浏览器和合成身份站点。报告列明分子、分母、提交与运行环境；失败、跳过或未执行均不能算通过。</p>
-  <p>固定语料的召回率不能用于真实站点。已观察、候选、未知和未覆盖内容继续分别呈现；本版没有扩大扫描范围或开启自动重放。</p>
-  <p><a href="quality/README.md">质量验收与报告使用说明</a> · 历史 v1.0 基线，当前候选见 v2.0.0 记录</p>
-  <div class="tag">v0.9.0 · 资产交付</div>
-  <h2>把筛选好的清单交给下一步工作流</h2>
-  <p>分别交付资产主体、请求变体、身份观察、候选、关系与变更。JSON Schema 明确字段，分页绑定项目修订；清单变化时提示重读，避免悄悄漏行。</p>
-  <p>当前筛选可下载完整 JSON/CSV，Markdown/HTML 提供概要与证据入口。已观察接口可生成 OpenAPI 草稿，未知鉴权和正文结构保留缺口；默认脱敏，不导出登录材料。</p>
-  <p><a href="asset-delivery-v1.md">交付契约与使用示例</a> · 无新增数据库迁移 · 尚未发布</p>
-  <div class="tag">v0.8.0 · 持久采集与增量补采</div>
-  <h2>保留已观察资产，把未完成工作补齐</h2>
-  <p>显式启用持久队列，保存请求预算、发送尝试和未覆盖原因。暂停停止新增请求，进程重启不会自动扫描；先预览原预算、新预算与可恢复范围，再确认创建关联的新任务。</p>
-  <p>仅补已知工作，或在原范围内继续同源发现。原任务和报告保留，项目新增主体与观察按本轮收尾结果记录。未知、身份不确定与未关联项目分别展示，不冒充零。</p>
-  <p>已实测无 JavaScript 的手机恢复预览和确认流程；队列覆盖完成仍不代表全站覆盖。单机有界调度，910 项完整回归通过；Linux 未验证，尚未发布。</p>
-  <p><a href="demo-v08-durable-collection.md">操作与实测记录</a> · <a href="benchmarks/v08-collection.md">规模实验及限制</a> · 数据库迁移 0011</p>
-  <div class="tag">v0.7.0 · 项目资产库</div>
-  <h2>把多次采集整理成可追溯的资产清单</h2>
-  <p>项目绑定多个入口，通过现有扫描与身份采集流程累积观察，也可预览导入历史任务。不同身份和时间的响应分别保留；候选不会计作已观察资产。</p>
-  <p>搜索与完整导出共用筛选条件。标签、备注、人工合并和拆分可追溯、可撤销；任务比较遇到覆盖不完整、身份不明或配置变化时明确显示未知。</p>
-  <p>已实测无 JavaScript 的双入口扫描、验证码登录后的项目采集、整理撤销与移动端页面。本分支通过独立审查、826 项回归与干净安装验证；v0.7.0 尚未正式发布。</p>
-  <div class="tag">v0.6.0 · 独立身份采集</div>
-  <h2>带着可验证的身份，聚合资产清单</h2>
-  <p class="sub">匿名、单个账号或多个账号均可独立采集；同角色账号也保持隔离。矩阵保留不同身份的响应与证据。</p>
-  <div class="card"><h3>登录、确认、采集、补采，各自可检查</h3>
-    <p>人工完成验证码、短信或扫码后，用新浏览器验证恢复，再单独确认采集。登录窗口位于 Garden 主机；远程部署可以导入状态。</p>
-    <p>会话验证占用请求预算。失效后保留此前确认的观察，未确认批次标为身份不确定；普通 403 不直接等同于会话失效。</p>
-    <p>已观察不代表业务有效，未知也不代表不存在。重新认证后仅补检查点中已知缺口，生成关联子任务，原报告不变。</p>
-    <p>本地实际演示：1 个身份取得 2 类资产主体，2 个矩阵单元均为 HTTP 200；无 JavaScript 的桌面／手机表单流程已验证。</p>
-    <p><a href="demo-v06-identities.md">演示步骤、验证范围与限制</a> · 数据库迁移 0008</p>
+  <div class="pipeline" id="pipeline-bar" style="margin-top:20px"><span>授权入口</span><b>→</b><span>有界采集</span><b>→</b><span>项目清单</span><b>→</b><span>人工复核</span><b>→</b><span>完整交付</span></div>
+</section>
+<section class="extra overview-section" id="product-preview">
+  <div class="tag">真实产品界面</div><h2>先看计划，再看交付</h2>
+  <p>截图来自 v2.0 合成验收旅程：匿名与两入口两身份采集、人工保留、导出、周期复查及隔离恢复。界面中的数量只代表该样本。</p>
+  <div class="grid2">
+    <figure class="product-shot"><a href="quality/v2-assets/plan-desktop.png"><img src="quality/v2-assets/plan-desktop.png" alt="双入口计划，逐项显示身份及固定预算" loading="lazy" width="1280" height="800"></a><figcaption>提交前核对两个入口、身份和各自配额。点击查看完整截图。</figcaption></figure>
+    <figure class="product-shot"><a href="quality/v2-assets/delivery-desktop.png"><img src="quality/v2-assets/delivery-desktop.png" alt="项目交付页，展示概要、资产及证据" loading="lazy" width="1280" height="800"></a><figcaption>从主体与身份观察追溯来源，选择当前筛选的完整交付。</figcaption></figure>
   </div>
-</div>
-
-<div class="extra" id="multi-source-discovery" style="margin-bottom:48px;scroll-margin-top:80px">
-  <div class="tag">v0.5.0 · 多来源资产发现</div>
-  <h2>从一个入口，汇集更多资产线索</h2>
-  <p class="sub">HTML、Sitemap、匿名浏览器、Hash 路由、JS 静态线索和 URL/OpenAPI 导入，共用同一清单、来源筛选和导出。</p>
-  <div class="card"><h3>明确发现来源，区分响应和声明</h3>
-    <p>默认 HTTP 采集；在 Web「发现选项」中开启地图、JS 线索或匿名浏览器。动态请求只允许 GET/HEAD；表单、JS 静态声明和 OpenAPI 操作保留为候选，不自动提交或调用。</p>
-    <p>路由视图与 HTTP 响应分别记录。每条记录可查看脱敏来源，按来源筛选；详情页、CLI 和报告说明发现、新候选、重复、请求尝试与响应观察。统计不是站点发现率，执行结束也不表示覆盖完整。</p>
-    <p>候选、地图递归、页面、资源和浏览器请求均有上限。输入原文不回显；预览临时保留 15 分钟，历史任务导入内容需重新提供。v0.5 的匿名发现流程继续保留；v0.6 独立身份采集复用同一有界浏览器引擎。</p>
-    <pre><code>garden scan https://authorized.example --sitemap --js
-garden scan https://authorized.example --collection-mode browser --max-browser-requests 150
-garden assets list --source scan --run-id N --source-kind sitemap</code></pre>
-    <p>本地验收：入口 + 页面链接 + URL 种子得到 3 条已有响应；POST 表单保留为 1 条未请求候选。按 URL 导入来源筛选和导出均为 1 条，查询值在预览、清单及报告中脱敏。</p>
-    <p>升级执行 <code>garden db upgrade</code> 至迁移 0007；JSON/CSV 使用资产 schema 1.3，旧记录未知来源不补造。</p>
+</section>
+<section class="extra overview-section">
+  <div class="tag">读懂结果</div><h2>把完成、覆盖和有效性分开</h2>
+  <div class="grid2">
+    <article class="card"><h3>100% 不代表覆盖完整</h3><p>任务执行结束后仍可能有预算、超时、身份或未请求候选造成的缺口。未知不等于不存在。</p></article>
+    <article class="card"><h3>人工保留不证明业务有效</h3><p>保留的是人的判断；系统仍展示已有响应、登录回退、软 404 等线索及原始来源。</p></article>
+    <article class="card"><h3>生成文件不等于保存成功</h3><p>Web 明确区分已生成与发起下载；App 选择保存位置并实际写入后才提示成功。</p></article>
+    <article class="card"><h3>私有备份不能公开交接</h3><p>公开交付脱敏，私有备份可能含会话秘密。恢复只写入空目录，周期计划保持暂停。</p></article>
   </div>
-</div>
-
-<div class="extra" id="asset-validity" style="margin-bottom:48px;scroll-margin-top:80px">
-  <div class="tag">v0.4.2 · 有效性线索</div>
-  <h2>分清已观察响应、未请求候选与待确认资产</h2>
-  <p class="sub">清单标注疑似登录回退、软 404、统一响应和重定向别名，可筛选、展开原因，并随 JSON/CSV 导出。</p>
-  <div class="card"><h3>保留证据，也保留不确定性</h3>
-    <p>候选视图单独展示 quick scan 保存的未请求队列，不混入资产记录总数。历史任务或未提供队列时显示未知；切换视图不改变任务已有响应计数。</p>
-    <p>规则只分析已有采集结果，不增加探测。同站点、同身份且完整的响应才参与内容对比。HTTP 200 或未命中线索不代表已确认业务资产，所有业务有效性结论保持待确认。</p>
-    <p>Web、CLI 和导出采用相同规则 passive-v1；升级数据库至迁移 0006 后使用新增元数据。</p>
-  </div>
-</div>
-
-<div class="extra" style="margin-bottom:48px">
-  <div class="tag">v0.4.1 · Trusted grouping</div>
-  <h2>资产归并后，参数变体和身份观察仍可追溯</h2>
-  <p class="sub">在资产清单切换“归并资产”，查看同一路由下保留的原始观察、请求变体及证据入口。</p>
-  <div class="card"><h3>归并有依据，差异不丢失</h3>
-    <p><code>garden assets list --source scan --run-id N --view grouped</code> 使用版本化规则，隔离站点、方法、类型和精确路径；JSON/CSV 导出保留全部匹配观察。</p>
-    <p>新捕获请求区分参数值、请求体和请求头差异，并保留响应状态。历史数据无法还原精确变体数时显示未知。路由归并不代表业务等价，也不是跨任务资产库。</p>
-  </div>
-</div>
-
-<div class="extra" style="margin-bottom:48px">
-  <div class="tag">v0.4.0 · Unified assets</div>
-  <h2>匿名与登录后的采集结果，使用同一套清单</h2>
-  <p class="sub">从扫描结果或 inventory 任务进入资产表，按类型、身份、观察状态筛选，追溯来源并导出。</p>
-  <div class="card"><h3>可筛选、可分页、可交付</h3>
-    <p><code>garden assets list --source scan --run-id N</code> 查看已有记录；<code>garden assets export --source scan --run-id N --format json --output assets.json</code> 导出全部匹配记录，也支持 CSV 与 inventory 来源。</p>
-    <p>计数来自实际资产记录，不跨身份或任务归并。“已有响应”不代表资源有效或目标安全；缺失信息保持未知。来源详情保留记录 ID 和已有证据关联，常规输出对 URL 查询值脱敏。</p>
-    <p>清单查询与导出不会重新访问目标；不改变现有登录和采集流程。N 为已存在的任务 ID。</p>
-  </div>
-</div>
-
-<div class="extra" style="margin-bottom:48px">
-  <div class="tag">Local diagnostics</div>
-  <h2>启动遇到问题，先运行 garden doctor</h2>
-  <p class="sub">检查当前安装、配置来源、浏览器文件、数据库版本、本地端口与存储权限，给出正常、需要处理或无法确认。</p>
-  <div class="card"><h3>看清原因，再决定如何处理</h3>
-    <p><code>garden doctor</code> 输出脱敏诊断与建议；<code>garden doctor --json</code> 方便收集结构化结果。可用 <code>--ui-port</code> 指定本机端口。</p>
-    <p>只读检查不会自动安装、迁移、创建目录、启动或停止服务，也不会访问扫描目标。端口有监听不等于 Garden 健康；浏览器文件存在不等于已验证实际运行能力。</p>
-  </div>
-</div>
-
-<div class="extra" style="margin-bottom:48px">
-  <div class="tag">Coverage gaps</div>
-  <h2>解释为什么没有覆盖</h2>
-  <p class="sub">结果页、CLI 和新报告共用解释。执行进度 100% 不代表覆盖完整。</p>
-  <div class="card"><h3>匿名：页面数上限（2）；未请求 URL：3</h3>
-    <p>这是示例说明。新匿名扫描按页面数、资源数和发现深度分别记录已发现但未请求的同源 URL，附最多 3 条脱敏样例。已尝试但失败的请求另行说明。</p>
-    <p>旧记录、超时和身份上下文失败无法提供可靠数量时显示“数量未知”。认证覆盖仍按匿名、普通用户、管理员解释缺口；未观察到的内容保留 unknown。</p>
-    <p>沿用匿名任务配置 → 调整预算 → 重新预览 → 确认新任务。没有缺口条目不代表整个站点已覆盖。</p>
-  </div>
-</div>
-
-<div class="extra" style="margin-bottom:48px">
-  <div class="tag">Pipeline</div>
-  <h2>工作流</h2>
-  <p class="sub">6 个自动阶段，每个阶段产出结构化数据，不是纯文本日志。</p>
-  <div class="pipeline" id="pipeline-bar">
-    <span>validate</span> <b>&rarr;</b>
-    <span>discover</span> <b>&rarr;</b>
-    <span>collect</span> <b>&rarr;</b>
-    <span>normalize</span> <b>&rarr;</b>
-    <span>analyze</span> <b>&rarr;</b>
-    <span>report</span>
-  </div>
-</div>
-
-<div class="extra" style="margin-bottom:48px">
-  <div class="tag">对比</div>
-  <h2>Garden 与主流安全工具的定位差异</h2>
-  <div class="grid2" style="margin-top:16px">
-    <div class="card"><h3>Garden vs Burp / ZAP</h3><p>Burp/ZAP 强在代理抓包、手工测试、主动扫描。Garden 补的是登录编排、结构化 Inventory、Finding 生命周期、证据脱敏、复测与报告导出。</p></div>
-    <div class="card"><h3>Garden vs Nuclei</h3><p>Nuclei 擅长匿名协议级模板扫描。Garden 专注登录后的业务路径验证，产出面向团队协作的结构化结果。</p></div>
-    <div class="card"><h3>Garden vs 流量录制工具</h3><p>录制工具解决"流量怎么拿"。Garden 解决"拿到之后怎么办"——把流量变成 inventory、findings、证据、复测对象。</p></div>
-    <div class="card"><h3>Garden vs API 权限测试框架</h3><p>API 越权测试只看接口权限。Garden 同时覆盖浏览器态、页面态、接口态和登录后的完整业务路径。</p></div>
-  </div>
-</div>
-
-<div class="extra" style="margin-bottom:48px">
-  <div class="tag">Constraints</div>
-  <h2>设计约束</h2>
-  <ul class="checks" style="margin-top:12px">
-    <li>默认允许已授权公网与本机目标</li>
-    <li>不做破坏性测试 / exploit</li>
-    <li>核心逻辑在 service 层</li>
-    <li>secret 不直接存储、不直接打印</li>
-    <li>evidence 和导出默认脱敏</li>
-    <li>inventory 结构化，不退化流量堆</li>
-    <li>所有关键操作记审计日志</li>
-    <li>application-service-first，CLI / Web / API 是薄适配层</li>
-  </ul>
-</div>
-
-<div class="extra" style="margin-bottom:64px">
-  <div class="tag">Quick start</div>
-  <h2>5 分钟开始</h2>
-  <pre>$ git clone https://github.com/Moxxkidd/Garden.git
-$ cd garden
-$ pip install -e '.[dev]'
-$ cp .env.example .env
-
-$ make demo
-# open http://127.0.0.1:8000 and submit one URL
-
-# or use the same core service from CLI:
-$ gardenctl scan --url http://127.0.0.1:8888/</pre>
-</div>
-
-<footer class="home-footer">
-  Garden Project &middot; <a href="https://github.com/Moxxkidd/Garden">github.com/Moxxkidd/Garden</a>
-</footer>
-</div>
+</section>
+<section class="extra overview-section">
+  <div class="tag">本机开始</div><h2>安装，查看环境，再打开工作台</h2>
+  <pre>git clone https://github.com/Moxxkidd/Garden.git
+cd Garden
+./install.sh
+garden --version
+garden doctor
+garden ui</pre>
+  <p>需要 Python 3.10+；安装器会备份并升级所选数据目录。登录、人工浏览、浏览器深入和 PDF 还需要匹配的 Chromium，详见<a href="#docs/install" onclick="showDocs('install');return false">安装文档</a>。doctor 只读，不访问扫描目标。</p>
+</section>
+<section class="extra overview-section">
+  <div class="tag">交付与验收</div><h2>发布准备完成，正式发行另行进行</h2>
+  <p>运行候选 <code>8146a43</code> 已验证真实 v1.0 结构升级、完整合成旅程、wheel / sdist / macOS DMG 与 App 实际保存。Python 3.10 / 3.12 各 993 passed，CLI 和 Docker 检查通过。</p>
+  <p>当前没有公开发行包。macOS 仅为 Apple Silicon / 26.0+ 本地 Beta；正式签名、公证、更新渠道、许可证再分发及外部干净机器仍待核实。合成结果不代表实际站点发现率。</p>
+  <p><a href="#docs/release-status" onclick="showDocs('release-status');return false">完整验收与包 SHA256</a> · <a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/README.md">版本索引</a> · <a href="https://github.com/Moxxkidd/Garden/blob/main/docs/history.md">历史沿革</a></p>
+</section>
+<footer class="home-footer">Garden 2.0 · 资产发现、整理与交付 · <a href="https://github.com/Moxxkidd/Garden">GitHub</a> · 当前未声明开源许可证</footer>
+</main>
 
 <!-- ── DOCS ── -->
 <div id="docs">
@@ -547,194 +404,201 @@ $ gardenctl scan --url http://127.0.0.1:8888/</pre>
 
 <script>
 const TREE=[
-  {cat:'快速开始',items:[
-    {id:'intro',title:'简介'},
-    {id:'install',title:'安装'},
-    {id:'quickstart',title:'Demo 演练'},
-    {id:'structure',title:'项目结构'}
+  {cat:"快速开始",items:[
+    {id:"intro",title:"简介与当前能力"},
+    {id:"install",title:"安装与部署"},
+    {id:"quickstart",title:"本机试跑与完整流程"},
+    {id:"release-status",title:"版本状态与验收"}
   ]},
-  {cat:'核心概念',items:[
-    {id:'targets',title:'目标管理'},
-    {id:'credentials',title:'凭证档案'},
-    {id:'login',title:'登录编排'},
-    {id:'sessions',title:'会话管理'},
-    {id:'inventory',title:'Inventory 盘点'}
+  {cat:"资产工作台",items:[
+    {id:"discovery",title:"发现策略与预算"},
+    {id:"projects",title:"项目清单与人工复核"},
+    {id:"login",title:"登录、验证码与恢复验证"},
+    {id:"plans",title:"多入口与身份计划"},
+    {id:"export",title:"报告与完整交付"},
+    {id:"maintenance",title:"时效、复查与数据管理"},
+    {id:"desktop",title:"macOS App Beta"}
   ]},
-  {cat:'安全检查',items:[
-    {id:'checks-overview',title:'概览'},
-    {id:'debug-leak',title:'调试泄露'},
-    {id:'admin-exposure',title:'后台暴露'},
-    {id:'idor',title:'IDOR 线索'},
-    {id:'upload-import',title:'上传/导入入口'},
-    {id:'sensitive-disclosure',title:'敏感信息泄露'},
-    {id:'auth-headers',title:'响应头/缓存检查'}
+  {cat:"高级工作流",items:[
+    {id:"targets",title:"目标管理"},
+    {id:"credentials",title:"凭证档案"},
+    {id:"sessions",title:"会话管理"},
+    {id:"inventory",title:"Inventory 盘点"}
   ]},
-  {cat:'证据与报告',items:[
-    {id:'evidence',title:'证据采集'},
-    {id:'redaction',title:'脱敏规则'},
-    {id:'finding-lifecycle',title:'Finding 生命周期'},
-    {id:'retest',title:'复测'},
-    {id:'export',title:'导出格式'},
-    {id:'report',title:'报告生成'}
+  {cat:"高级安全检查",items:[
+    {id:"checks-overview",title:"检查概览"},
+    {id:"debug-leak",title:"调试泄露"},
+    {id:"admin-exposure",title:"后台暴露"},
+    {id:"idor",title:"IDOR 线索"},
+    {id:"upload-import",title:"上传/导入入口"},
+    {id:"sensitive-disclosure",title:"敏感信息泄露"},
+    {id:"auth-headers",title:"响应头/缓存检查"}
   ]},
-  {cat:'CLI 参考',items:[
-    {id:'cli-scan',title:'gardenctl scan',mono:true},
-    {id:'cli-target',title:'gardenctl target',mono:true},
-    {id:'cli-cred',title:'gardenctl cred',mono:true},
-    {id:'cli-login',title:'gardenctl login',mono:true},
-    {id:'cli-session',title:'gardenctl session',mono:true},
-    {id:'cli-inventory',title:'gardenctl inventory',mono:true},
-    {id:'cli-checks',title:'gardenctl checks',mono:true},
-    {id:'cli-findings',title:'gardenctl findings',mono:true},
-    {id:'cli-evidence',title:'gardenctl evidence',mono:true},
-    {id:'cli-retest',title:'gardenctl retest',mono:true},
-    {id:'cli-report',title:'gardenctl report',mono:true}
+  {cat:"证据与结果",items:[
+    {id:"evidence",title:"证据采集"},
+    {id:"redaction",title:"脱敏规则"},
+    {id:"finding-lifecycle",title:"Finding 生命周期"},
+    {id:"retest",title:"复测"},
+    {id:"report",title:"结果解释与报告"}
   ]},
-  {cat:'进阶',items:[
-    {id:'architecture',title:'架构设计'},
-    {id:'guardrails',title:'安全护栏'},
-    {id:'outputs',title:'结构化产出'},
-    {id:'constraints',title:'设计约束'}
+  {cat:"CLI 参考",items:[
+    {id:"cli-scan",title:"garden scan",mono:true},
+    {id:"cli-projects",title:"garden projects",mono:true},
+    {id:"cli-queue",title:"garden queue",mono:true},
+    {id:"cli-storage",title:"garden storage",mono:true},
+    {id:"cli-target",title:"garden target",mono:true},
+    {id:"cli-cred",title:"garden cred",mono:true},
+    {id:"cli-login",title:"garden login",mono:true},
+    {id:"cli-session",title:"garden session",mono:true},
+    {id:"cli-inventory",title:"garden inventory",mono:true},
+    {id:"cli-checks",title:"garden checks",mono:true},
+    {id:"cli-findings",title:"garden findings",mono:true},
+    {id:"cli-evidence",title:"garden evidence",mono:true},
+    {id:"cli-retest",title:"garden retest",mono:true},
+    {id:"cli-report",title:"garden report",mono:true}
+  ]},
+  {cat:"进阶",items:[
+    {id:"structure",title:"项目结构"},
+    {id:"architecture",title:"架构设计"},
+    {id:"guardrails",title:"安全护栏"},
+    {id:"outputs",title:"结构化产出"},
+    {id:"constraints",title:"支持范围与限制"}
   ]}
 ];
 
 /* ── doc content ── */
 var PAGES={
-intro:{b:'快速开始 > 简介',h:`
-<h1>Garden 2.0 使用入口</h1>
-<p>从已授权 URL 发现资产，按 origin、身份与时间保留观察，再整理并交付清单。当前源码 2.0.0、数据库 head 0016；完整候选验收与正式发布分别记录，尚未打 tag、创建 Release 或上传包。</p>
-<h2>1 · 快速扫描</h2>
-<p>运行 <code>garden ui</code> 打开首页，输入授权入口，选择快速、平衡或浏览器深入预设；查看同源范围和最终预算后确认。</p>
-<pre>garden scan http://127.0.0.1:8080/ --preset balanced</pre>
-<h2>2 · 登录与多入口采集</h2>
-<p>在「身份」打开独立人工登录窗口，自行完成验证码；显式确认后关闭原上下文并恢复验证，再预览采集。项目计划分别绑定每个入口的身份和固定配额，不借用预算。人工浏览可记录用户实际 POST，自动模式不点击业务按钮或重放人工 POST。</p>
-<h2>3 · 整理与交接</h2>
-<p>在「项目」筛选清单，选择明确资产并填写复核理由；生成完整 JSON、可读 CSV、HTML、PDF 或 ZIP。周期复查默认关闭，需明确开启；私有备份可能含登录秘密，只恢复到选定空目录，不能公开交接。</p>
-<pre>garden projects deliver 1 --format zip --output delivery.zip</pre>
-<div class="tip">执行结束 / 100% 不代表覆盖完整；人工保留不证明业务有效。已观察、候选、未知和缺口分别呈现，已生成也不等于用户已保存。</div>
-<h2>平台与证据</h2>
-<p>核心 Python ≥3.10；macOS App 为 26.0+ / Apple Silicon 本地 Beta，捆绑 Python 3.12 与 Chromium。正式签名、公证、更新渠道、外部机器与再分发许可仍待独立发布准备。</p>
-<p><a href="release-v2.md">操作、升级与限制</a> · <a href="versions/v2.0.0.md">候选 SHA、包摘要与本轮验收</a></p>
-<p>下列传统 target / credential / inventory / findings 命令仍作为高级兼容工作流保留，不是普通 URL 扫描或手工登录采集的必需步骤。</p>
+'cli-queue':{b:'CLI 参考 > garden queue',h:`
+<h1>garden queue</h1><pre>garden scan http://127.0.0.1:8080/ --durable --max-requests 100
+garden queue show 12
+garden queue pause 4
+garden queue resume 4 --preview-only
+garden queue resume 4
+garden queue --help</pre><p>使用实际返回的任务 ID 与队列 ID，两者不一定相同。暂停让在途请求收尾；恢复先预览，再确认创建关联的新轮，不改原报告，重启不自动发送。</p>
 `},
-install:{b:'快速开始 > 安装',h:`
-<h1>安装</h1>
-<div class="meta-row"><div>字数<span>200</span></div><div>阅读时间<span>2 min</span></div></div>
-
-<h2>前置依赖</h2>
-<ul class="check-list"><li>核心包 Python ≥3.10</li><li>Chromium 由 python -m playwright install chromium 安装；普通 Python 安装不要求额外 Node.js</li><li>macOS App 捆绑运行时，仅支持 Apple Silicon / macOS 26.0+ 本地 Beta，未正式发布</li></ul>
-
-<h2>克隆与安装</h2>
-<pre>$ git clone https://github.com/Moxxkidd/Garden.git
-$ cd garden
-$ python -m venv .venv && source .venv/bin/activate
-$ pip install -e '.[dev]'
-$ playwright install chromium</pre>
-
-<h2>环境配置</h2>
-<pre>$ cp .env.example .env
-# 默认 GARDEN_ALLOW_NON_LOCAL_TARGETS=true</pre>
-
-<h2>启动服务</h2>
-<pre>$ make demo
-# or directly:
-$ uvicorn app.main:app --host 127.0.0.1 --port 8000</pre>
-
-<h2>验证</h2>
-<pre>$ gardenctl healthcheck
-$ gardenctl version</pre>
+'cli-storage':{b:'CLI 参考 > garden storage',h:`
+<h1>garden storage</h1><pre>garden storage usage
+garden storage backup /absolute/path/to/empty-private-backup
+garden storage restore /absolute/path/to/private-backup /absolute/path/to/empty-home
+garden storage cleanup --retention-days 30</pre><p>私有备份可能含会话秘密；恢复只写空目录并暂停计划。cleanup 默认预览，实际清理需 --execute 和显式确认，不清空资产历史。</p>
 `},
-quickstart:{b:'快速开始 > Demo 演练',h:`
-<h1>Demo 演练</h1>
-<div class="meta-row"><div>字数<span>400</span></div><div>阅读时间<span>5 min</span></div></div>
-
-<p>5～10 分钟走完完整 Garden 工作流。使用内置 demo target 演示。</p>
-
-<h2>1. 一条命令扫描已授权本地目标</h2>
-<pre>$ gardenctl scan \
-    --url http://127.0.0.1:8888/ \
-    --max-pages 50 \
-    --max-resources 200 \
-    --max-depth 1 \
-    --request-timeout 5 \
-    --overall-timeout 90 \
-    --retries 1</pre>
-
-<p>该命令会自动完成网络预检、同源发现与采集、结果标准化、结构化分析和 Markdown 报告生成，并输出 <code>exports/scan-reports/scan-&lt;id&gt;.md</code> 路径。</p>
-
-<h2>2. 或启动内置 demo 服务</h2>
-<pre>$ make demo</pre>
-
-<h2>3. 添加 Target</h2>
-<pre>$ gardenctl target import --file examples/targets/local-demo-targets.yaml --on-duplicate skip
-# or manually:
-$ gardenctl target add --name garden-demo-web --base-url http://127.0.0.1:8000 --type web --owner appsec</pre>
-
-<h2>4. 添加凭证</h2>
-<pre>$ gardenctl cred add --target-id 1 --name garden-demo-admin --role admin \
-    --auth-type password --username admin@example.local \
-    --secret-ref env://GARDEN_DEMO_ADMIN_PASSWORD \
-    --login-config-path examples/login/demo-http-admin.yaml</pre>
-
-<h2>5. 登录 → Inventory → Checks</h2>
-<pre>$ gardenctl login test --target garden-demo-web --profile garden-demo-admin
-$ gardenctl inventory build --target garden-demo-web --profile garden-demo-admin
-$ gardenctl inventory show 1
-$ gardenctl checks run --inventory 1
-$ gardenctl findings list</pre>
-
-<h2>6. 审阅与复测</h2>
-<pre>$ gardenctl evidence list
-$ gardenctl findings update-status 1 --status fixed
-$ gardenctl retest run --finding 1
-$ gardenctl findings export --format md
-$ gardenctl report generate --job 2 --format md</pre>
-
-<h2>7. Web UI</h2>
-<ul class="check-list">
-  <li>http://127.0.0.1:8000/ — Dashboard</li>
-  <li>http://127.0.0.1:8000/targets — Targets</li>
-  <li>http://127.0.0.1:8000/inventory — Inventory</li>
-  <li>http://127.0.0.1:8000/findings — Findings</li>
-  <li>http://127.0.0.1:8000/evidence — Evidence</li>
-</ul>
+'cli-projects':{b:'CLI 参考 > garden projects',h:`
+<h1>garden projects</h1><pre>garden projects list
+garden projects assets 1 --json
+garden projects deliver 1 --format readable_csv --output assets.csv
+garden projects deliver 1 --format zip --output delivery.zip
+garden projects freshness 1
+garden projects schedules 1
+garden projects --help</pre><p>项目 ID 使用实际返回值。完整导出不受屏幕页码限制；PDF / ZIP 必须指定输出路径，OpenAPI 为推断草稿。</p>
 `},
-structure:{b:'快速开始 > 项目结构',h:`
-<h1>项目结构</h1>
-<div class="meta-row"><div>字数<span>300</span></div><div>阅读时间<span>2 min</span></div></div>
-<pre>garden/
-&boxur;   app/
-&boxur;   &boxur;&boxur; api/              # FastAPI routes
-&boxur;   &boxur;&boxur; cli/              # Typer CLI (11 sub-command groups)
-&boxur;   &boxur;&boxur; core/             # Config, logging, guardrails, errors
-&boxur;   &boxur;&boxur; db/               # SQLAlchemy bootstrap
-&boxur;   &boxur;&boxur; models/           # 13 ORM models
-&boxur;   &boxur;&boxur; schemas/          # Pydantic transport schemas
-&boxur;   &boxur;&boxur; services/         # 22 business-logic modules
-&boxur;   &boxur;&boxur; security_checks/  # 6 low-risk check plugins
-&boxur;   &boxur;&boxur; redaction/        # Centralised redaction
-&boxur;   &boxur;&boxur; integrations/     # HTTP / Playwright adapters
-&boxur;   &boxur;&boxur; templates/        # Jinja2 server-rendered HTML
-&boxur;   &boxur;&boxur; static/           # Minimal CSS
-&boxur;   &boxur;&boxur; workers/          # Reserved for background execution
-&boxur;   tests/                # 20 test modules
-&boxur;   docs/                 # Architecture, threat model, walkthroughs
-&boxur;   examples/             # Sample targets + login configs
-&boxur;   exports/              # Export output directory
-&boxur;   pyproject.toml        # hatchling build + dependencies</pre>
-
-<h2>关键设计原则</h2>
-<ul class="check-list">
-  <li>业务逻辑集中在 services/ 层</li>
-  <li>CLI 和 Web 路由共用同一组 service 代码</li>
-  <li>检查器以插件形式注册在 security_checks/registry.py</li>
-  <li>脱敏逻辑集中管理 — CLI / UI / 导出三端不会漂移</li>
-  <li>登录适配器实现同一个 contract（HTTP / Playwright）</li>
-</ul>
+'release-status':{b:'快速开始 > 版本状态与验收',h:`
+<h1>v2.0.0 版本状态与验收</h1><p>G2-01—26 已完成实施与验收，止于发布准备。当前源码版本 2.0.0、数据库 head 0016；冻结运行/构建候选为 <code>8146a4345bb8e29dec606727590b8b3ff5042cb5</code>，验收文档补交为 2e10a28。后续文档更新不冒充新的应用测试结果。</p>
+<table><tr><th>验证项</th><th>实际结果</th></tr><tr><td>Linux CI</td><td>Python 3.10.22 / 3.12.16 各 993 passed；Ruff、format、CLI smoke、Docker build 全绿。</td></tr><tr><td>真实旧结构升级</td><td>实际 v1.0 0011 合成库→0016，40 张旧表原列和值、报告、标签、备注与私有引用保留；不伪造未知字段。</td></tr><tr><td>综合旅程</td><td>匿名、两入口两身份→复核→离线交付→周期复查→空目录恢复；5 主体、6 观察、3 会话，恢复后计划暂停。</td></tr><tr><td>候选包</td><td>wheel / sdist / DMG 已构建审计与安装；App 原生保存后核对落盘，源码和日用数据隔离。</td></tr></table>
+<h2>正式发行仍待完成</h2><p>未打 tag、创建 Release 或上传软件包；没有公开发行包下载入口。macOS 只有 Apple Silicon / 26.0+ 本地 Beta 证据，正式签名、公证、更新渠道、独立许可证与再分发条件、外部干净机器待核实。没有 Windows、Intel 或更早 macOS 的本轮证据。</p>
+<p>固定合成语料发现 3/3、候选确认 3/3、误合并 0/20，不代表实际站点发现率或独立安全审计。前版性能实验保持其原有环境与版本归属。</p>
+<p><a href="https://github.com/Moxxkidd/Garden/actions/runs/43563921740">最终候选 CI</a> · <a href="https://github.com/Moxxkidd/Garden/blob/main/docs/quality/v2.0.0-acceptance-2026-11-14.md">完整验收报告</a> · <a href="quality/v2.0.0-packages.json">包清单与完整 SHA256</a> · <a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/README.md">版本索引</a></p>
 `},
-targets:{b:'核心概念 > 目标管理',h:`
+desktop:{b:'资产工作台 > macOS App Beta',h:`
+<h1>macOS App Beta</h1><p>当前仅支持 Apple Silicon / macOS ≥26.0，宿主实测 26.3。Tauri 2 窗口捆绑 Python 3.12 和匹配 Chromium，扫描仍使用原有 Python 引擎与 WebUI；运行不要求安装 Python、Node、Rust 或源码。</p>
+<h2>与 CLI / 浏览器共用数据</h2><p>首次选择数据目录，新建或备份升级分别确认。同一目录通过带本地会话的实例握手共享引擎；版本或所有权不符时不接管未知端口。原生菜单、窗口和保存对话框复用同一项目清单。</p>
+<h2>候选实测与发行状态</h2><p>最终 DMG 已实际校验、挂载、安装与隔离启动。页面渲染单次约 3.204 秒；项目 CSV 经原生 Save 后实际落盘 5 行。候选仅使用 ad-hoc 完整性签名，没有 Developer ID、公证、装订或外部机器发行验收，也没有公开下载包。</p>
+<h2>更新和回退</h2><p>只有用户触发并确认后才检查/安装，复用官方签名验证，更新前私有备份；程序回退与数据恢复分开。默认无正式更新渠道，不自动检查或请求通知权限。</p>
+<p><a href="https://github.com/Moxxkidd/Garden/blob/main/desktop/README.md">本地构建与所有限制</a> · <a href="#docs/release-status" onclick="nav('release-status');return false">候选包清单</a></p>
+`},
+maintenance:{b:'资产工作台 > 时效、复查与数据管理',h:`
+<h1>时效、复查与数据管理</h1><h2>最后观察与变化</h2><p>项目显示最后观察、身份、范围、保存的预算和变化分类。超过设置天数标为较旧，仅是时间提示。补采优先说明已有缺口与较旧观察；覆盖不足或配置不可比时保留未知。</p>
+<h2>显式周期复查</h2><p>固定间隔 1—168 小时，默认关闭。预览入口、身份、参数和每次配额，再明确允许自动请求。只在本地服务运行时执行，重启不补发；项目有活动任务则跳过，身份失效暂停。归档后恢复可见性不自动开启发送。</p>
+<h2>私有备份与空目录恢复</h2><p>备份确认没有采集/登录/导出写入，保存数据库和本地引用；可能含会话秘密，不可公开交接。恢复只写入选择的空目录，检查引用并暂停全部计划，不自动切换当前服务。外部环境变量与系统凭据库秘密需另行配置。</p>
+<pre>garden projects freshness 1
+garden projects schedules 1
+garden storage usage
+garden storage backup /absolute/path/to/empty-private-backup
+garden storage restore /absolute/path/to/private-backup /absolute/path/to/empty-home
+garden storage cleanup --retention-days 30</pre>
+<p>最后一条只预览。清理涉及过期生成物、无引用临时材料及选定归档项目产物，保留资产历史、备注、复核与证据引用；实际执行需显式确认。</p>
+`},
+plans:{b:'资产工作台 > 多入口与身份计划',h:`
+<h1>多入口与身份计划</h1><p>从项目的「多入口 / 身份计划」选择入口、身份和每项预算，先预览绑定与总配额，再显式确认。按入口顺序确定配额，调整后重新预览；不动态借用其他子任务余额。</p>
+<p>每项复用原有单 origin 队列与身份验证。跨 origin 链接只作为候选提示，需另加已授权入口；不会静默把其他站点纳入范围。结果汇入原项目，仍保留不同来源与身份观察。</p>
+<img src="quality/v2-assets/plan-desktop.png" alt="合成双入口计划的身份与预算预览" loading="lazy">
+<p>截图来自 v2.0 合成旅程：总预算 40，两个子任务分别 20；两身份完成后仍按各自来源和覆盖状态解释结果。预算是上限，不是保证的资产数量。</p>
+`},
+projects:{b:'资产工作台 > 项目清单与人工复核',h:`
+<h1>项目清单与人工复核</h1><p>项目把多个任务和入口的结果汇在同一清单，保留主体、请求变体、身份观察、未请求候选和关系；不会再复制一份独立资产事实。</p>
+<h2>采集前后如何关联</h2><p>创建项目、绑定已有目标和精确入口。从项目入口发起扫描或身份计划可自动索引；已有终态任务先预览再导入，必须匹配入口。项目成员资格不扩大扫描授权。</p>
+<h2>筛选与展示</h2><p>选择核心、全部、候选、人工保留、忽略或需复核，保存条件为视图。模板仅按既有路径族、origin、方法和参数名聚合展示；展开仍访问原资产与身份观察。列选择和屏幕分页不改变匹配总量。</p>
+<h2>人工复核与撤销</h2><p>勾选明确 ID，填写理由，批量保留、忽略或恢复未复核；详情可撤销。后续观察属性变化时保留人的选择并提示需复核。旧标签不会自动变成正式人工决定。</p>
+<div class="tip">人工保留不证明业务有效；历史状态码集合不代表当前在线。比较不完整或身份不明时保留未知，未再观察到不代表删除。</div>
+<pre>garden projects assets 1 --json
+garden projects freshness 1</pre>
+<p><a href="#docs/export" onclick="nav('export');return false">把筛选结果交付出去 →</a></p>
+`},
+discovery:{b:'资产工作台 > 发现策略与预算',h:`
+<h1>发现策略与预算</h1><table><tr><th>预设</th><th>适用方式</th></tr><tr><td>快速 quick</td><td>原 HTTP 默认，先获得入口附近的有界观察。</td></tr><tr><td>平衡 balanced</td><td>HTTP 路径多样性，结合 HTML、Sitemap 与 JS 声明线索。</td></tr><tr><td>浏览器深入 deep</td><td>匿名单入口显式混合模式，按线索启动浏览器；总预算预留 30% 给浏览器阶段。</td></tr></table>
+<pre>garden scan http://127.0.0.1:8080/ --preset balanced
+garden scan http://127.0.0.1:8080/ --preset deep --max-requests 50</pre>
+<p>高级参数优先，提交前显示最终参数。路径族多样性调度和有界变体采样保留精确 URL、方法、origin 与身份区别；声明候选未请求时不冒充观察。浏览器深入不用于多身份混合采集。</p>
+<p>显式持久采集保存队列、发送尝试和预算。暂停后在途请求收尾，补采需预览并创建关联的新轮；重启本身不会自动访问目标。登录、验证、重定向和重试占用对应预算，不借用其他子任务额度。</p>
+<div class="tip">没有缺口条目不代表全站覆盖。JS 复杂表达式不猜测、不执行；跨 origin 线索保留为候选提示，须另加已授权入口。</div>
+`},
+intro:{b:'快速开始 > 简介与当前能力',h:`
+<h1>Garden 2.0：资产发现、整理与交付</h1>
+<p>从已授权 HTTP(S) 入口发现页面、接口与资源，保留匿名、登录身份及不同时间的观察，整理成可追溯清单。WebUI、CLI、API 与 macOS App 共用 Python 引擎和项目数据。</p>
+<h2>按任务选择入口</h2>
+<ul class="check-list"><li><strong>快速扫描</strong>：独立提交 URL，预览预设、同源边界和预算；不需要先配置登录。</li><li><strong>登录与多入口</strong>：人工完成验证码后恢复验证；每个入口单独绑定身份和配额，再确认计划。</li><li><strong>整理与交付</strong>：筛选项目清单、批量人工复核，生成完整报告与离线文件，必要时显式开启后续复查。</li></ul>
+<h2>当前交付状态</h2><p>源码 2.0.0、迁移 head 0016、核心 Python ≥3.10。G2-01—26 已完成实施与验收，最终候选两版 Python 各 993 passed。macOS 为 Apple Silicon / 26.0+ 本地 Beta；没有正式发行包。</p>
+<div class="tip">执行结束不等于覆盖完整；人工保留不证明业务有效。已观察、候选、未知、范围和身份限制分别保留。文件已生成与用户保存也分别说明。</div>
+<p><a href="#docs/quickstart" onclick="nav('quickstart');return false">从本机试跑开始</a> · <a href="#docs/release-status" onclick="nav('release-status');return false">核对验收和发行状态</a></p>
+`},
+install:{b:'快速开始 > 安装与部署',h:`
+<h1>安装与部署</h1>
+<h2>用户级 CLI</h2><p>macOS、Linux 或 WSL，需要 Python 3.10+；无需 Node 或 Rust。安装器写入当前用户目录，并备份升级所选数据目录，更新前先核对目录并停止原实例。</p>
+<pre>git clone https://github.com/Moxxkidd/Garden.git
+cd Garden
+./install.sh
+garden --version
+garden doctor
+garden ui</pre>
+<p>默认命令为 ~/.local/bin/garden 与 gardenctl；运行环境在 ~/.local/share/garden/runtime，数据在 ~/.garden。按安装器输出配置 PATH。GARDEN_HOME 可选择其他数据目录，安装与运行须保持一致。doctor 只读，不访问目标或自动修复。</p>
+<h2>需要浏览器的功能</h2><p>登录、人工浏览、浏览器深入与 PDF 需要匹配的 Chromium。默认安装路径执行：</p>
+<pre>~/.local/share/garden/runtime/venv/bin/python -m playwright install chromium</pre>
+<h2>源码开发</h2><pre>python3 -m venv .venv
+source .venv/bin/activate
+make install
+python -m playwright install chromium
+cp .env.example .env
+make dev</pre>
+<p>打开 http://127.0.0.1:8000。make demo 同样只启动 Garden，不会额外启动业务目标。源码配置来自 .env；正式 CLI 使用数据目录中的 config.env，环境变量优先。</p>
+<h2>Docker 与 App</h2><p>Docker：复制 .env.example 为 .env 后执行 docker compose up --build。容器里的 127.0.0.1 指向容器自身；数据卷与目标网络须单独配置。macOS App 捆绑 Python 与 Chromium，只支持 Apple Silicon / macOS 26.0+ 本地 Beta，尚无公开发行包。</p>
+<p><a href="https://github.com/Moxxkidd/Garden/blob/main/docs/deployment.md">详细部署与代理说明</a> · <a href="#docs/desktop" onclick="nav('desktop');return false">App 使用与限制</a></p>
+`},
+quickstart:{b:'快速开始 > 本机试跑与完整流程',h:`
+<h1>本机试跑与完整流程</h1><p>先完成安装，再用本仓库公开文档作为本机合成目标。这里 8080 是目标站点，8000 是 Garden 界面；只扫描自己启动并授权的服务。</p>
+<h2>1 · 启动一个明确的本机目标</h2><p>在仓库根目录的独立终端运行，结束时 Ctrl+C：</p><pre>python3 -m http.server 8080 --bind 127.0.0.1 --directory docs</pre>
+<h2>2 · 提交匿名扫描</h2><pre>garden scan http://127.0.0.1:8080/ --preset balanced
+garden ui</pre><p>也可在首页输入同一 URL，选择预设、预览后确认。查看实际页面、请求数、候选和覆盖缺口；无需先手工运行 inventory、checks 或 report。</p>
+<h2>3 · 在项目中整理</h2><p>建立项目并绑定同一 Target 和精确入口，预览导入已结束任务；或从项目入口创建扫描自动绑定。清单保留主体、身份观察与候选，选择明确的资产 ID 并填写复核理由。</p>
+<h2>4 · 交付与维护</h2><p>从「资产交付」生成当前筛选的完整 JSON、可读 CSV、HTML、PDF 或 ZIP；PDF 需要 Chromium 与中文字体。计划复查默认关闭，备份恢复到空目录且暂停计划。</p>
+<h2>需要登录时</h2><p>上述文档目标没有登录流程。对自己授权的业务目标，在「身份」人工登录、完成验证码并确认，再由新上下文验证；多个入口使用项目计划。它不是一条自动执行所有业务操作的演示脚本。</p>
+<p>v2.0 实际合成验收已走通匿名、两入口两身份、复核、导出、周期复查与恢复：<a href="https://github.com/Moxxkidd/Garden/blob/main/docs/release-v2.md">完整步骤与截图</a> · <a href="examples/v2-journey.json">结果样本</a>。</p>
+`},
+structure:{b:'进阶 > 项目结构',h:`
+<h1>项目结构</h1><pre>Garden/
+  app/cli/           CLI 与本机运行入口
+  app/api/           HTTP API
+  app/services/      扫描、队列、项目、身份、交付与数据管理
+  app/models/        持久化记录
+  app/schemas/       输入与结果契约
+  app/templates/     Jinja / HTMX WebUI
+  app/static/        包内离线资源
+  migrations/        SQLite 历史结构升级，当前 head 0016
+  desktop/           Tauri 外壳、Python sidecar 与构建清单
+  tests/             合成语料、公开行为与真实浏览器验证
+  docs/              使用步骤、版本记录与验收证据
+  scripts/           既有质量与维护脚本</pre><p>扫描和资产事实仍在 Python 业务层，Rust 只处理窗口、菜单、保存与更新。具体文件以当前仓库为准，不把固定模块数量当作能力保证。</p>
+`},
+targets:{b:'高级工作流 > 目标管理',h:`
 <h1>目标管理</h1>
-<div class="meta-row"><div>字数<span>200</span></div><div>阅读时间<span>2 min</span></div></div>
 
 <p>每个安全验证的起点都是一个 Target。Garden 要求所有操作都绑定在明确的目标上，包含 name、base_url、type、owner、tags、status。</p>
 
@@ -750,9 +614,8 @@ $ gardenctl target delete 1 --yes</pre>
 
 <div class="tip">支持从 YAML / JSON 批量导入 target，适合团队统一管理。</div>
 `},
-credentials:{b:'核心概念 > 凭证档案',h:`
+credentials:{b:'高级工作流 > 凭证档案',h:`
 <h1>凭证档案</h1>
-<div class="meta-row"><div>字数<span>180</span></div><div>阅读时间<span>1 min</span></div></div>
 
 <p>凭证档案管理登录凭证，支持多角色. 使用 <code>secret_ref</code>（如 <code>env://GARDEN_DEMO_ADMIN_PASSWORD</code>）引用密码，不直接存储明文。</p>
 
@@ -770,27 +633,16 @@ $ gardenctl cred delete 1 --yes</pre>
 
 <div class="tip">login-config-path 指定登录配置 YAML，支持 HTTP 和 Playwright 两种适配器。示例配置见 examples/login/ 目录。</div>
 `},
-login:{b:'核心概念 > 登录编排',h:`
-<h1>登录编排</h1>
-<div class="meta-row"><div>字数<span>180</span></div><div>阅读时间<span>1 min</span></div></div>
-
-<p>Garden 使用 adapter 策略执行登录。配置解析与执行解耦，HTTP 和 Playwright UI 流程实现同一个 contract，登录结果统一为 AuthSession。</p>
-
-<h2>Two adapters</h2>
-<ul class="check-list">
-  <li><strong>HTTP Adapter</strong> — API logins, cookie/token endpoints</li>
-  <li><strong>Playwright Adapter</strong> — browser-based UI login flows</li>
-</ul>
-
-<h2>CLI 操作</h2>
-<pre>$ gardenctl login test --target garden-demo-web --profile garden-demo-admin
-$ gardenctl login validate --session 1</pre>
-
-<p>登录成功后自动创建可复用的 AuthSession，原始敏感材料存储在 storage_ref 后面，不会在显示模型中暴露。</p>
+login:{b:'资产工作台 > 登录、验证码与恢复验证',h:`
+<h1>登录、验证码与恢复验证</h1><p>在「身份」选择所属入口和身份资料，导入已有状态或创建登录配置。查看最近验证时间、失败步骤与可继续的操作；会话文件存在不等于身份可用。</p>
+<h2>验证码与人工登录</h2><p>填写登录页、验证页及正向成功标记，打开独立 Chromium。由用户完成验证码、短信、扫码或业务登录，再点击「已完成登录，验证并保存」。Garden 关闭原上下文，在新上下文恢复验证，通过后才预览采集。新状态未通过前保留旧有效会话。</p>
+<h2>显式人工浏览</h2><p>选择人工浏览模式后，只记录用户和浏览器实际产生的目标请求，包括用户触发的 POST。Garden 不自动点击、提交、刷新或重放。控制页显示记录状态与停止入口，停止或配额耗尽保留观察并标记覆盖不完整；人工 POST 不进入自动队列或补采。</p>
+<h2>身份与材料边界</h2><p>每个入口/身份独立，不因项目归并而串用会话。额外登录 origin 仅在人工登录阶段生效。公开清单和导出脱敏，原始状态只保存在受保护的私有引用后；私有备份可能包含秘密。远程部署的登录窗口位于服务器，也可显式导入状态。</p>
+<p>现有 HTTP / Playwright 配置式登录、会话验证和固定三身份 coverage 继续可用。这些能力不承诺通用 SSO、验证码绕过或自动重放业务流程。</p>
+<p><a href="#docs/plans" onclick="nav('plans');return false">为多个入口配置身份与固定配额 →</a></p>
 `},
-sessions:{b:'核心概念 > 会话管理',h:`
+sessions:{b:'高级工作流 > 会话管理',h:`
 <h1>会话管理</h1>
-<div class="meta-row"><div>字数<span>150</span></div><div>阅读时间<span>1 min</span></div></div>
 
 <p>AuthSession 是登录成功后的可复用凭据容器，inventory 构建和 retest 都可以复用已有 session。</p>
 
@@ -809,9 +661,8 @@ $ gardenctl session refresh 1</pre>
 
 <p>session show 仅显示 redacted 元数据，不暴露原始 token/cookie。</p>
 `},
-inventory:{b:'核心概念 > Inventory 盘点',h:`
+inventory:{b:'高级工作流 > Inventory 盘点',h:`
 <h1>Inventory 盘点</h1>
-<div class="meta-row"><div>字数<span>250</span></div><div>阅读时间<span>2 min</span></div></div>
 
 <p>Inventory 是结构化的，不是流量 blob。Garden 记录：页面 URL 和标题、时间戳、API endpoint 和方法、状态码、参数名、sensitivity annotation。</p>
 
@@ -835,9 +686,8 @@ $ gardenctl inventory export --id 1 --format csv</pre>
 
 <div class="tip">inventory 构建可以复用已有 session 或 fresh login。导出支持 JSON 和 CSV（分 pages/endpoints/parameters/annotations 子文件）。</div>
 `},
-'checks-overview':{b:'Security Checks > Overview',h:`
+'checks-overview':{b:'高级安全检查 > 检查概览',h:`
 <h1>安全检查概览</h1>
-<div class="meta-row"><div>字数<span>200</span></div><div>阅读时间<span>2 min</span></div></div>
 
 <p>Garden ships with 6 low-risk, explainable check plugins registered in <code>security_checks/registry.py</code>.</p>
 
@@ -856,9 +706,8 @@ $ gardenctl inventory export --id 1 --format csv</pre>
 
 <p>每个检查器输出 severity（low/medium/high）和 confidence（low/medium/high），包含 trigger 解释、复现步骤和修复建议。检查器不做破坏性行为。</p>
 `},
-'debug-leak':{b:'安全检查 > 调试泄露',h:`
+'debug-leak':{b:'高级安全检查 > 调试泄露',h:`
 <h1>DebugLeakageCheck</h1>
-<div class="meta-row"><div>字数<span>150</span></div><div>阅读时间<span>1 min</span></div></div>
 
 <p>检测认证后响应中是否存在调试或诊断信息暴露。</p>
 
@@ -880,9 +729,8 @@ Category: debug_error_leakage
 - endpoint GET /api/manage/config exposes stack trace markers
 - page /admin/users exposes debug banner</pre>
 `},
-'admin-exposure':{b:'安全检查 > 后台暴露检测',h:`
+'admin-exposure':{b:'高级安全检查 > 后台暴露检测',h:`
 <h1>AdministrativeSurfaceCheck</h1>
-<div class="meta-row"><div>字数<span>120</span></div><div>阅读时间<span>1 min</span></div></div>
 
 <p>检测认证后是否暴露了管理或诊断面。</p>
 
@@ -898,9 +746,8 @@ Severity: low | Confidence: high
 - endpoint GET /api/manage/config matched 'manage'
 - page /admin/users matched 'admin'</pre>
 `},
-idor:{b:'安全检查 > IDOR 线索',h:`
+idor:{b:'高级安全检查 > IDOR 线索',h:`
 <h1>IdorIndicatorsCheck</h1>
-<div class="meta-row"><div>字数<span>130</span></div><div>阅读时间<span>1 min</span></div></div>
 
 <p>标记含有 userId、role、token、session 等标识符参数的敏感 endpoint，供人工确认是否存在 IDOR。</p>
 
@@ -913,9 +760,8 @@ Severity: medium | Confidence: low
 - endpoint GET /api/export/download accepts query:session
 - endpoint POST /api/admin/export accepts body:token</pre>
 `},
-'upload-import':{b:'Security Checks > Upload / Import',h:`
+'upload-import':{b:'高级安全检查 > 上传/导入入口',h:`
 <h1>UploadImportCheck</h1>
-<div class="meta-row"><div>字数<span>100</span></div><div>阅读时间<span>1 min</span></div></div>
 
 <p>检测认证后流程中暴露的 upload 或 import 入口。</p>
 
@@ -928,9 +774,8 @@ Severity: low | Confidence: high
 
 <p>标记后需要进一步验证文件校验、内容控制、角色访问和审计覆盖。</p>
 `},
-'sensitive-disclosure':{b:'安全检查 > 敏感信息泄露',h:`
+'sensitive-disclosure':{b:'高级安全检查 > 敏感信息泄露',h:`
 <h1>SensitiveDisclosureCheck</h1>
-<div class="meta-row"><div>字数<span>130</span></div><div>阅读时间<span>1 min</span></div></div>
 
 <p>检测认证后页面或端点预览中是否泄露了实现细节。</p>
 
@@ -952,9 +797,8 @@ Evidence Count: 11
 - endpoint /api/export/download reveals email: admin@example.local
 - page / reveals version string: 0.1.0</pre>
 `},
-'auth-headers':{b:'Security Checks > Headers &amp; Cache',h:`
+'auth-headers':{b:'高级安全检查 > 响应头/缓存检查',h:`
 <h1>AuthenticatedHeadersCacheCheck</h1>
-<div class="meta-row"><div>字数<span>120</span></div><div>阅读时间<span>1 min</span></div></div>
 
 <p>检测认证后敏感页面的缓存策略和 cookie 安全属性。</p>
 
@@ -966,9 +810,8 @@ Severity: low | Confidence: medium
 - sensitive page Admin Users has cache-control 'public, max-age=600'
 - sensitive page Export Center has cache-control 'public, max-age=900'</pre>
 `},
-evidence:{b:'证据与报告 > 证据采集',h:`
+evidence:{b:'证据与结果 > 证据采集',h:`
 <h1>证据采集</h1>
-<div class="meta-row"><div>字数<span>180</span></div><div>阅读时间<span>1 min</span></div></div>
 
 <p>Evidence 是结构化、已链接、默认脱敏的。每条 evidence 关联到 target、profile、session、job、inventory，以及可选的 finding。</p>
 
@@ -990,9 +833,8 @@ $ gardenctl evidence export --finding 1 --format md</pre>
 
 <div class="tip">evidence show 显示的是脱敏后的预览。导出同样保持脱敏状态。</div>
 `},
-redaction:{b:'证据与报告 > 脱敏规则',h:`
+redaction:{b:'证据与结果 > 脱敏规则',h:`
 <h1>脱敏规则</h1>
-<div class="meta-row"><div>字数<span>120</span></div><div>阅读时间<span>1 min</span></div></div>
 
 <p>Redaction logic is centralized in <code>app/redaction/</code>. CLI output, Web UI display, and export files all share the same redaction rules — they never drift apart.</p>
 
@@ -1012,7 +854,6 @@ password: ***[REDACTED]</pre>
 `},
 'finding-lifecycle':{b:'Evidence & Reports > Finding 生命周期',h:`
 <h1>Finding 生命周期</h1>
-<div class="meta-row"><div>字数<span>200</span></div><div>阅读时间<span>2 min</span></div></div>
 
 <p>Finding 是 Garden 工作流的核心产物。每个 finding 包含 severity、confidence、category、trigger 解释、复现步骤、修复建议、inventory 引用和 evidence 链接。</p>
 
@@ -1035,9 +876,8 @@ $ gardenctl findings list --category debug_error_leakage
 $ gardenctl findings show 1
 $ gardenctl findings update-status 1 --status fixed</pre>
 `},
-retest:{b:'证据与报告 > 复测',h:`
+retest:{b:'证据与结果 > 复测',h:`
 <h1>复测</h1>
-<div class="meta-row"><div>字数<span>130</span></div><div>阅读时间<span>1 min</span></div></div>
 
 <p>Retest 是 Garden 工作流闭环的关键环节。对 fixed 或 retest-pending 状态的 finding 执行复测，验证问题是否修复。</p>
 
@@ -1053,55 +893,33 @@ retest:{b:'证据与报告 > 复测',h:`
 <h2>CLI 操作</h2>
 <pre>$ gardenctl retest run --finding 1</pre>
 `},
-export:{b:'证据与报告 > 导出格式',h:`
-<h1>导出格式</h1>
-<div class="meta-row"><div>字数<span>150</span></div><div>阅读时间<span>1 min</span></div></div>
-
-<p>当前项目「资产交付」共用概要、资产与证据；按固定修订分块生成 JSON、可读 CSV、HTML、PDF 或 ZIP。PDF 需要 Chromium 和中文字体，私有会话不进入公开包。已生成与用户保存分别表达。</p><pre>garden projects deliver 1 --format readable_csv --output assets.csv
-garden projects deliver 1 --format zip --output delivery.zip</pre><p>下面保留传统 Findings / Inventory / Evidence 导出兼容命令。</p>
-
-<h2>Findings export</h2>
-<pre>$ gardenctl findings export --format md
-$ gardenctl findings export --format json
-$ gardenctl findings export --format csv</pre>
-
-<h2>Inventory export</h2>
-<pre>$ gardenctl inventory export --id 1 --format json
-$ gardenctl inventory export --id 1 --format csv</pre>
-
-<h2>Evidence export</h2>
-<pre>$ gardenctl evidence export --finding 1 --format json
-$ gardenctl evidence export --finding 1 --format md</pre>
-
-<p>All exports are redacted by default and written to <code>exports/</code>.</p>
+export:{b:'资产工作台 > 报告与完整交付',h:`
+<h1>报告与完整交付</h1>
+<p>从项目清单把筛选带入「资产交付」，以概要、资产、证据三层审阅，再生成固定筛选与修订的完整文件。后台实际按 SQL 分块读取，屏幕页码不会截断导出；修订变化时需要重新提交。</p>
+<table><tr><th>格式</th><th>用途与限制</th></tr><tr><td>JSON / 机器 CSV</td><td>保留 delivery-v1，交付主体、变体、身份观察、候选、关系或显式两次运行的变化。</td></tr><tr><td>可读 CSV</td><td>中文列名、UTF-8 BOM 与公式防护；按匹配身份观察逐行，同一主体可能占多行。</td></tr><tr><td>Markdown / HTML / PDF</td><td>同一三层报告；HTML 自带样式，PDF 需要 Chromium 和中文字体。</td></tr><tr><td>离线 ZIP</td><td>清单、报告、来源索引、schema、字段说明与范围/身份/已保存预算/版本信息。</td></tr><tr><td>OpenAPI 草稿</td><td>只推断已观察接口，不猜测鉴权、正文或响应 schema。</td></tr></table>
+<pre>garden projects deliver 1 --format readable_csv --output assets.csv
+garden projects deliver 1 --format zip --output delivery.zip
+garden projects deliver 1 --dataset observations --format json</pre>
+<p>公开文件仅含脱敏历史与公开引用，不含 Cookie、私有会话或原始正文；历史缺失预算保持未知。取消、失败或中断不提供半成品，也不自动重做。Web 区分已生成与发起下载，App 实际写入后才提示保存成功。</p>
+<p>PDF 依赖不可用只影响 PDF。CLI 按 --output 保存到指定位置；私有备份用于恢复，不属于公开交付。传统 Finding / Inventory / Evidence 导出命令仍可使用。</p>
 `},
-report:{b:'证据与报告 > 报告生成',h:`
-<h1>报告生成</h1>
-<div class="meta-row"><div>字数<span>100</span></div><div>阅读时间<span>1 min</span></div></div>
-
-<p>当前项目交付报告分为概要、资产、证据，分别显示主体、身份观察、人工复核及覆盖缺口。旧 Markdown 文件保持原样；下面的 job 报告命令继续兼容。</p>
-
-<h2>CLI 操作</h2>
-<pre>$ gardenctl report generate --job 2 --format md</pre>
-
-<p>Reports are written to <code>exports/reports/job-&lt;id&gt;.md</code>.</p>
+report:{b:'证据与结果 > 结果解释与报告',h:`
+<h1>结果解释与报告</h1>
+<p>项目报告由同一查询和修订生成，分为概要、资产、证据。分别显示主体、身份观察、人工复核及覆盖缺口；单次扫描报告和旧 job Markdown 报告继续保留，历史文件不会自动重写。</p>
+<ul class="check-list"><li>任务 completed / 100% 只表示执行结束，覆盖不足仍明确列出。</li><li>关注项按类别与原始观察分别计数，未请求候选不会变成已观察资产。</li><li>已观察、有效性线索与人工保留分别表达，人的选择不证明业务有效。</li><li>未再观察到不表示删除或修复；范围、身份或覆盖不可比时保留未知。</li><li>缺口说明原因和可选下一步，不会自动扩大范围、增加预算或发送新请求。</li></ul>
+<p>报告来自持久化结构，不解析 CLI 输出。生成与保存分别记录，具体格式见<a href="#docs/export" onclick="nav('export');return false">报告与完整交付</a>。</p>
 `},
-'cli-scan':{b:'CLI 参考 > gardenctl scan',h:`
-<h1>gardenctl scan</h1>
-<div class="meta-row"><div>字数<span>160</span></div><div>阅读时间<span>1 min</span></div></div>
-<pre>gardenctl scan --url URL [--max-pages N] [--max-resources N] [--max-depth N]
-               [--request-timeout SECONDS] [--overall-timeout SECONDS]
-               [--retries 0|1|2]</pre>
-<p><code>scan</code> 是核心 URL 流水线的终端适配器：只输入一个 URL，自动完成预检、发现、采集、标准化、分析和 Markdown 报告。</p>
-<pre>gardenctl scan \\
-  --url http://127.0.0.1:8888/ \\
-  --max-pages 50 --max-resources 200 --max-depth 1 --retries 1</pre>
-<p>页面和静态资源使用独立上限；原默认优先采集 HTML 页面，选择多样性策略后按路径族与来源轮转。默认最多请求 50 个页面和 200 个 CSS、JavaScript、图片或文档资源。</p>
-<div class="tip">已授权公网目标默认允许；RFC1918/ULA 内网仍需设置 <code>GARDEN_ALLOW_PRIVATE_TARGETS=true</code>。</div>
+'cli-scan':{b:'CLI 参考 > garden scan',h:`
+<h1>garden scan</h1>
+<pre>garden scan http://127.0.0.1:8080/ --preset balanced
+garden scan http://127.0.0.1:8080/ --preset deep --max-requests 50
+garden scan http://127.0.0.1:8080/ --detach
+garden scan --help</pre>
+<p>预设为 quick / balanced / deep，显式高级参数优先。可分别设置 --max-pages、--max-resources、--max-depth、请求/整体超时与重试；持久采集另用 --durable 和请求预算。gardenctl 是兼容别名，旧 --url URL 写法保留。</p>
+<p>默认前台显示实际进度，首次运行启动或复用本机服务并输出详情地址；--detach 仅提交。入口必须是已授权 HTTP(S) URL。整体超时停止新增目标请求，保留已有结果并完成本地报告，不伪装为覆盖完整。</p>
 `},
 'cli-target':{b:'CLI 参考 > gardenctl target',h:`
 <h1>gardenctl target</h1>
-<div class="meta-row"><div>字数<span>120</span></div><div>阅读时间<span>1 min</span></div></div>
 <pre>gardenctl target add      --name NAME --base-url URL [--type TYPE] [--owner OWNER] [--tag TAG]
 gardenctl target list     [--status active|archived]
 gardenctl target show     ID
@@ -1111,7 +929,6 @@ gardenctl target import   --file PATH [--on-duplicate skip|update]</pre>
 `},
 'cli-cred':{b:'CLI 参考 > gardenctl cred',h:`
 <h1>gardenctl cred</h1>
-<div class="meta-row"><div>字数<span>100</span></div><div>阅读时间<span>1 min</span></div></div>
 <pre>gardenctl cred add     --target-id ID --name NAME --role ROLE --auth-type TYPE \\
                      --username USER --secret-ref REF [--login-config-path PATH]
 gardenctl cred list
@@ -1120,20 +937,17 @@ gardenctl cred delete  ID --yes</pre>
 `},
 'cli-login':{b:'CLI 参考 > gardenctl login',h:`
 <h1>gardenctl login</h1>
-<div class="meta-row"><div>字数<span>80</span></div><div>阅读时间<span>1 min</span></div></div>
 <pre>gardenctl login test      --target TARGET --profile PROFILE
 gardenctl login validate  --session ID</pre>
 `},
 'cli-session':{b:'CLI 参考 > gardenctl session',h:`
 <h1>gardenctl session</h1>
-<div class="meta-row"><div>字数<span>60</span></div><div>阅读时间<span>1 min</span></div></div>
 <pre>gardenctl session list
 gardenctl session show     ID
 gardenctl session refresh  ID</pre>
 `},
 'cli-inventory':{b:'CLI 参考 > gardenctl inventory',h:`
 <h1>gardenctl inventory</h1>
-<div class="meta-row"><div>字数<span>100</span></div><div>阅读时间<span>1 min</span></div></div>
 <pre>gardenctl inventory build   --target TARGET --profile PROFILE
 gardenctl inventory build   --session ID
 gardenctl inventory list
@@ -1142,13 +956,11 @@ gardenctl inventory export  --id ID --format json|csv</pre>
 `},
 'cli-checks':{b:'CLI 参考 > gardenctl checks',h:`
 <h1>gardenctl checks</h1>
-<div class="meta-row"><div>字数<span>50</span></div><div>阅读时间<span>1 min</span></div></div>
 <pre>gardenctl checks run  --inventory ID</pre>
 <p>对某个 inventory run 执行全部已注册的低风险 checks。</p>
 `},
 'cli-findings':{b:'CLI 参考 > gardenctl findings',h:`
 <h1>gardenctl findings</h1>
-<div class="meta-row"><div>字数<span>100</span></div><div>阅读时间<span>1 min</span></div></div>
 <pre>gardenctl findings list            [--status STATUS] [--category CAT]
 gardenctl findings show            ID
 gardenctl findings update-status   ID --status STATUS
@@ -1156,57 +968,34 @@ gardenctl findings export          --format md|json|csv</pre>
 `},
 'cli-evidence':{b:'CLI 参考 > gardenctl evidence',h:`
 <h1>gardenctl evidence</h1>
-<div class="meta-row"><div>字数<span>80</span></div><div>阅读时间<span>1 min</span></div></div>
 <pre>gardenctl evidence list     [--finding ID]
 gardenctl evidence show     ID
 gardenctl evidence export   --finding ID --format json|md</pre>
 `},
 'cli-retest':{b:'CLI 参考 > gardenctl retest',h:`
 <h1>gardenctl retest</h1>
-<div class="meta-row"><div>字数<span>40</span></div><div>阅读时间<span>1 min</span></div></div>
 <pre>gardenctl retest run  --finding ID</pre>
 <p>对 fixed 或 retest-pending 状态的 finding 执行复测。</p>
 `},
 'cli-report':{b:'CLI 参考 > gardenctl report',h:`
 <h1>gardenctl report</h1>
-<div class="meta-row"><div>字数<span>40</span></div><div>阅读时间<span>1 min</span></div></div>
 <pre>gardenctl report generate  --job ID --format md</pre>
 <p>为某个 job 生成 Markdown 格式的汇总报告。</p>
 `},
 architecture:{b:'进阶 > 架构设计',h:`
-<h1>架构设计</h1>
-<div class="meta-row"><div>字数<span>350</span></div><div>阅读时间<span>3 min</span></div></div>
-
-<h2>Core execution model</h2>
-<pre>Web / HTTP API / CLI
-          &darr;
-ScanApplicationService.start_scan(url, options)
-          &darr;
-validate &rarr; discover &rarr; collect &rarr; normalize &rarr; analyze &rarr; report
-          &darr;
-ScanRun + assets + evidence + findings + failures</pre>
-
-<h2>端到端组件关系</h2>
-<ul class="check-list">
-  <li>ScanApplicationService 是 CLI、Web、API 无关的唯一用例入口</li>
-  <li>持久化 ScanRun 记录状态、进度、阶段、重试、错误和报告位置</li>
-  <li>TargetNetworkPolicy 在连接和每次重定向前执行 DNS / SSRF 校验</li>
-  <li>ScanPipeline 自动执行六阶段，并显式记录部分失败与覆盖上限</li>
-  <li>PassiveScanAnalyzer 只分析统一资产和证据结构</li>
-  <li>ScanReportService 从持久化结构直接生成报告，不解析 CLI 文本</li>
-  <li>原有认证 service 保留为高级工作流，不是 URL 扫描隐藏前置步骤</li>
-</ul>
-
-<h2>Data entities</h2>
-<pre>ScanRun, ScanRunStage, ScanAsset, ScanEvidence,
-ScanFinding, ScanFailure
-
-Advanced: Target, CredentialProfile, ScanJob, AuthSession,
-InventoryRun, Finding, Evidence, FindingRetestRun</pre>
+<h1>架构设计</h1><pre>WebUI / CLI / API / macOS App
+             ↓
+现有扫描、身份、队列与 admission
+             ↓
+任务 / 资产 / 证据 / 候选 / 来源
+             ↓
+项目查询 / 修订 / 人工复核 / 比较
+             ↓
+delivery-v1 / 三层报告 / 分块交付</pre>
+<p>适配层共用 Python 应用服务；项目整理不复制第二套资产事实。持久队列与周期复查复用执行器和预算，导出固定查询修订并按 SQL 分块读取。旧 CLI、旧状态 API 与 delivery-v1 保留。</p><p>网络策略在连接与重定向前执行，身份和 origin 隔离。失败与覆盖上限持久化为事实，不从进度或页面文字推断成功。</p>
 `},
 guardrails:{b:'进阶 > 安全护栏',h:`
 <h1>安全护栏</h1>
-<div class="meta-row"><div>字数<span>150</span></div><div>阅读时间<span>1 min</span></div></div>
 
 <p>这些限制不是暂时没做，而是 Garden 产品身份的一部分。</p>
 
@@ -1227,58 +1016,10 @@ guardrails:{b:'进阶 > 安全护栏',h:`
 </ul>
 `},
 outputs:{b:'进阶 > 结构化产出',h:`
-<h1>结构化产出</h1>
-<div class="meta-row"><div>字数<span>180</span></div><div>阅读时间<span>1 min</span></div></div>
-
-<p>Garden 产出的不是跑过了什么命令，而是结构化工作流产物：</p>
-
-<ul class="check-list">
-  <li>ScanRun 父任务、六阶段进度、错误与报告位置</li>
-  <li>统一的 ScanAsset / ScanEvidence / ScanFinding / ScanFailure</li>
-  <li>包含摘要、范围、资产、证据、风险、覆盖和失败的 Markdown 资产报告</li>
-  <li>Target manifests</li>
-  <li>Credential profile 清单</li>
-  <li>Authenticated session 记录</li>
-  <li>Audit events</li>
-  <li>Scan jobs</li>
-  <li>结构化 inventory runs（pages / endpoints / parameters / annotations）</li>
-  <li>可解释的 low-risk findings</li>
-  <li>关联的脱敏 evidence</li>
-  <li>Retest records</li>
-  <li>Findings Markdown / JSON / CSV 导出</li>
-  <li>Inventory JSON / CSV 导出</li>
-  <li>Evidence Markdown / JSON 导出</li>
-  <li>Job Markdown 报告</li>
-</ul>
-
-<div class="tip">普通用户无需理解内部 job ID；所有自动步骤和缺口都由同一个父任务串联并持久化。</div>
+<h1>结构化产出</h1><ul class="check-list"><li>任务：阶段、实际计数、等待/失败、预算及覆盖缺口。</li><li>项目：路由主体、请求变体、身份观察、候选、关系与来源引用。</li><li>整理：保存视图、注释、人工复核、撤销和需复核变化。</li><li>交付：delivery-v1、三层报告、可读 CSV、离线 HTML / PDF / ZIP、推断 OpenAPI 草稿。</li><li>持续更新：历史对照、增量补采、显式周期计划与本地私有备份。</li><li>高级流程：原有 Inventory、Finding、脱敏 Evidence 与复测记录。</li></ul><p>主体数、观察数、关注类别与原始观察分别计数；未知与缺失不当作零。OpenAPI 只是已观察接口的推断草稿，不猜测鉴权或响应 schema。</p>
 `},
-constraints:{b:'进阶 > 设计约束',h:`
-<h1>设计约束</h1>
-<div class="meta-row"><div>字数<span>200</span></div><div>阅读时间<span>2 min</span></div></div>
-
-<p>这些约束是有意保持的。它们定义了 Garden 是什么、不是什么。</p>
-
-<h2>Garden is not</h2>
-<ul class="check-list">
-  <li>桌面 GUI 应用</li>
-  <li>通用匿名漏洞扫瞄器</li>
-  <li>公网扫描工具</li>
-  <li>破坏性测试平台 / exploit framework</li>
-  <li>Brute-force / fuzzing 引擎</li>
-  <li>Burp / ZAP 的替代品</li>
-  <li>单纯的 traffic recorder</li>
-  <li>只做 API 权限测试的工具</li>
-</ul>
-
-<h2>为什么不直接用现有工具</h2>
-<p>因为现有工具都很强不等于这条工作流已经被解决了。Garden 的价值在于把这些能力串起来：</p>
-<ul class="check-list">
-  <li>Burp/ZAP 强在手工代理测试 → Garden 强在工作流编排和结构化 inventory</li>
-  <li>录流量 ≠ 结构化资产覆盖 + 可解释的 findings</li>
-  <li>扫瞄器套壳 ≠ 可追踪、可审计的工作流产物</li>
-  <li>API 权限测试 ≠ 页面面 + 浏览器态 + 证据 + 复测 + 报告</li>
-</ul>
+constraints:{b:'进阶 > 支持范围与限制',h:`
+<h1>支持范围与限制</h1><h2>已实现边界</h2><p>授权的 HTTP(S) 资产发现与清单交付；自动采集受同源、GET 和预算约束，人工浏览明确记录用户触发请求。登录、来源、复核和私有材料各自保留，不把人工决定变成机器证明。</p><h2>平台与发行</h2><p>核心 Python ≥3.10，最终 CI 覆盖 Linux 3.10/3.12；macOS App 仅有 Apple Silicon / 26.0+ 本地 Beta。没有 Windows、Intel Mac、早期 macOS、外部干净机器的本轮验收。正式签名、公证、更新渠道及再分发许可待独立发布准备。</p><h2>功能限制</h2><p>匿名单入口才使用混合发现预设；没有通用 SSO、验证码绕过、自动流程重放、动态预算借用、云同步或分布式调度。候选未请求、历史字段缺失、覆盖不足时保留未知，不输出目标全量已知或业务有效保证。</p>
 `}
 };
 
@@ -1288,20 +1029,20 @@ function buildSidebar(){
   sb.innerHTML=TREE.map(function(cat,ci){
     var open=ci===0;
     return '<div class="group">'+
-      '<div class="group-head'+(open?' open':'')+'" onclick="toggleCat(this)">'+
+      '<button type="button" class="group-head'+(open?' open':'')+'" aria-expanded="'+open+'" onclick="toggleCat(this)">'+
         cat.cat+
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>'+
-      '</div>'+
+      '</button>'+
       '<div class="group-items'+(open?' open':'')+'">'+
         cat.items.map(function(i){
-          return '<div class="link'+(i.mono?' mono':'')+'" data-id="'+i.id+'" onclick="nav(\''+i.id+'\')">'+i.title+'</div>';
+          return '<a class="link'+(i.mono?' mono':'')+'" data-id="'+i.id+'" href="#docs/'+i.id+'" onclick="nav(\''+i.id+'\');return false">'+i.title+'</a>';
         }).join('')+
       '</div>'+
     '</div>';
   }).join('');
 }
 
-function toggleCat(el){el.classList.toggle('open');el.nextElementSibling.classList.toggle('open')}
+function toggleCat(el){var open=el.classList.toggle('open');el.nextElementSibling.classList.toggle('open',open);el.setAttribute('aria-expanded',String(open))}
 
 function nav(id){
   document.getElementById('home').style.display='none';
@@ -1313,7 +1054,7 @@ function nav(id){
   if(a){
     a.classList.add('active');
     var gi=a.closest('.group-items'),gt=gi.previousElementSibling;
-    if(!gi.classList.contains('open')){gi.classList.add('open');gt.classList.add('open')}
+    if(!gi.classList.contains('open')){gi.classList.add('open');gt.classList.add('open');gt.setAttribute('aria-expanded','true')}
   }
 
   var p=PAGES[id];
@@ -1324,8 +1065,8 @@ function nav(id){
     document.getElementById('docContent').innerHTML=
       '<div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">'+p.b+'</div>'+p.h+
       '<div class="doc-pager">'+
-        (prev?'<div class="pg" onclick="nav(\''+prev+'\')"><div class="pg-label">&larr; Previous</div><div>'+PAGES[prev].b.split(' > ')[1]+'</div></div>':'<div></div>')+
-        (next?'<div class="pg next" onclick="nav(\''+next+'\')"><div class="pg-label">Next &rarr;</div><div>'+PAGES[next].b.split(' > ')[1]+'</div></div>':'<div></div>')+
+        (prev?'<div class="pg" onclick="nav(\''+prev+'\')"><div class="pg-label">&larr; 上一节</div><div>'+PAGES[prev].b.split(' > ')[1]+'</div></div>':'<div></div>')+
+        (next?'<div class="pg next" onclick="nav(\''+next+'\')"><div class="pg-label">下一节 &rarr;</div><div>'+PAGES[next].b.split(' > ')[1]+'</div></div>':'<div></div>')+
       '</div>';
     window.scrollTo(0,0);
   }
@@ -1346,10 +1087,14 @@ function showHome(){
 }
 
 function toggleSidebar(){
-  document.getElementById('sidebar').classList.toggle('mobile-open');
+  var open=document.getElementById('sidebar').classList.toggle('mobile-open');
+  document.getElementById('overlay').classList.toggle('open',open);
+  document.getElementById('menuBtn').setAttribute('aria-expanded',String(open));
 }
 function closeSidebar(){
   document.getElementById('sidebar').classList.remove('mobile-open');
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('menuBtn').setAttribute('aria-expanded','false');
 }
 
 document.addEventListener('DOMContentLoaded',function(){
@@ -1396,7 +1141,7 @@ document.getElementById('searchInput').addEventListener('input',function(e){
     i.style.display=!q||i.textContent.toLowerCase().indexOf(q)>-1?'':'none';
   });
   if(q)document.querySelectorAll('.group-items').forEach(function(e){
-    e.classList.add('open');e.previousElementSibling.classList.add('open');
+    e.classList.add('open');e.previousElementSibling.classList.add('open');e.previousElementSibling.setAttribute('aria-expanded','true');
   });
 });
 </script>
