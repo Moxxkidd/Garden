@@ -22,7 +22,7 @@
 <input type="hidden" name="sort" value="{{ query.sort }}"><input type="hidden" name="order" value="{{ query.order }}">
 <button>预览交付范围</button>
 </form>
-<p>{% for format,url in exports.items() %}<a href="{{ url }}">下载 {{ format|upper }}{% if format == 'openapi' %} 草稿{% endif %}</a> {% endfor %}</p>
+<p>{% for format,url in exports.items() %}<a href="{{ url }}" download hx-boost="false">下载 {{ format|upper }}{% if format == 'openapi' %} 草稿{% endif %}</a> {% endfor %}</p>
 <p><a href="{{ api_url }}">稳定分页 API</a> · <a href="/api/delivery/schema">JSON Schema</a></p>
 <p>分页使用 next_cursor；项目变更后返回 409 并要求重读，避免静默漏行。Cookie、令牌值和完整敏感请求不进入交付文件。</p>
 {% for note in result.limitations %}<p>{{ note }}</p>{% endfor %}
