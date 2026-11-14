@@ -42,7 +42,11 @@ garden = "app.cli.main:app"
 gardenctl = "app.cli.main:app"
 
 [tool.hatch.build.targets.sdist]
-exclude = ["/.verification", "/output", "/.worktrees", "/.coverage", "/.playwright-cli", "/node_modules"]
+exclude = [
+  "/.verification", "/output", "/.worktrees", "/.coverage", "/.playwright-cli", "/node_modules",
+  "/desktop/node_modules", "/desktop/src-tauri/engine-dist", "/desktop/src-tauri/target",
+  "/desktop/src-tauri/gen",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
