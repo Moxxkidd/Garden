@@ -49,6 +49,8 @@ def main():
     parser.add_argument("--initialize", action="store_true")
     parser.add_argument("--operation", choices=["activity", "stop", "quiesce", "backup", "restore"])
     args = parser.parse_args()
+    if sys.platform == "win32" and args.action in {"update-prepare", "recover"}:
+        parser.error("Use the Windows installer to update Garden.")
     if args.action == "browser-info":
         from playwright.sync_api import sync_playwright
 

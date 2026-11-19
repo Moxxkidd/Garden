@@ -68,8 +68,7 @@ def main():
             target,
         ],
         cwd=ROOT / "desktop/src-tauri",
-        capture_output=True,
-        text=True,
+        stdout=subprocess.PIPE,
         check=True,
     )
     metadata = json.loads(cargo.stdout)

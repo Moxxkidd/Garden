@@ -130,6 +130,7 @@ jobs:
       - name: Install build dependencies
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           rustup toolchain install "${{ steps.pins.outputs.rust }}-${{ steps.pins.outputs.target }}" --profile minimal
           rustup override set "${{ steps.pins.outputs.rust }}-${{ steps.pins.outputs.target }}"
           python -m pip install -r desktop/python-build-requirements.txt
@@ -137,9 +138,10 @@ jobs:
           python -m pip check
           npm ci --prefix desktop --ignore-scripts --no-audit --no-fund
 
-      - name: Build engine and NSIS installer
+      - name: Freeze the engine and collect notices
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           New-Item -ItemType Directory -Force .verification | Out-Null
           $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $PWD .verification/browsers
           $env:GARDEN_BUILD_BROWSERS = $env:PLAYWRIGHT_BROWSERS_PATH
@@ -149,7 +151,9 @@ jobs:
           python -m playwright install chromium
           python desktop/build_engine.py
           python desktop/build_notices.py
-          python desktop/build_app.py
+
+      - name: Build the NSIS installer
+        run: python desktop/build_app.py
 
       - name: Install, launch, connect, reinstall and uninstall
         run: python desktop/verify_windows.py

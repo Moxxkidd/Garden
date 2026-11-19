@@ -59,7 +59,7 @@ export GARDEN_OPENSSL_LICENSE=/opt/homebrew/opt/openssl@3/LICENSE.txt
 Windows 桌面版使用用户级 NSIS 安装器 `Garden_2.1.0_x64-setup.exe`。首版目标为 Windows 10 / 11 x64，CI 使用 Windows Server 2022 x64。安装包包括 Python 引擎、Playwright Chromium 与 Microsoft Evergreen WebView2 离线安装器。安装和运行可使用普通用户账户，运行无需 Python、Node、Rust 或 WSL。
 
 1. 打开安装器，选择程序目录。安装结束后，从开始菜单打开 Garden。
-2. 首次启动时在「连接数据目录」选择自己账户有独占写权限的本地 NTFS 目录，例如 `%USERPROFILE%\.garden`。Windows 使用目录继承的访问控制列表保护数据库、会话与备份。若没有数据库，勾选创建数据库后开始使用。
+2. 首次启动时在「连接数据目录」选择只有自己账户和系统管理员可访问的本地 NTFS 目录，例如 `%USERPROFILE%\.garden`。Windows 使用目录继承的访问控制列表保护数据库、会话与备份。若没有数据库，勾选创建数据库后开始使用。
 3. 更新前从 Garden 菜单退出，并停止仍在使用该目录的 CLI 实例。运行新版安装器，再选择原数据目录。若有待执行的数据库迁移，先在设置中确认备份与升级。
 4. 在 Windows 设置的「应用」中卸载 Garden。程序目录与项目数据目录应分开，卸载程序后可重新接入原数据目录。
 
@@ -67,9 +67,10 @@ Windows 桌面版使用用户级 NSIS 安装器 `Garden_2.1.0_x64-setup.exe`。�
 
 ### 在 Windows 构建与验收
 
-在原生 Windows x64 上准备 MSVC C++ Build Tools 和 Windows SDK、Node 22、Rustup，以及 `build-versions.json` 的 Windows Python 版本。在仓库根目录打开 PowerShell：
+在原生 Windows x64 上准备 MSVC C++ Build Tools 和 Windows SDK、Node 22、Rustup，以及 `build-versions.json` 的 Windows Python 版本。在仓库根目录打开 PowerShell 7：
 
 ```powershell
+$PSNativeCommandUseErrorActionPreference = $true
 $pins = Get-Content desktop/build-versions.json -Raw | ConvertFrom-Json
 $toolchain = "$($pins.rust)-$($pins.windows.target)"
 rustup toolchain install $toolchain --profile minimal

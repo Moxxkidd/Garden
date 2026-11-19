@@ -166,8 +166,12 @@ def main():
         install(package, installed)
         assert hashlib.sha256(database.read_bytes()).hexdigest() == original
         subprocess.run([installed / "uninstall.exe", "/S"], check=True, timeout=120)
-        assert not (installed / "Garden.exe").exists()
-        assert not (installed / "engine/garden-engine.exe").exists()
+        # NSIS normally copies and restarts its uninstaller from a temporary directory.
+        remaining = [installed / name for name in ("Garden.exe", "engine/garden-engine.exe")]
+        deadline = time.monotonic() + 120
+        while any(file.exists() for file in remaining) and time.monotonic() < deadline:
+            time.sleep(0.25)
+        assert not any(file.exists() for file in remaining)
         assert hashlib.sha256(database.read_bytes()).hexdigest() == original
         print("Reinstall and uninstall preserved the selected SQLite database", flush=True)
 
