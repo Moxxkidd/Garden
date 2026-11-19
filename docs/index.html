@@ -1,407 +1,80 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101c16">
 <title>Garden 2.0 — 资产发现、整理与交付</title>
-<meta name="description" content="从已授权入口发现资产，汇集匿名与登录态观察，完成项目整理、人工复核、离线交付与持续复查。Garden 2.0 发布准备完成，macOS App 为本地 Beta。"/>
+<meta name="description" content="从已授权入口发现资产，把匿名与登录态观察汇成可复核、可交付的项目清单。浏览 Garden 工作流程、真实界面和使用文档。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231e5f48'/%3E%3Cpath d='M18 34c0-11 8-19 22-20-1 13-8 22-20 22m0 0c7 1 13 5 16 12M20 36v14' fill='none' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E"/>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-:root{
-  --c-text:#1b1b1f;
-  --c-muted:#5f6368;
-  --c-border:#dadce0;
-  --c-bg:#fff;
-  --c-bg-soft:#f8f8f8;
-  --c-code-bg:#f2f2f2;
-  --c-accent:#1e5f48;
-  --nav-h:56px;
-  --sidebar-w:260px;
-}
-html{scroll-behavior:smooth}
-body{
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,sans-serif;
-  color:var(--c-text);background:var(--c-bg);
-  line-height:1.6;-webkit-font-smoothing:antialiased;
-  overflow-x:hidden;
-}
-a{color:inherit;text-decoration-underline-offset:3px;text-decoration-color:var(--c-border)}
-a:hover{text-decoration-color:var(--c-text)}
-
-/* ── animated background grid ── */
-.bg-grid{
-  position:fixed;inset:0;pointer-events:none;z-index:0;
-  background-image:
-    linear-gradient(rgba(30,95,72,.03) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(30,95,72,.03) 1px,transparent 1px);
-  background-size:60px 60px;
-  animation:grid-drift 20s linear infinite;
-}
-@keyframes grid-drift{
-  0%{background-position:0 0,0 0}
-  100%{background-position:60px 60px,60px 60px}
-}
-
-/* ── hero glow orbs ── */
-.hero-wrap{position:relative;overflow:hidden}
-.orb{
-  position:absolute;border-radius:50%;filter:blur(80px);pointer-events:none;
-  animation:orb-float 10s ease-in-out infinite;
-}
-.orb-1{width:400px;height:350px;background:rgba(30,95,72,.06);top:-60px;right:-80px;animation-delay:0s}
-.orb-2{width:350px;height:300px;background:rgba(59,130,246,.04);bottom:-40px;left:-60px;animation-delay:-5s}
-.orb-3{width:250px;height:220px;background:rgba(30,95,72,.04);top:40%;left:50%;animation-delay:-2s}
-@keyframes orb-float{
-  0%,100%{transform:translate(0,0) scale(1)}
-  33%{transform:translate(-20px,15px) scale(1.05)}
-  66%{transform:translate(15px,-10px) scale(.95)}
-}
-
-/* ── Nav ── */
-nav{
-  position:fixed;top:0;left:0;right:0;z-index:50;
-  height:var(--nav-h);border-bottom:1px solid var(--c-border);
-  background:rgba(255,255,255,.85);backdrop-filter:blur(8px);
-}
-nav .inner{
-  max-width:1280px;margin:0 auto;height:100%;
-  display:flex;align-items:center;justify-content:space-between;
-  padding:0 24px;
-}
-nav .logo{font-size:15px;font-weight:700;cursor:pointer;user-select:none}
-nav .logo span{color:var(--c-accent)}
-nav .links{display:flex;align-items:center;gap:20px;font-size:13px;color:var(--c-muted)}
-nav .links a{text-decoration:none}
-nav .links a:hover{color:var(--c-text)}
-nav .gh{display:flex;align-items:center;gap:6px;font-size:13px;text-decoration:none;color:var(--c-muted)}
-nav .gh:hover{color:var(--c-text)}
-nav .gh svg{width:18px;height:18px}
-.menu-btn{display:none;border:none;background:none;cursor:pointer;padding:4px;color:var(--c-muted)}
-
-/* ── Home ── */
-#home{padding-top:var(--nav-h)}
-.hero{padding:80px 24px 48px;text-align:center}
-.hero h1{font-size:2.5rem;font-weight:800;letter-spacing:-.02em;line-height:1.15;max-width:640px;margin:0 auto}
-.hero h1 em{font-style:normal;color:var(--c-accent)}
-.hero .lead{margin-top:16px;font-size:1.05rem;color:var(--c-muted);max-width:520px;margin-left:auto;margin-right:auto;line-height:1.7}
-.hero .btns{margin-top:28px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-/* btn hover */
-.btn{
-  display:inline-flex;align-items:center;
-  padding:10px 22px;border-radius:6px;
-  font-size:14px;font-weight:600;
-  border:1.5px solid var(--c-border);
-  background:var(--c-bg);
-  cursor:pointer;text-decoration:none;
-  transition:border-color .25s,background .25s,transform .2s;
-}
-.btn:hover{text-decoration:none;border-color:var(--c-text);transform:translateY(-1px)}
-.btn.pri{background:var(--c-text);color:var(--c-bg);border-color:var(--c-text)}
-.btn.pri:hover{opacity:.85;transform:translateY(-1px)}
-
-/* features grid */
-.feat{padding:32px 24px 64px;max-width:1024px;margin:0 auto}
-.feat .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-/* feat items animation */
-.feat .item{
-  border:1px solid var(--c-border);border-radius:6px;padding:24px;
-  transition:border-color .3s,box-shadow .3s;
-}
-.feat .item:hover{
-  border-color:var(--c-accent);
-  box-shadow:0 4px 20px rgba(30,95,72,.08);
-}
-.feat .item .label{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--c-accent);letter-spacing:.05em;margin-bottom:8px}
-.feat .item h3{font-size:15px;font-weight:600;margin-bottom:6px}
-.feat .item p{font-size:13px;color:var(--c-muted);line-height:1.6}
-
-.extra{margin-top:32px;max-width:1024px;margin-left:auto;margin-right:auto;padding:0 24px}
-.extra .tag{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--c-accent);letter-spacing:.05em;margin-bottom:6px}
-.extra h2{font-size:1.15rem;font-weight:700;margin-bottom:8px}
-.extra .sub{font-size:14px;color:var(--c-muted);margin-bottom:20px;line-height:1.7;max-width:580px}
-
-.pipeline{
-  display:flex;flex-wrap:wrap;align-items:center;gap:6px;
-  font-size:13px;font-family:"SF Mono",SFMono-Regular,Consolas,monospace;
-  padding:14px 18px;background:var(--c-code-bg);border-radius:6px;
-  margin-bottom:24px;overflow-x:auto;
-}
-.pipeline span{color:var(--c-text);font-weight:600;white-space:nowrap}
-.pipeline b{color:var(--c-accent);margin:0 2px}
-
-/* pipeline flow animation */
-#pipeline-bar span{
-  transition:color .5s;
-}
-#pipeline-bar.flowing span{color:var(--c-text)}
-#pipeline-bar.flowing span.highlight{color:var(--c-accent);font-weight:700}
-
-.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-/* card hover animation */
-.card{
-  border:1px solid var(--c-border);border-radius:6px;
-  padding:20px;font-size:14px;
-  transition:border-color .3s,box-shadow .3s,transform .3s;
-}
-.card:hover{
-  border-color:var(--c-accent);
-  box-shadow:0 4px 20px rgba(30,95,72,.08);
-  transform:translateY(-2px);
-}
-.card h3{font-size:15px;margin-bottom:4px}
-.card p{color:var(--c-muted);font-size:13px;line-height:1.55}
-
-.checks{list-style:none;display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
-.checks li{font-size:13px;color:var(--c-muted);padding-left:18px;position:relative}
-.checks li::before{content:"—";position:absolute;left:0;color:var(--c-accent)}
-
-pre{
-  background:var(--c-code-bg);padding:16px 20px;border-radius:6px;
-  overflow-x:auto;margin:12px 0;font-size:13px;
-  font-family:"SF Mono",SFMono-Regular,Consolas,monospace;
-  line-height:1.8;
-}
-
-.home-footer{border-top:1px solid var(--c-border);padding:32px 24px;text-align:center;font-size:13px;color:var(--c-muted)}
-.home-footer a{color:var(--c-muted)}
-
-/* ── Docs ── */
-#docs{display:none;padding-top:var(--nav-h)}
-#docs.open{display:flex}
-
-.sidebar{
-  position:fixed;top:var(--nav-h);bottom:0;left:0;
-  width:var(--sidebar-w);padding:24px 16px 80px;
-  overflow-y:auto;border-right:1px solid var(--c-border);background:var(--c-bg);
-}
-.sidebar .group{margin-bottom:8px}
-.sidebar .group-head{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:6px 8px;font-size:13px;font-weight:700;
-  cursor:pointer;user-select:none;border-radius:4px;
-}
-.sidebar .group-head:hover{background:var(--c-bg-soft)}
-.sidebar .group-head svg{width:12px;height:12px;color:var(--c-muted);transition:transform .2s}
-.sidebar .group-head.open svg{transform:rotate(90deg)}
-.sidebar .group-items{overflow:hidden;max-height:0;transition:max-height .3s}
-.sidebar .group-items.open{max-height:600px}
-.sidebar .link{
-  display:block;padding:4px 8px 4px 16px;
-  font-size:13px;color:var(--c-muted);
-  border-radius:4px;cursor:pointer;
-  border-left:2px solid transparent;
-}
-.sidebar .link:hover{color:var(--c-text);background:var(--c-bg-soft)}
-.sidebar .link.active{color:var(--c-accent);font-weight:600;border-left-color:var(--c-accent);background:rgba(30,95,72,.06)}
-/* fade-in on scroll */
-.fade-in-up{
-  opacity:0;transform:translateY(20px);
-  transition:opacity .6s ease,transform .6s ease;
-}
-.fade-in-up.visible{opacity:1;transform:translateY(0)}
-
-.doc-main{margin-left:var(--sidebar-w);flex:1;min-width:0;min-height:calc(100vh - var(--nav-h))}
-.doc-content{max-width:700px;margin:0 auto;padding:40px 48px 80px}
-
-.doc-content h1{font-size:1.75rem;font-weight:700;letter-spacing:-.01em;margin-bottom:0}
-.doc-content .meta-row{display:flex;gap:24px;margin:12px 0 20px;padding-bottom:20px;border-bottom:1px solid var(--c-border);font-size:12px;color:var(--c-muted)}
-.doc-content .meta-row span{display:block;font-size:14px;color:var(--c-text);font-weight:500;margin-top:2px}
-.doc-content h2{font-size:1.15rem;font-weight:600;margin-top:36px;margin-bottom:10px;padding-top:20px;border-top:1px solid var(--c-border)}
-.doc-content h2:first-of-type{border-top:none;margin-top:20px;padding-top:0}
-.doc-content p{font-size:14px;line-height:1.8;color:var(--c-muted);margin-bottom:14px}
-.doc-content code{
-  font-family:"SF Mono",SFMono-Regular,Consolas,monospace;
-  font-size:12px;background:var(--c-code-bg);padding:2px 5px;border-radius:3px;
-}
-.doc-content pre{
-  background:var(--c-code-bg);padding:14px 18px;border-radius:6px;
-  overflow-x:auto;margin:12px 0;font-size:13px;
-  font-family:"SF Mono",SFMono-Regular,Consolas,monospace;
-  line-height:1.8;
-}
-.doc-content .check-list{list-style:none;margin:8px 0 14px}
-.doc-content .check-list li{
-  font-size:14px;line-height:1.8;color:var(--c-muted);
-  padding-left:20px;position:relative;
-}
-.doc-content .check-list li::before{content:"—";position:absolute;left:0;color:var(--c-accent)}
-.doc-content .tip{
-  background:rgba(30,95,72,.06);border:1px solid rgba(30,95,72,.15);
-  border-radius:6px;padding:12px 16px;margin:14px 0;
-  font-size:13px;color:var(--c-accent);line-height:1.7;
-}
-.doc-content .tip::before{content:"Note";display:block;font-size:11px;font-weight:700;margin-bottom:4px;color:var(--c-accent)}
-.doc-pager{display:flex;justify-content:space-between;margin-top:40px;padding-top:20px;border-top:1px solid var(--c-border)}
-.doc-pager .pg{font-size:13px;color:var(--c-muted);cursor:pointer;max-width:45%}
-.doc-pager .pg:hover{color:var(--c-text)}
-.doc-pager .pg.next{text-align:right;font-weight:500}
-.doc-pager .pg .pg-label{font-size:11px;color:var(--c-muted);margin-bottom:2px}
-
-.search-box{
-  width:200px;padding:6px 10px 6px 30px;
-  border:1px solid var(--c-border);border-radius:6px;
-  font-size:13px;outline:none;background:var(--c-bg-soft);
-}
-.search-box:focus{border-color:var(--c-accent)}
-
-/* ── mobile ── */
-@media(max-width:768px){
-  nav .inner{padding:0 16px}
-  .search-box{width:120px}
-  .hero h1{font-size:1.75rem}
-  .grid2,.grid3,.checks{grid-template-columns:1fr}
-  .menu-btn{display:flex}
-  .orb{display:none}
-  .sidebar{
-    transform:translateX(-100%);z-index:40;
-    box-shadow:2px 0 8px rgba(0,0,0,.12);
-  }
-  .sidebar.mobile-open{transform:translateX(0)}
-  .doc-main{margin-left:0}
-  .doc-content{padding:24px 20px 60px}
-}
-#docs .overlay{display:none;position:fixed;top:var(--nav-h);left:0;right:0;bottom:0;background:rgba(0,0,0,.3);z-index:35}
-
-/* Current product overview */
-nav .logo{text-decoration:none}
-:focus-visible{outline:2px solid var(--c-accent);outline-offset:4px}
-.hero .version{display:inline-block;font-size:12px;color:var(--c-accent);background:rgba(30,95,72,.06);border:1px solid rgba(30,95,72,.15);border-radius:20px;padding:5px 13px;margin-bottom:20px}
-.hero h1{max-width:760px}
-.hero .lead{max-width:630px}
-.status-row{display:grid;grid-template-columns:repeat(3,1fr);max-width:976px;margin:0 auto 12px;border:1px solid var(--c-border);border-radius:6px;background:var(--c-bg)}
-.status-row div{padding:16px 20px;font-size:13px;color:var(--c-muted)}
-.status-row strong{display:block;color:var(--c-text);font-size:15px;margin-bottom:2px}
-.overview-section{margin-bottom:48px}
-.overview-section p{font-size:14px;line-height:1.8;color:var(--c-muted);margin:10px 0}
-.overview-section h3{font-size:15px}
-.overview-section .card a{display:inline-block;margin-top:12px;color:var(--c-accent);font-size:13px}
-.product-shot{border:1px solid var(--c-border);border-radius:6px;overflow:hidden;background:var(--c-bg)}
-.product-shot img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;object-position:top;border-bottom:1px solid var(--c-border)}
-.product-shot figcaption{padding:14px 18px;color:var(--c-muted);font-size:13px}
-.doc-content table{border-collapse:collapse;width:100%;font-size:13px;margin:16px 0}
-.doc-content th,.doc-content td{border-bottom:1px solid var(--c-border);text-align:left;vertical-align:top;padding:10px 8px}
-.doc-content th{color:var(--c-text)}
-.doc-content td{color:var(--c-muted)}
-.doc-content img{max-width:100%;height:auto}
-.sidebar a.link{text-decoration:none}
-.sidebar button.group-head{width:100%;border:0;background:none;font:inherit;text-align:left}
-@media(max-width:768px){
-  .feat .grid{grid-template-columns:1fr}
-  .status-row{grid-template-columns:1fr;margin:0 24px 12px}
-  .status-row div+div{border-top:1px solid var(--c-border)}
-  #docs .overlay.open{display:block}
-}
-</style>
+<link rel="stylesheet" href="showcase/site.css">
 </head>
 <body>
-
-<!-- NAV -->
-<nav>
-  <div class="inner">
-    <div style="display:flex;align-items:center;gap:8px">
-      <button class="menu-btn" id="menuBtn" onclick="toggleSidebar()" aria-label="打开文档目录" aria-expanded="false">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
-      </button>
-      <a class="logo" href="#" onclick="showHome();return false">Garden</a>
-    </div>
-    <div style="display:flex;align-items:center;gap:12px">
-      <input class="search-box" placeholder="搜索文档…" aria-label="搜索文档" id="searchInput"/>
-      <a class="links" href="#docs/intro" onclick="showDocs('intro');return false">文档</a>
-      <a class="gh" href="https://github.com/Moxxkidd/Garden" target="_blank">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
-        GitHub
-      </a>
-    </div>
-  </div>
-</nav>
-
-<!-- ── HOME ── -->
+<svg xmlns="http://www.w3.org/2000/svg" class="symbols" aria-hidden="true"><symbol id="i-leaf" viewBox="0 0 24 24"><path d="M4 21c1-6 4-11 11-15M7 15C3 7 13 4 21 3c0 8-3 15-12 14"/></symbol><symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6c-3-2-6-2-9-1v13c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1Zm0 0v13"/></symbol><symbol id="i-github" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></symbol><symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.6" cy="10.6" r="6.2"/><path d="m15.3 15.3 5 5"/></symbol><symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5m8-10 5 5-5 5M14 4l-4 16"/></symbol><symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 6 6 6-6 6m9 0h7"/></symbol><symbol id="i-route" viewBox="0 0 24 24"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M8 6h6a3 3 0 0 1 0 6h-4a3 3 0 0 0 0 6h6"/></symbol><symbol id="i-layers" viewBox="0 0 24 24"><path d="m3 8 9-5 9 5-9 5-9-5Zm0 5 9 5 9-5M3 17l9 5 9-5"/></symbol><symbol id="i-box" viewBox="0 0 24 24"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Zm0 0 9 4 9-4m-9 4v10m-5-16 9 4"/></symbol><symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 4H4v5m11-5h5v5m0 6v5h-5M4 15v5h5"/></symbol><symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M15 5V3H4v13h1"/></symbol><symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></symbol><symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol><symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol><symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5h6l2 2h10v12H3V7Z"/></symbol></svg>
+<a class="skip" href="#main-content">跳到正文</a>
+<header class="mast"><nav class="wrap mast-inner" aria-label="主导航">
+  <a class="brand" href="#home"><span class="mark"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg></span>Garden</a>
+  <div class="primary-links"><a href="#identity-collection">工作流程</a><a href="#product-preview">产品预览</a><a href="#docs/intro">使用文档</a></div>
+  <div class="tools"><button type="button" class="search-trigger" id="searchTrigger" aria-label="搜索文档"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><span>搜索文档</span><kbd>/</kbd></button>
+  <a class="repo" href="https://github.com/Moxxkidd/Garden" aria-label="GitHub 仓库"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg><span>GitHub</span></a>
+  <button class="mobile-menu" id="menuBtn" aria-label="打开导航" aria-expanded="false" aria-controls="mobileNav"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button></div>
+</nav></header>
+<nav id="mobileNav" hidden aria-label="移动端导航"><a href="#identity-collection">工作流程</a><a href="#product-preview">产品预览</a><a href="#docs/intro">使用文档</a><button id="openDirectory" hidden>打开文档目录</button></nav>
+<div id="main-content" tabindex="-1"></div>
 <main id="home">
-<div class="bg-grid"></div>
-<div class="hero-wrap">
-  <div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
-  <section class="hero">
-    <span class="version">v2.0.0 · 发布准备完成</span>
-    <h1>从一个入口<br>到可交付的<em>资产清单</em></h1>
-    <p class="lead">发现页面、接口与资源，汇集匿名与登录态观察。用同一套项目清单完成筛选、人工复核、报告交付与后续复查。</p>
-    <div class="btns">
-      <a class="btn pri" href="#docs/install" onclick="showDocs('install');return false">安装与开始</a>
-      <a class="btn" href="#docs/quickstart" onclick="showDocs('quickstart');return false">走一遍使用流程</a>
-      <a class="btn" href="https://github.com/Moxxkidd/Garden">查看源码</a>
+  <section class="hero" aria-labelledby="hero-title">
+    <img class="hero-art" src="showcase/fern.webp" alt="" fetchpriority="high" width="1600" height="900">
+    <div class="hero-shade"></div>
+    <div class="wrap hero-inner">
+      <a class="source-status" href="#docs/release-status"><span>v2.0.0</span>源码候选</a>
+      <h1 id="hero-title">从授权入口，<br>到<em>资产清单。</em></h1>
+      <p>发现页面、接口与资源，把匿名与登录态观察汇入同一份清单。每项资产都能复核，每份交付都能追溯来源。</p>
+      <div class="actions"><a class="button primary" href="#docs/install"><svg class="icon" aria-hidden="true"><use href="#i-terminal"/></svg>安装与开始</a><a class="button ghost" href="#docs/quickstart"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>走一遍使用流程</a></div>
     </div>
   </section>
-</div>
-<div class="status-row" aria-label="当前版本状态">
-  <div><strong>2.0.0 / 迁移 0016</strong>核心 Python ≥3.10，WebUI / CLI / API 共用引擎</div>
-  <div><strong>两套环境各 993 项通过</strong>11 月 14 日候选 Linux Python 3.10 / 3.12，<a href="#docs/release-status" onclick="showDocs('release-status');return false">查看验收范围</a></div>
-  <div><strong>macOS App 本地 Beta</strong>Apple Silicon / 26.0+，正式签名、公证与发行待完成</div>
-</div>
-<section class="feat" aria-label="当前能力">
-  <div class="grid">
-    <article class="item"><div class="label">发现</div><h3>有界采集，保留来源</h3><p>快速、平衡与浏览器深入预设；结合页面、Sitemap、JS 与导入线索，按路径族分配预算。未请求线索保留为候选。</p></article>
-    <article class="item"><div class="label">身份</div><h3>匿名与登录态分开观察</h3><p>自行完成验证码后恢复验证，再采集登录态资产。显式人工浏览记录用户实际请求，自动采集不重放人工 POST。</p></article>
-    <article class="item"><div class="label">多入口</div><h3>每个入口有明确配额</h3><p>项目计划统一预览入口、身份和预算，按独立单 origin 子任务执行，结果汇入同一项目，不跨身份借用预算。</p></article>
-    <article class="item"><div class="label">整理</div><h3>一份清单，保留多份观察</h3><p>主体、请求变体、身份观察、候选与关系分别保留。筛选、保存视图、批量复核并撤销；模板仅改变展示。</p></article>
-    <article class="item"><div class="label">交付</div><h3>从概要追溯到证据</h3><p>三层报告与完整 JSON、可读 CSV、HTML、PDF、ZIP。固定筛选与修订，分块生成，不只导出当前屏幕的一页。</p></article>
-    <article class="item"><div class="label">持续更新</div><h3>看变化，也能备份恢复</h3><p>记录时效与变化，显式开启固定间隔复查；重启不补发。私有备份恢复到空目录，计划暂停，保留人工选择。</p></article>
-  </div>
-</section>
-<section class="extra overview-section" id="identity-collection">
-  <div class="tag">从采集到交付</div><h2>按你的任务选择入口</h2>
-  <div class="grid3">
-    <article class="card"><h3>1 · 快速扫描</h3><p>输入已授权 URL，选择预设，检查同源边界和实际预算后开始。普通扫描可独立运行。</p><a href="#docs/discovery" onclick="showDocs('discovery');return false">发现策略与预算 →</a></article>
-    <article class="card"><h3>2 · 登录与多入口</h3><p>导入或人工建立登录态，在新上下文验证后采集；多个入口分别绑定身份和固定配额。</p><a href="#docs/login" onclick="showDocs('login');return false">登录、验证码与恢复验证 →</a></article>
-    <article class="card"><h3>3 · 整理与交接</h3><p>在项目清单复核筛选结果，以概要、资产和证据交付。需要长期维护时再显式启用复查。</p><a href="#docs/projects" onclick="showDocs('projects');return false">项目清单与人工复核 →</a></article>
-  </div>
-  <div class="pipeline" id="pipeline-bar" style="margin-top:20px"><span>授权入口</span><b>→</b><span>有界采集</span><b>→</b><span>项目清单</span><b>→</b><span>人工复核</span><b>→</b><span>完整交付</span></div>
-</section>
-<section class="extra overview-section" id="product-preview">
-  <div class="tag">真实产品界面</div><h2>先看计划，再看交付</h2>
-  <p>截图来自 v2.0 合成验收旅程：匿名与两入口两身份采集、人工保留、导出、周期复查及隔离恢复。界面中的数量只代表该样本。</p>
-  <div class="grid2">
-    <figure class="product-shot"><a href="quality/v2-assets/plan-desktop.png"><img src="quality/v2-assets/plan-desktop.png" alt="双入口计划，逐项显示身份及固定预算" loading="lazy" width="1280" height="800"></a><figcaption>提交前核对两个入口、身份和各自配额。点击查看完整截图。</figcaption></figure>
-    <figure class="product-shot"><a href="quality/v2-assets/delivery-desktop.png"><img src="quality/v2-assets/delivery-desktop.png" alt="项目交付页，展示概要、资产及证据" loading="lazy" width="1280" height="800"></a><figcaption>从主体与身份观察追溯来源，选择当前筛选的完整交付。</figcaption></figure>
-  </div>
-</section>
-<section class="extra overview-section">
-  <div class="tag">读懂结果</div><h2>把完成、覆盖和有效性分开</h2>
-  <div class="grid2">
-    <article class="card"><h3>100% 不代表覆盖完整</h3><p>任务执行结束后仍可能有预算、超时、身份或未请求候选造成的缺口。未知不等于不存在。</p></article>
-    <article class="card"><h3>人工保留不证明业务有效</h3><p>保留的是人的判断；系统仍展示已有响应、登录回退、软 404 等线索及原始来源。</p></article>
-    <article class="card"><h3>生成文件不等于保存成功</h3><p>Web 明确区分已生成与发起下载；App 选择保存位置并实际写入后才提示成功。</p></article>
-    <article class="card"><h3>私有备份不能公开交接</h3><p>公开交付脱敏，私有备份可能含会话秘密。恢复只写入空目录，周期计划保持暂停。</p></article>
-  </div>
-</section>
-<section class="extra overview-section">
-  <div class="tag">本机开始</div><h2>安装，查看环境，再打开工作台</h2>
-  <pre>git clone https://github.com/Moxxkidd/Garden.git
+  <div class="facts"><dl class="wrap">
+    <div><dt>核心运行环境</dt><dd>Python <b>≥ 3.10</b></dd></div>
+    <div><dt>共用本地引擎</dt><dd>CLI <i>/</i> WebUI <i>/</i> API</dd></div>
+    <div><dt>Apple Silicon · macOS 26.0+</dt><dd>macOS App <small>本地 Beta</small></dd></div>
+  </dl></div>
+  <section class="wrap section workflow" id="identity-collection">
+    <div class="section-head"><div><p class="eyebrow">工作流程</p><h2>从发现到交付</h2></div><p>按手头的任务进入，<br class="wide">每一步都有对应的操作指南。</p></div>
+    <div class="steps">
+      <article><span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-route"/></svg></span><h3>快速发现</h3><p>从一个授权 URL 开始，预览同源范围与请求预算。已观察资产和未请求候选分别保留。</p><a href="#docs/discovery">发现策略与预算</a></article>
+      <article><span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg></span><h3>多入口与身份</h3><p>恢复并验证登录态，为每个入口绑定身份与固定配额，分别记录匿名和登录后的观察。</p><div><a href="#docs/plans">多入口计划</a><a href="#docs/login">登录与验证</a></div></article>
+      <article><span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg></span><h3>整理与交接</h3><p>在项目中筛选、批量复核并保存视图。按完整筛选结果导出报告，从概要追溯到证据。</p><div><a href="#docs/projects">项目清单</a><a href="#docs/export">报告交付</a></div></article>
+    </div>
+  </section>
+  <section id="product-preview" class="studio"><div class="wrap section preview-layout">
+    <div class="preview-copy"><p class="eyebrow">产品预览</p><h2>工作台实景</h2><p>来自 v2.0 合成验收的真实截图。切换视图，查看同一项目从计划到交付的过程。</p>
+      <div class="view-options" aria-label="选择预览界面"><button data-view="plan" aria-pressed="true"><svg class="icon" aria-hidden="true"><use href="#i-route"/></svg>多入口计划</button><button data-view="delivery" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>项目交付</button></div>
+      <a class="text-link" href="#docs/maintenance">查看后续复查与维护</a>
+    </div>
+    <figure class="preview-frame"><div class="frame-head"><span>Garden <b>/</b> <span id="previewTitle">多入口计划</span></span><a id="previewFull" href="quality/v2-assets/plan-desktop.png" target="_blank" rel="noopener" aria-label="打开完整原图（新标签页）"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg> 原图</a></div>
+    <div class="shot"><img id="previewImg" src="quality/v2-assets/plan-desktop.png" width="1280" height="1000" alt="两个入口的身份绑定与固定预算" loading="lazy"></div><figcaption id="previewCaption" aria-live="polite">提交前核对两个入口、各自的身份与请求配额。</figcaption></figure>
+  </div></section>
+  <section class="wrap section notes">
+    <div><p class="eyebrow">结果解读</p><h2>读懂清单里的证据</h2></div>
+    <div class="note-list">
+      <details open><summary>任务完成后，还有哪些覆盖缺口？</summary><p>预算、超时、身份失效或未请求的候选都会留下缺口。任务进度描述执行状态，覆盖范围需要结合每个来源的记录判断。</p></details>
+      <details><summary>人工保留代表什么？</summary><p>它记录复核人的选择。判断业务是否有效，还要看实际响应、登录回退、软 404 等线索及原始来源。</p></details>
+      <details><summary>怎样确认交付文件已保存？</summary><p>Web 界面区分文件生成与发起下载，请在浏览器中确认下载结果。macOS App 会在文件写入所选位置后提示成功。</p></details>
+      <details><summary>项目报告和私有备份分别给谁？</summary><p>报告用于交付脱敏结果。私有备份可能含会话秘密，应由维护者保管；恢复时写入空目录，周期计划保持暂停。</p></details>
+    </div>
+  </section>
+  <section class="start"><div class="wrap section start-layout">
+    <div><p class="eyebrow">本机开始</p><h2>打开你的工作台</h2><p>准备 Python 3.10+，从源码安装。安装器会备份并升级所选数据目录，请先核对目录并停止原实例。</p><a class="button ghost" href="#docs/install"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>完整安装说明</a></div>
+    <div class="terminal"><div class="term-head"><span><svg class="icon" aria-hidden="true"><use href="#i-terminal"/></svg> Terminal</span><button id="copyCmd"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><span aria-live="polite">复制命令</span></button></div><pre id="commands">git clone https://github.com/Moxxkidd/Garden.git
 cd Garden
 ./install.sh
 garden --version
 garden doctor
-garden ui</pre>
-  <p>需要 Python 3.10+；安装器会备份并升级所选数据目录。登录、人工浏览、浏览器深入和 PDF 还需要匹配的 Chromium，详见<a href="#docs/install" onclick="showDocs('install');return false">安装文档</a>。doctor 只读，不访问扫描目标。</p>
-</section>
-<section class="extra overview-section">
-  <div class="tag">交付与验收</div><h2>发布准备完成，正式发行另行进行</h2>
-  <p>11 月 14 日候选 <code>8146a43</code> 已验证真实 v1.0 结构升级、完整合成旅程、wheel / sdist / macOS DMG 与 App 实际保存。Python 3.10 / 3.12 各 993 passed，CLI 和 Docker 构建通过。</p>
-  <p>当前没有公开发行包。macOS 仅为 Apple Silicon / 26.0+ 本地 Beta；正式签名、公证、更新渠道、许可证再分发及外部干净机器仍待核实。合成结果不代表实际站点发现率。</p>
-  <p><a href="#docs/release-status" onclick="showDocs('release-status');return false">完整验收与包 SHA256</a> · <a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/README.md">版本索引</a> · <a href="https://github.com/Moxxkidd/Garden/blob/main/docs/history.md">历史沿革</a></p>
-</section>
-<footer class="home-footer">Garden 2.0 · 资产发现、整理与交付 · <a href="https://github.com/Moxxkidd/Garden">GitHub</a> · 当前未声明开源许可证</footer>
+garden ui</pre></div>
+  </div></section>
+  <footer class="wrap footer"><div><a class="brand" href="#home"><span class="mark"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg></span>Garden</a><p>v2.0.0 已完成发布准备，正式发行待完成。<br>当前未声明开源许可证。</p></div><div class="foot-links"><a href="#docs/release-status">版本验收与包校验</a><a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/README.md">版本索引</a><a href="https://github.com/Moxxkidd/Garden/blob/main/docs/history.md">历史沿革</a><a href="https://github.com/Moxxkidd/Garden">GitHub 仓库</a></div></footer>
 </main>
-
-<!-- ── DOCS ── -->
-<div id="docs">
-  <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
-  <aside class="sidebar" id="sidebar"></aside>
-  <div class="doc-main">
-    <div class="doc-content" id="docContent"></div>
-  </div>
-</div>
-
+<main id="docs" hidden><div class="wrap docs-layout"><aside id="sidebar" aria-label="文档目录"></aside><article id="docContent" tabindex="-1"></article></div></main>
+<dialog id="searchDialog" aria-label="搜索文档"><div class="search-line"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="searchInput" type="search" aria-label="按文档标题搜索" placeholder="按文档标题搜索…" autocomplete="off"><button id="closeSearch" aria-label="关闭搜索"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><p id="searchStatus" role="status"></p><div id="searchResults"></div></dialog>
 <script>
 const TREE=[
   {cat:"快速开始",items:[
@@ -503,7 +176,7 @@ desktop:{b:'资产工作台 > macOS App Beta',h:`
 <h2>与 CLI / 浏览器共用数据</h2><p>首次选择数据目录，新建或备份升级分别确认。同一目录通过带本地会话的实例握手共享引擎；版本或所有权不符时不接管未知端口。原生菜单、窗口和保存对话框复用同一项目清单。</p>
 <h2>候选实测与发行状态</h2><p>最终 DMG 已实际校验、挂载、安装与隔离启动。页面渲染单次约 3.204 秒；项目 CSV 经原生 Save 后实际落盘 5 行。候选仅使用 ad-hoc 完整性签名，没有 Developer ID、公证、装订或外部机器发行验收，也没有公开下载包。</p>
 <h2>更新和回退</h2><p>只有用户触发并确认后才检查/安装，复用官方签名验证，更新前私有备份；程序回退与数据恢复分开。默认无正式更新渠道，不自动检查或请求通知权限。</p>
-<p><a href="https://github.com/Moxxkidd/Garden/blob/main/desktop/README.md">本地构建与所有限制</a> · <a href="#docs/release-status" onclick="nav('release-status');return false">候选包清单</a></p>
+<p><a href="https://github.com/Moxxkidd/Garden/blob/main/desktop/README.md">本地构建与所有限制</a> · <a href="#docs/release-status">候选包清单</a></p>
 `},
 maintenance:{b:'资产工作台 > 时效、复查与数据管理',h:`
 <h1>时效、复查与数据管理</h1><h2>最后观察与变化</h2><p>项目显示最后观察、身份、范围、保存的预算和变化分类。超过设置天数标为较旧，仅是时间提示。补采优先说明已有缺口与较旧观察；覆盖不足或配置不可比时保留未知。</p>
@@ -531,7 +204,7 @@ projects:{b:'资产工作台 > 项目清单与人工复核',h:`
 <div class="tip">人工保留不证明业务有效；历史状态码集合不代表当前在线。比较不完整或身份不明时保留未知，未再观察到不代表删除。</div>
 <pre>garden projects assets 1 --json
 garden projects freshness 1</pre>
-<p><a href="#docs/export" onclick="nav('export');return false">把筛选结果交付出去 →</a></p>
+<p><a href="#docs/export">把筛选结果交付出去 →</a></p>
 `},
 discovery:{b:'资产工作台 > 发现策略与预算',h:`
 <h1>发现策略与预算</h1><table><tr><th>预设</th><th>适用方式</th></tr><tr><td>快速 quick</td><td>原 HTTP 默认，先获得入口附近的有界观察。</td></tr><tr><td>平衡 balanced</td><td>HTTP 路径多样性，结合 HTML、Sitemap 与 JS 声明线索。</td></tr><tr><td>浏览器深入 deep</td><td>匿名单入口显式混合模式，按线索启动浏览器；总预算预留 30% 给浏览器阶段。</td></tr></table>
@@ -548,7 +221,7 @@ intro:{b:'快速开始 > 简介与当前能力',h:`
 <ul class="check-list"><li><strong>快速扫描</strong>：独立提交 URL，预览预设、同源边界和预算；不需要先配置登录。</li><li><strong>登录与多入口</strong>：人工完成验证码后恢复验证；每个入口单独绑定身份和配额，再确认计划。</li><li><strong>整理与交付</strong>：筛选项目清单、批量人工复核，生成完整报告与离线文件，必要时显式开启后续复查。</li></ul>
 <h2>当前交付状态</h2><p>源码 2.0.0、迁移 head 0016、核心 Python ≥3.10。11 月 14 日候选两版 Python 各 993 passed。macOS 为 Apple Silicon / 26.0+ 本地 Beta；没有正式发行包。</p>
 <div class="tip">执行结束不等于覆盖完整；人工保留不证明业务有效。已观察、候选、未知、范围和身份限制分别保留。文件已生成与用户保存也分别说明。</div>
-<p><a href="#docs/quickstart" onclick="nav('quickstart');return false">从本机试跑开始</a> · <a href="#docs/release-status" onclick="nav('release-status');return false">核对验收和发行状态</a></p>
+<p><a href="#docs/quickstart">从本机试跑开始</a> · <a href="#docs/release-status">核对验收和发行状态</a></p>
 `},
 install:{b:'快速开始 > 安装与部署',h:`
 <h1>安装与部署</h1>
@@ -575,7 +248,7 @@ make dev</pre>
 docker compose run --rm garden garden db upgrade
 docker compose up -d</pre>
 <p>升级已有部署前先停止原容器。容器里的 127.0.0.1 指向容器自身。macOS App 捆绑 Python 与 Chromium，仅支持 Apple Silicon / macOS 26.0+ 本地 Beta，尚无公开发行包。</p>
-<p><a href="https://github.com/Moxxkidd/Garden/blob/main/docs/deployment.md">详细部署与代理说明</a> · <a href="#docs/desktop" onclick="nav('desktop');return false">App 使用与限制</a></p>
+<p><a href="https://github.com/Moxxkidd/Garden/blob/main/docs/deployment.md">详细部署与代理说明</a> · <a href="#docs/desktop">App 使用与限制</a></p>
 `},
 quickstart:{b:'快速开始 > 本机试跑与完整流程',h:`
 <h1>本机试跑与完整流程</h1><p>先完成安装，再用本仓库公开文档作为本机合成目标。这里 8080 是目标站点，8000 是 Garden 界面；只扫描自己启动并授权的服务。</p>
@@ -644,7 +317,7 @@ login:{b:'资产工作台 > 登录、验证码与恢复验证',h:`
 <h2>显式人工浏览</h2><p>选择人工浏览模式后，只记录用户和浏览器实际产生的目标请求，包括用户触发的 POST。Garden 不自动点击、提交、刷新或重放。控制页显示记录状态与停止入口，停止或配额耗尽保留观察并标记覆盖不完整；人工 POST 不进入自动队列或补采。</p>
 <h2>身份与材料边界</h2><p>每个入口/身份独立，不因项目归并而串用会话。额外登录 origin 仅在人工登录阶段生效。公开清单和导出脱敏，原始状态只保存在受保护的私有引用后；私有备份可能包含秘密。远程部署的登录窗口位于服务器，也可显式导入状态。</p>
 <p>现有 HTTP / Playwright 配置式登录、会话验证和固定三身份 coverage 继续可用。这些能力不承诺通用 SSO、验证码绕过或自动重放业务流程。</p>
-<p><a href="#docs/plans" onclick="nav('plans');return false">为多个入口配置身份与固定配额 →</a></p>
+<p><a href="#docs/plans">为多个入口配置身份与固定配额 →</a></p>
 `},
 sessions:{b:'高级工作流 > 会话管理',h:`
 <h1>会话管理</h1>
@@ -912,7 +585,7 @@ report:{b:'证据与结果 > 结果解释与报告',h:`
 <h1>结果解释与报告</h1>
 <p>项目报告由同一查询和修订生成，分为概要、资产、证据。分别显示主体、身份观察、人工复核及覆盖缺口；单次扫描报告和旧 job Markdown 报告继续保留，历史文件不会自动重写。</p>
 <ul class="check-list"><li>任务 completed / 100% 只表示执行结束，覆盖不足仍明确列出。</li><li>关注项按类别与原始观察分别计数，未请求候选不会变成已观察资产。</li><li>已观察、有效性线索与人工保留分别表达，人的选择不证明业务有效。</li><li>未再观察到不表示删除或修复；范围、身份或覆盖不可比时保留未知。</li><li>缺口说明原因和可选下一步，不会自动扩大范围、增加预算或发送新请求。</li></ul>
-<p>报告来自持久化结构，不解析 CLI 输出。生成与保存分别记录，具体格式见<a href="#docs/export" onclick="nav('export');return false">报告与完整交付</a>。</p>
+<p>报告来自持久化结构，不解析 CLI 输出。生成与保存分别记录，具体格式见<a href="#docs/export">报告与完整交付</a>。</p>
 `},
 'cli-scan':{b:'CLI 参考 > garden scan',h:`
 <h1>garden scan</h1>
@@ -1029,126 +702,7 @@ constraints:{b:'进阶 > 支持范围与限制',h:`
 };
 
 /* ── app logic ── */
-function buildSidebar(){
-  var sb=document.getElementById('sidebar');
-  sb.innerHTML=TREE.map(function(cat,ci){
-    var open=ci===0;
-    return '<div class="group">'+
-      '<button type="button" class="group-head'+(open?' open':'')+'" aria-expanded="'+open+'" onclick="toggleCat(this)">'+
-        cat.cat+
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>'+
-      '</button>'+
-      '<div class="group-items'+(open?' open':'')+'">'+
-        cat.items.map(function(i){
-          return '<a class="link'+(i.mono?' mono':'')+'" data-id="'+i.id+'" href="#docs/'+i.id+'" onclick="nav(\''+i.id+'\');return false">'+i.title+'</a>';
-        }).join('')+
-      '</div>'+
-    '</div>';
-  }).join('');
-}
-
-function toggleCat(el){var open=el.classList.toggle('open');el.nextElementSibling.classList.toggle('open',open);el.setAttribute('aria-expanded',String(open))}
-
-function nav(id){
-  document.getElementById('home').style.display='none';
-  var dp=document.getElementById('docs');
-  dp.classList.add('open');dp.style.display='flex';
-
-  document.querySelectorAll('.link').forEach(function(l){l.classList.remove('active')});
-  var a=document.querySelector('.link[data-id="'+id+'"]');
-  if(a){
-    a.classList.add('active');
-    var gi=a.closest('.group-items'),gt=gi.previousElementSibling;
-    if(!gi.classList.contains('open')){gi.classList.add('open');gt.classList.add('open');gt.setAttribute('aria-expanded','true')}
-  }
-
-  var p=PAGES[id];
-  if(p){
-    var all=TREE.flatMap(function(c){return c.items.map(function(i){return i.id})});
-    var idx=all.indexOf(id);
-    var prev=idx>0?all[idx-1]:null,next=idx<all.length-1?all[idx+1]:null;
-    document.getElementById('docContent').innerHTML=
-      '<div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">'+p.b+'</div>'+p.h+
-      '<div class="doc-pager">'+
-        (prev?'<div class="pg" onclick="nav(\''+prev+'\')"><div class="pg-label">&larr; 上一节</div><div>'+PAGES[prev].b.split(' > ')[1]+'</div></div>':'<div></div>')+
-        (next?'<div class="pg next" onclick="nav(\''+next+'\')"><div class="pg-label">下一节 &rarr;</div><div>'+PAGES[next].b.split(' > ')[1]+'</div></div>':'<div></div>')+
-      '</div>';
-    window.scrollTo(0,0);
-  }
-  history.replaceState(null,'','#docs/'+id);
-  closeSidebar();
-}
-
-function showDocs(id){nav(id||'intro')}
-
-function showHome(){
-  document.getElementById('home').style.display='block';
-  var dp=document.getElementById('docs');
-  dp.classList.remove('open');dp.style.display='none';
-  document.querySelectorAll('.link').forEach(function(l){l.classList.remove('active')});
-  history.replaceState(null,'','#');
-  window.scrollTo(0,0);
-  closeSidebar();
-}
-
-function toggleSidebar(){
-  var open=document.getElementById('sidebar').classList.toggle('mobile-open');
-  document.getElementById('overlay').classList.toggle('open',open);
-  document.getElementById('menuBtn').setAttribute('aria-expanded',String(open));
-}
-function closeSidebar(){
-  document.getElementById('sidebar').classList.remove('mobile-open');
-  document.getElementById('overlay').classList.remove('open');
-  document.getElementById('menuBtn').setAttribute('aria-expanded','false');
-}
-
-document.addEventListener('DOMContentLoaded',function(){
-  buildSidebar();
-  var h=location.hash;
-  if(h.startsWith('#docs/')){
-    var id=h.replace('#docs/','');
-    if(PAGES[id])nav(id);
-  }
-
-  /* scroll-triggered fade-in */
-  var targets=document.querySelectorAll('.feat .item, .card, .extra');
-  var obs=new IntersectionObserver(function(entries){
-    entries.forEach(function(e){
-      if(e.isIntersecting){
-        e.target.style.opacity='1';
-        e.target.style.transform='translateY(0)';
-      }
-    });
-  },{threshold:0});
-  targets.forEach(function(el){
-    el.style.opacity='0';
-    el.style.transform='translateY(16px)';
-    el.style.transition='opacity .5s ease,transform .5s ease';
-    obs.observe(el);
-  });
-
-  /* pipeline flow animation */
-  var bar=document.getElementById('pipeline-bar');
-  if(bar){
-    var spans=bar.querySelectorAll('span');
-    var step=0;
-    setInterval(function(){
-      spans.forEach(function(s,i){s.classList.toggle('highlight',i===step%spans.length)});
-      step++;
-    },800);
-  }
-});
-
-document.getElementById('searchInput').addEventListener('input',function(e){
-  var q=e.target.value.toLowerCase();
-  if(document.getElementById('home').style.display!=='none')showDocs();
-  document.querySelectorAll('.link').forEach(function(i){
-    i.style.display=!q||i.textContent.toLowerCase().indexOf(q)>-1?'':'none';
-  });
-  if(q)document.querySelectorAll('.group-items').forEach(function(e){
-    e.classList.add('open');e.previousElementSibling.classList.add('open');e.previousElementSibling.setAttribute('aria-expanded','true');
-  });
-});
 </script>
+<script src="showcase/site.js"></script>
 </body>
 </html>
