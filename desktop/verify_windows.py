@@ -72,6 +72,23 @@ def workbench_window(process):
     return windows[0]
 
 
+def wait_for_page(browser, match, description):
+    # The WebView2 debugging endpoint may listen before it has any page targets.
+    cdp = browser.new_browser_cdp_session()
+    deadline = time.monotonic() + 30
+    try:
+        while time.monotonic() < deadline:
+            cdp.send("Target.getTargets")
+            for context in browser.contexts:
+                for page in context.pages:
+                    if match(urlsplit(page.url)):
+                        return page
+            time.sleep(0.2)
+    finally:
+        cdp.detach()
+    raise AssertionError(f"WebView2 did not open {description}")
+
+
 def connect_workbench(session, setup, state):
     output = setup.locator("#output")
     previous = output.text_content()
@@ -86,16 +103,12 @@ def connect_workbench(session, setup, state):
     assert '"connected": true' in result, f"Garden could not connect: {result}"
     assert state.is_file()
     port = json.loads(state.read_text(encoding="utf-8"))["port"]
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
-        for context in session.contexts:
-            for page in context.pages:
-                address = urlsplit(page.url)
-                if address.netloc == f"127.0.0.1:{port}" and address.path == "/":
-                    page.get_by_role("heading", name="创建资产扫描").wait_for(timeout=15_000)
-                    return
-        setup.wait_for_timeout(200)
-    raise AssertionError("The connected WebView2 window did not render the workbench")
+    page = wait_for_page(
+        session,
+        lambda address: address.netloc == f"127.0.0.1:{port}" and address.path == "/",
+        "the connected workbench",
+    )
+    page.get_by_role("heading", name="创建资产扫描").wait_for(timeout=15_000)
 
 
 def serve_and_close(destination, home, directory, version):
@@ -113,7 +126,9 @@ def serve_and_close(destination, home, directory, version):
         wait_for_webview(process, endpoint)
         with sync_playwright() as playwright:
             session = playwright.chromium.connect_over_cdp(endpoint)
-            setup = session.contexts[0].pages[0]
+            setup = wait_for_page(
+                session, lambda address: address.hostname == "tauri.localhost", "the setup page"
+            )
             setup.wait_for_function(
                 "(version) => document.querySelector('#version')?.textContent === version",
                 arg=version,
@@ -211,7 +226,9 @@ def main():
         assert hashlib.sha256(database.read_bytes()).hexdigest() == original
         subprocess.run([installed / "uninstall.exe", "/S"], check=True, timeout=120)
         # NSIS normally copies and restarts its uninstaller from a temporary directory.
-        remaining = [installed / name for name in ("Garden.exe", "engine/garden-engine.exe")]
+        remaining = [
+            installed / name for name in ("Garden.exe", "engine/garden-engine.exe", "uninstall.exe")
+        ]
         deadline = time.monotonic() + 120
         while any(file.exists() for file in remaining) and time.monotonic() < deadline:
             time.sleep(0.25)
