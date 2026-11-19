@@ -11,6 +11,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 from urllib.error import URLError
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 import win32con
@@ -60,19 +61,45 @@ def wait_for_webview(process, endpoint):
     raise RuntimeError(f"WebView2 CDP unavailable. Garden exit status: {process.poll()}")
 
 
-def close_window(process):
+def workbench_window(process):
     windows = []
 
     def collect(hwnd, _):
-        if win32process.GetWindowThreadProcessId(hwnd)[
-            1
-        ] == process.pid and "资产工作台" in win32gui.GetWindowText(hwnd):
+        if (
+            win32process.GetWindowThreadProcessId(hwnd)[1] == process.pid
+            and "资产工作台" in win32gui.GetWindowText(hwnd)
+        ):
             windows.append(hwnd)
 
     win32gui.EnumWindows(collect, None)
     assert len(windows) == 1, windows
-    win32gui.PostMessage(windows[0], win32con.WM_CLOSE, 0, 0)
-    assert process.wait(timeout=45) == 0
+    return windows[0]
+
+
+def connect_workbench(session, setup, state):
+    output = setup.locator("#output")
+    previous = output.text_content()
+    setup.locator("#initialize").check()
+    setup.locator("#connect").click()
+    setup.wait_for_function(
+        "(previous) => document.querySelector('#output').textContent !== previous",
+        arg=previous,
+        timeout=45_000,
+    )
+    result = output.text_content()
+    assert '"connected": true' in result, f"Garden could not connect: {result}"
+    assert state.is_file()
+    port = json.loads(state.read_text(encoding="utf-8"))["port"]
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        for context in session.contexts:
+            for page in context.pages:
+                address = urlsplit(page.url)
+                if address.netloc == f"127.0.0.1:{port}" and address.path == "/":
+                    page.get_by_role("heading", name="创建资产扫描").wait_for(timeout=15_000)
+                    return
+        setup.wait_for_timeout(200)
+    raise AssertionError("The connected WebView2 window did not render the workbench")
 
 
 def serve_and_close(destination, home, directory, version):
@@ -97,14 +124,10 @@ def serve_and_close(destination, home, directory, version):
             setup.locator("#home").fill(str(home))
             setup.locator("#inspect").click()
             setup.locator("#output").filter(has_text='"exists": false').wait_for()
-            setup.locator("#initialize").check()
-            with setup.context.expect_page(timeout=60_000) as opened:
-                setup.locator("#connect").click()
-            page = opened.value
-            page.get_by_role("heading", name="创建资产扫描").wait_for(timeout=30_000)
-            assert state.is_file()
+            connect_workbench(session, setup, state)
             assert control_engine(destination, home, "activity", cwd=directory)["idle"] is True
-            close_window(process)
+            win32gui.PostMessage(workbench_window(process), win32con.WM_CLOSE, 0, 0)
+            assert process.wait(timeout=45) == 0
         assert not state.exists(), "Closing the App should stop its owned engine and clear state"
     finally:
         if process.poll() is None:
