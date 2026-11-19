@@ -1,3 +1,5 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -56,8 +58,16 @@ fn engine(app: &AppHandle, args: &[&str], payload: Option<Value>) -> Result<Valu
         .path()
         .resource_dir()
         .map_err(|e| e.to_string())?
-        .join("engine/garden-engine");
-    let mut child = Command::new(executable)
+        .join("engine")
+        .join(format!("garden-engine{}", std::env::consts::EXE_SUFFIX));
+    let mut command = Command::new(executable);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let mut child = command
         .args(args)
         .env("PYINSTALLER_RESET_ENVIRONMENT", "1")
         .stdin(if payload.is_some() {
@@ -111,14 +121,26 @@ fn runtime(app: &AppHandle) -> Result<Runtime, String> {
         .clone()
         .ok_or("请先连接数据目录".into())
 }
+fn private_mode(path: &std::path::Path, mode: u32) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(mode))
+    }
+    #[cfg(windows)]
+    {
+        // Settings and download staging inherit the current user's folder ACL.
+        let _ = (path, mode);
+        Ok(())
+    }
+}
 fn remember(app: &AppHandle, home: String) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
     let state = app.state::<Shell>();
     let mut prefs = state.preferences.lock().unwrap();
     prefs.home = Some(home);
     fs::create_dir_all(state.config.parent().unwrap()).map_err(|e| e.to_string())?;
     fs::write(&state.config, serde_json::to_vec(&*prefs).unwrap()).map_err(|e| e.to_string())?;
-    fs::set_permissions(&state.config, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())
+    private_mode(&state.config, 0o600).map_err(|e| e.to_string())
 }
 fn show_settings(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("setup") {
@@ -213,16 +235,13 @@ fn show_main(app: &AppHandle, active: Runtime) -> Result<(), String> {
                     if pending.contains_key(url.as_str()) {
                         return false;
                     }
-                    use std::os::unix::fs::PermissionsExt;
                     let active = match runtime(webview.app_handle()) {
                         Ok(active) => active,
                         Err(_) => return false,
                     };
                     let folder = PathBuf::from(active.home).join("runtime/downloads");
                     if fs::create_dir_all(&folder)
-                        .and_then(|_| {
-                            fs::set_permissions(&folder, fs::Permissions::from_mode(0o700))
-                        })
+                        .and_then(|_| private_mode(&folder, 0o700))
                         .is_err()
                     {
                         return false;
@@ -346,6 +365,9 @@ async fn shell_action(
     payload: Value,
 ) -> Result<Value, String> {
     shell_window(&window)?;
+    if cfg!(windows) && matches!(action.as_str(), "check-update" | "install-update") {
+        return Err("请退出 Garden 后使用新的 Windows 安装包更新。".into());
+    }
     if action == "check-update" {
         return update::check(&app).await;
     }
@@ -367,6 +389,7 @@ async fn shell_action(
                 let state = app.state::<Shell>();
                 Ok(json!({
                     "version": app.package_info().version.to_string(),
+                    "manualInstall": cfg!(windows),
                     "preferences": state.preferences.lock().unwrap().clone(),
                     "error": state.error.lock().unwrap().clone(),
                     "connected": state.runtime.lock().unwrap().is_some()
@@ -510,8 +533,10 @@ fn main() {
             let garden_menu = tauri::menu::SubmenuBuilder::new(app, "Garden")
                 .text("settings", "App 设置")
                 .text("diagnostics", "诊断")
-                .text("licenses", "第三方许可证")
-                .text("update", "检查更新…")
+                .text("licenses", "第三方许可证");
+            #[cfg(target_os = "macos")]
+            let garden_menu = garden_menu.text("update", "检查更新…");
+            let garden_menu = garden_menu
                 .separator()
                 .item(&quit)
                 .build()?;
@@ -604,6 +629,7 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("Garden desktop initialization failed")
         .run(|app, event| {
+            #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
                 show_existing(app);
             }

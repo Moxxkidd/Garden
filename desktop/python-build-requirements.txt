@@ -5,6 +5,7 @@ annotated-types==0.7.0
 anyio==4.13.0
 certifi==2026.2.25
 click==8.3.1
+colorama==0.4.6; sys_platform == 'win32'
 fastapi==0.135.2
 greenlet==3.3.2
 h11==0.16.0
@@ -13,12 +14,13 @@ httptools==0.7.1
 httpx==0.28.1
 idna==3.11
 Jinja2==3.1.6
-macholib==1.16.4
+macholib==1.16.4; sys_platform == 'darwin'
 Mako==1.4.1
 markdown-it-py==4.0.0
 MarkupSafe==3.0.3
 mdurl==0.1.2
 packaging==26.0
+pefile==2023.2.7; sys_platform == 'win32'
 playwright==1.58.0
 pydantic==2.12.5
 pydantic-settings==2.13.1
@@ -29,6 +31,8 @@ pyinstaller==6.22.3
 pyinstaller-hooks-contrib==2026.10
 python-dotenv==1.2.2
 python-multipart==0.0.22
+pywin32==312; sys_platform == 'win32'
+pywin32-ctypes==0.2.3; sys_platform == 'win32'
 PyYAML==6.0.3
 rich==13.9.4
 setuptools==84.2.1
@@ -40,6 +44,6 @@ typer==0.24.1
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 uvicorn==0.42.0
-uvloop==0.22.1
+uvloop==0.22.1; sys_platform != 'win32'
 watchfiles==1.1.1
 websockets==16.0

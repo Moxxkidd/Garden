@@ -1,6 +1,7 @@
 """Fixed native-shell entry operations, sharing the ordinary local runtime and data APIs."""
 
 import json
+import os
 from dataclasses import asdict
 from urllib.request import Request, urlopen
 
@@ -52,8 +53,11 @@ def control(paths, operation, payload=None, *, expected_instance=None):
     if runtime is None or not manager._is_healthy(runtime):
         raise WebRuntimeError("Garden 实例握手未通过；未操作外部进程。")
     if operation == "stop":
-        request_control(runtime, "/_garden/quiesce", dict(cancel=True))
-        return dict(stopped=manager.stop())
+        if os.name != "nt":
+            request_control(runtime, "/_garden/quiesce", dict(cancel=True))
+        if not manager.stop(expected_instance=runtime.instance_id):
+            raise WebRuntimeError("Garden 实例已变化或未确认停止。")
+        return dict(stopped=True)
     routes = {
         "activity": "/_garden/activity",
         "quiesce": "/_garden/quiesce",

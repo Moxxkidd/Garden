@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import secrets
@@ -18,6 +17,8 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from app.cli.paths import GardenPaths
+from app.core.local_files import local_file_lock, private_file_mode
+from app.core.processes import check_process
 from app.core.version import project_version
 
 
@@ -62,9 +63,7 @@ class WebRuntimeManager:
     def ensure(self, *, ui_port: int | None = None) -> WebRuntime:
         self.paths.ensure_directories()
         # Serialize startup only; the engine retains the existing executor ownership.
-        with (self.paths.runtime_dir / "start.lock").open("a") as lock:
-            os.chmod(lock.name, 0o600)
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with local_file_lock(self.paths.runtime_dir / "start.lock", blocking=True):
             return self._ensure(ui_port=ui_port)
 
     def _ensure(self, *, ui_port: int | None = None) -> WebRuntime:
@@ -152,7 +151,7 @@ class WebRuntimeManager:
         temp_path = self.paths.runtime_dir / ".server.json.tmp"
         descriptor = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            os.fchmod(handle.fileno(), 0o600)
+            private_file_mode(handle)
             json.dump(asdict(runtime), handle, sort_keys=True)
         temp_path.replace(self.paths.server_state_file)
         self.paths.server_pid_file.write_text(f"{runtime.pid}\n", encoding="utf-8")
@@ -162,11 +161,21 @@ class WebRuntimeManager:
         self.paths.server_state_file.unlink(missing_ok=True)
         self.paths.server_pid_file.unlink(missing_ok=True)
 
-    def stop(self) -> bool:
+    def stop(self, *, expected_instance: str | None = None) -> bool:
         """只终止状态文件确认的健康 Garden UI；不触碰不确定的外部进程。"""
 
+        if os.name == "nt":
+            if not self.paths.runtime_dir.is_dir():
+                return False
+            with local_file_lock(self.paths.runtime_dir / "start.lock", blocking=True):
+                return self._stop_windows(expected_instance)
+
         runtime = self._load_state()
-        if runtime is None or not self._is_healthy(runtime):
+        if (
+            runtime is None
+            or (expected_instance is not None and runtime.instance_id != expected_instance)
+            or not self._is_healthy(runtime)
+        ):
             return False
         try:
             os.killpg(runtime.pid, signal.SIGTERM)
@@ -185,6 +194,28 @@ class WebRuntimeManager:
             pass
         self._remove_state()
         return True
+
+    def _stop_windows(self, expected_instance: str | None) -> bool:
+        from app.cli.desktop import request_control
+
+        runtime = self._load_state()
+        if (
+            runtime is None
+            or (expected_instance is not None and runtime.instance_id != expected_instance)
+            or not self._is_healthy(runtime)
+        ):
+            return False
+        try:
+            request_control(runtime, "/_garden/quiesce", dict(cancel=True, shutdown=True))
+        except (OSError, ValueError) as error:
+            raise WebRuntimeError("本地实例未确认退出；请检查运行日志。") from error
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if not self._is_process_alive(runtime.pid):
+                self._remove_state()
+                return True
+            time.sleep(0.05)
+        raise WebRuntimeError("本地实例仍在退出；运行状态已保留，请检查运行日志。")
 
     def _is_healthy(self, runtime: WebRuntime) -> bool:
         if not runtime.instance_id or not runtime.session_token:
@@ -219,15 +250,18 @@ class WebRuntimeManager:
     @staticmethod
     def _is_process_alive(pid: int) -> bool:
         try:
-            os.kill(pid, 0)
-        except OSError:
+            check_process(pid)
+        except ProcessLookupError:
             return False
         return True
 
     @staticmethod
     def _is_port_available(port: int) -> bool:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if os.name == "nt":
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            else:
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 probe.bind(("127.0.0.1", port))
             except OSError:
@@ -267,6 +301,13 @@ class WebRuntimeManager:
                 str(port),
             ]
         )
+        if os.name == "nt" and not getattr(sys, "frozen", False):
+            command = [sys.executable, "-m", "app.cli.web_runtime", str(port)]
+        process_options = (
+            {"creationflags": subprocess.CREATE_NO_WINDOW}
+            if os.name == "nt"
+            else {"start_new_session": True}
+        )
         with self.paths.web_log_file.open("a", encoding="utf-8") as log_file:
             os.chmod(log_file.name, 0o600)
             return subprocess.Popen(
@@ -275,7 +316,7 @@ class WebRuntimeManager:
                 stdin=subprocess.DEVNULL,
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
-                start_new_session=True,
+                **process_options,
             )
 
     @staticmethod
@@ -286,3 +327,26 @@ class WebRuntimeManager:
                 process.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 process.kill()
+
+
+def serve_managed(port: int) -> None:
+    import uvicorn
+
+    if os.name == "nt":
+        from app.main import app
+
+        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, access_log=False))
+
+        def request_shutdown() -> None:
+            server.should_exit = True
+
+        app.state.request_shutdown = request_shutdown
+        server.run()
+    else:
+        uvicorn.run("app.main:app", host="127.0.0.1", port=port, access_log=False)
+
+
+if __name__ == "__main__":
+    if not os.environ.get("GARDEN_RUNTIME_TOKEN"):
+        raise SystemExit("serve requires a managed instance session")
+    serve_managed(int(sys.argv[1]))

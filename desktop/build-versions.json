@@ -44,5 +44,9 @@
     "ffmpeg-1011",
     "chromium_headless_shell-1208"
   ],
-  "macos_minimum": "26.0"
+  "macos_minimum": "26.0",
+  "windows": {
+    "target": "x86_64-pc-windows-msvc",
+    "python": "3.13.14"
+  }
 }

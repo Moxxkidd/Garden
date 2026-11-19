@@ -1,0 +1,17 @@
+{
+  "mainBinaryName": "Garden",
+  "bundle": {
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["English", "SimpChinese"],
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  }
+}

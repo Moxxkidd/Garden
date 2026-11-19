@@ -28,9 +28,19 @@ class CollectionStorage:
 
             paths = formal_runtime_paths()
             self.directory = (paths.storage_dir if paths else Path.cwd() / "data") / "collection"
+        path = Path(os.path.abspath(self.directory))
+        if os.name == "nt":
+            from app.core.windows_files import hold_local_directory
+
+            try:
+                with hold_local_directory(path, create=write) as directory:
+                    yield directory
+            except OSError:
+                raise InputValidationError("collection_storage_unavailable") from None
+            return
+
         # Keep each parent open while resolving the next component. O_NOFOLLOW
         # on the payload alone does not stop a symlink in its parent path.
-        path = Path(os.path.abspath(self.directory))
         descriptor = None
         try:
             descriptor = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY)
@@ -60,6 +70,19 @@ class CollectionStorage:
             raise InputValidationError("collection_payload_too_large")
         ref = uuid4().hex + ".json"
         with self._directory(write=True) as directory:
+            if os.name == "nt":
+                target = directory / ref
+                with target.open("xb") as handle:
+                    try:
+                        handle.write(encoded)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    except BaseException:
+                        handle.close()
+                        target.unlink()
+                        raise
+                return ref, hashlib.sha256(encoded).hexdigest()
+
             descriptor = os.open(
                 ref, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory
             )
@@ -79,13 +102,18 @@ class CollectionStorage:
             if not re.fullmatch(r"[0-9a-f]{32}\.json", ref):
                 raise ValueError
             with self._directory() as directory:
-                descriptor = os.open(
-                    ref, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory
-                )
-                with os.fdopen(descriptor, "rb") as handle:
-                    if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
-                        raise ValueError
-                    raw = handle.read(2 * 1024 * 1024 + 1)
+                if os.name == "nt":
+                    from app.core.windows_files import read_local_file
+
+                    raw = read_local_file(directory / ref, 2 * 1024 * 1024 + 1)
+                else:
+                    descriptor = os.open(
+                        ref, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory
+                    )
+                    with os.fdopen(descriptor, "rb") as handle:
+                        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                            raise ValueError
+                        raw = handle.read(2 * 1024 * 1024 + 1)
             if len(raw) > 2 * 1024 * 1024 or hashlib.sha256(raw).hexdigest() != expected_digest:
                 raise ValueError
             result = json.loads(raw)

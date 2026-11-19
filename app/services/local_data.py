@@ -14,6 +14,7 @@ from sqlalchemy.engine import make_url
 
 from app.cli.paths import formal_runtime_paths
 from app.core.errors import ConflictError, InputValidationError
+from app.core.local_files import private_file_mode
 from app.core.settings import get_settings
 from app.core.version import project_version
 from app.services.collection_executor import executor_operation
@@ -56,7 +57,7 @@ def private_directory(path):
 def private_copy(source, target):
     private_directory(target.parent)
     with source.open("rb") as incoming, target.open("xb") as outgoing:
-        os.fchmod(outgoing.fileno(), 0o600)
+        private_file_mode(outgoing)
         shutil.copyfileobj(incoming, outgoing, 65536)
 
 
@@ -271,7 +272,7 @@ class LocalDataService:
                 )
                 manifest_path = target / "manifest.json"
                 with manifest_path.open("x", encoding="utf-8") as handle:
-                    os.fchmod(handle.fileno(), 0o600)
+                    private_file_mode(handle)
                     json.dump(manifest, handle, ensure_ascii=False, indent=2)
                 return dict(
                     directory=str(target),
@@ -286,7 +287,7 @@ class LocalDataService:
     @local_file_operation
     def restore(self, backup_directory, destination):
         source = Path(backup_directory).expanduser().absolute()
-        manifest = json.loads((source / "manifest.json").read_text())
+        manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
         if manifest["schema"] != "garden-private-backup-v1":
             raise InputValidationError("unsupported_backup_schema")
         # Accept only this format's contained regular files; never extract arbitrary paths.
@@ -337,26 +338,29 @@ class LocalDataService:
             for ref in manifest["references"]:
                 if ref["table"] == "evidence":
                     path = target / ref["destination"]
-                    data = json.loads(path.read_text())
+                    data = json.loads(path.read_text(encoding="utf-8"))
                     shot = data.get("screenshot")
                     if shot and shot.get("path") in replacements:
                         shot["path"] = replacements[shot["path"]]
-                        path.write_text(json.dumps(data, ensure_ascii=False))
+                        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             config = target / "config.env"
-            with config.open("x") as handle:
-                os.fchmod(handle.fileno(), 0o600)
+            with config.open("x", encoding="utf-8") as handle:
+                private_file_mode(handle)
                 handle.write(f"GARDEN_DATABASE_URL='sqlite+pysqlite:///{target / 'garden.db'}'\n")
-            import shlex
+            if os.name == "nt":
+                switch = "在 Garden 设置中选择此隔离目录并重新连接"
+            else:
+                import shlex
 
+                switch = (
+                    f"检查此隔离目录后，明确使用 GARDEN_HOME={shlex.quote(str(target))} garden ui"
+                )
             return dict(
                 directory=str(target),
                 database_url=f"sqlite+pysqlite:///{target / 'garden.db'}",
                 active_directory_changed=False,
                 schedules_paused=True,
-                switch_instruction=(
-                    f"检查此隔离目录后，明确使用 GARDEN_HOME={shlex.quote(str(target))} "
-                    "garden ui；当前服务与数据目录未切换。"
-                ),
+                switch_instruction=f"{switch}；当前服务与数据目录未切换。",
             )
         except BaseException:
             shutil.rmtree(target)

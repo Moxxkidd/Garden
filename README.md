@@ -4,7 +4,7 @@
 
 [展示与使用文档](https://garden-ctl.com/) · [安装部署](docs/deployment.md) · [完整操作示例](docs/release-v2.md) · [最终验收报告](docs/quality/v2.0.0-acceptance-2026-11-14.md)
 
-Garden 支持从一个 HTTP(S) URL 开始，也支持为项目绑定多个入口与身份。它保留页面、接口、资源、请求变体、来源和历史观察，再提供筛选、人工复核、变化比较与完整导出。CLI、WebUI、API 和 macOS App 共用现有 Python 引擎与项目数据。
+Garden 支持从一个 HTTP(S) URL 开始，也支持为项目绑定多个入口与身份。它保留页面、接口、资源、请求变体、来源和历史观察，再提供筛选、人工复核、变化比较与完整导出。CLI、WebUI、API 和桌面 App 共用现有 Python 引擎与项目数据。
 
 ```text
 授权入口 → 匿名 / 身份采集 → 项目统一清单 → 人工复核 → 交付文件
@@ -16,12 +16,13 @@ Garden 支持从一个 HTTP(S) URL 开始，也支持为项目绑定多个入口
 
 | 项目 | 已核实状态 |
 | --- | --- |
-| 源码版本 | **2.0.0**；G2-01—26 已完成实施与验收，止于发布准备 |
+| 源码版本 | **2.1.0**；新增 [Windows x64 安装包](desktop/README.md#windows-x64-安装包) |
 | 数据结构 | SQLite，迁移 head **0016**；历史观察与 delivery-v1 保留 |
 | 核心运行环境 | Python **≥3.10**；最终 CI 验证 Linux Python 3.10 / 3.12 |
 | 11 月 14 日候选 | `8146a43`；两版各 **993 passed**，CLI smoke / Docker build 通过 |
 | 11 月 19 日排查 | 数据目录、安装备份、恢复、清理及部署复测见[实施记录](docs/versions/v2.0.0.md#2026-11-19-发布候选排查) |
 | macOS App | **Apple Silicon / macOS ≥26.0 本地 Beta**，实测 26.3，捆绑 Python 3.12 与 Chromium |
+| Windows App | 用户级 NSIS 安装包，捆绑 Python、Chromium 和 WebView2 离线安装器 |
 | 正式发布 | **尚未发布**；未创建 tag / Release 或上传软件包；正式签名、公证与外部机器验证待完成 |
 
 这里的测试数属于 [2026-11-14 候选 CI](https://github.com/Moxxkidd/Garden/actions/runs/43563921740)。[包清单与 SHA256](docs/quality/v2.0.0-packages.json)记录同一候选的 wheel、sdist 和 DMG。当前没有公开发行包下载入口。
@@ -42,6 +43,8 @@ Garden 支持从一个 HTTP(S) URL 开始，也支持为项目绑定多个入口
 匿名、普通用户与管理员的可见面比较见[被动认证覆盖](docs/deployment.md#被动认证覆盖可选高级入口)。
 
 ## 安装与第一次扫描
+
+Windows x64 使用 `Garden_2.1.0_x64-setup.exe`。从开始菜单启动 Garden 后，选择用户自己的本地数据目录。安装包的构建命令、升级和卸载说明见[桌面文档](desktop/README.md#windows-x64-安装包)。
 
 ### 用户级 CLI
 
@@ -140,7 +143,7 @@ API 使用本地 `/docs` 与版本化 [delivery-v1](docs/asset-delivery-v1.md)�
 
 公开视图与导出默认脱敏；私有会话材料保留在受保护的本地引用后。只读诊断不等于连接测试，访问目标需显式运行 `garden connection-test URL`。权限、目标范围和固定身份语义不会因为加入项目而扩大。
 
-最终候选已验证真实 v1.0 结构升级、Linux CI、macOS 26.3 arm64 实际安装与保存。固定合成语料的 3/3、3/3、0/20 不是实际站点完整性保证；WSL、Intel Mac、Windows 桌面、更早 macOS 和外部干净机器没有本轮验收证据。正式签名、公证、更新渠道和再分发许可仍需独立发布准备。
+最终候选已验证真实 v1.0 结构升级、Linux CI、macOS 26.3 arm64 实际安装与保存。固定合成语料的 3/3、3/3、0/20 不是实际站点完整性保证；Windows 安装包验收见 [v2.1.0 实施记录](docs/versions/v2.1.0.md)。Intel Mac、WSL 和更早 macOS 无验收证据。正式签名、公证、更新渠道和再分发许可仍需独立发布准备。
 
 ## 开发与文档
 
@@ -154,7 +157,7 @@ python scripts/quality_baseline.py --full  # 一次全量，同时提取质量�
 
 - [操作、升级与备份恢复](docs/release-v2.md)
 - [部署与代理](docs/deployment.md)
-- [macOS App 使用、构建与发行限制](desktop/README.md)
+- [桌面 App 使用、构建与发行限制](desktop/README.md)
 - [质量定义与最终验收](docs/quality/README.md)
 - [版本索引](docs/versions/README.md) · [历史功能沿革](docs/history.md)
 - [架构](docs/architecture.md) · [威胁模型](docs/threat-model.md)

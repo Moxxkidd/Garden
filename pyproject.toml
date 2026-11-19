@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "garden"
-version = "2.0.0"
+version = "2.1.0"
 description = "One-URL automated asset discovery, analysis, and evidence reporting service."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,6 +21,7 @@ dependencies = [
   "playwright>=1.52.0,<2.0.0",
   "pydantic-settings>=2.8.0,<3.0.0",
   "PyYAML>=6.0.0,<7.0.0",
+  "pywin32>=312; sys_platform == 'win32'",
   "python-multipart>=0.0.20,<1.0.0",
   "rich>=13.0.0,<14.0.0",
   "sqlalchemy>=2.0.0,<3.0.0",

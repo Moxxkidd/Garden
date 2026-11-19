@@ -20,6 +20,8 @@ def main():
 
         app(args=sys.argv[2:], prog_name="garden")
         return
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "action",
@@ -104,9 +106,9 @@ def main():
     if args.action == "serve":
         if not args.port or not os.environ.get("GARDEN_RUNTIME_TOKEN"):
             parser.error("serve requires a managed instance session and port")
-        import uvicorn
+        from app.cli.web_runtime import serve_managed
 
-        uvicorn.run("app.main:app", host="127.0.0.1", port=args.port, access_log=False)
+        serve_managed(args.port)
         return
     from app.cli.desktop import connect, control, inspect_home, upgrade
 

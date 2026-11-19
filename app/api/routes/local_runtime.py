@@ -84,7 +84,15 @@ def quiesce(app, cancel):
 @router.post("/quiesce")
 async def stop_new_requests(request: Request):
     body = await request.json()
-    return await run_in_threadpool(quiesce, request.app, body.get("cancel", False))
+    shutdown = body.get("shutdown") is True
+    if shutdown and (
+        body.get("cancel") is not True or not hasattr(request.app.state, "request_shutdown")
+    ):
+        raise ConflictError("local_runtime_shutdown_unavailable")
+    result = await run_in_threadpool(quiesce, request.app, body.get("cancel", False))
+    if shutdown:
+        request.app.state.request_shutdown()
+    return result
 
 
 @router.post("/backup")

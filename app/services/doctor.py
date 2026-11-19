@@ -22,6 +22,7 @@ from sqlalchemy.engine import make_url
 
 import app
 from app.cli.paths import GardenPaths, formal_runtime_paths
+from app.core.processes import check_process
 from app.core.settings import Settings
 from app.core.version import project_version
 from app.redaction.service import RedactionService
@@ -394,7 +395,7 @@ def check_service(paths: GardenPaths, ui_port: int | None, default_port: int) ->
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
             probe.settimeout(0.3)
             code = probe.connect_ex(("127.0.0.1", port))
-        if code == errno.ECONNREFUSED:
+        if code in (errno.ECONNREFUSED, getattr(errno, "WSAECONNREFUSED", errno.ECONNREFUSED)):
             if state and state["port"] == port:
                 return result(
                     "action_required",
@@ -408,7 +409,7 @@ def check_service(paths: GardenPaths, ui_port: int | None, default_port: int) ->
             return result("unknown", f"无法确认 127.0.0.1:{port} 的监听状态。")
         if state and state["port"] == port:
             try:
-                os.kill(state["pid"], 0)
+                check_process(state["pid"])
             except ProcessLookupError:
                 return result(
                     "action_required",

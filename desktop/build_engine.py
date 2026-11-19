@@ -1,4 +1,4 @@
-"""Build the one-directory arm64 sidecar with fixed Python and browser resources."""
+"""Build the native one-directory sidecar with fixed Python and browser resources."""
 
 import json
 import os
@@ -13,8 +13,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     versions = json.loads((ROOT / "desktop/build-versions.json").read_text())
-    assert platform.system() == "Darwin" and platform.machine() == "arm64"
-    assert platform.python_version() == versions["python"]
+    host = platform.system(), platform.machine().lower()
+    if host == ("Windows", "amd64"):
+        versions.update(versions["windows"])
+        arch_args = []
+    elif host == ("Darwin", "arm64"):
+        arch_args = ["--target-arch", "arm64"]
+    else:
+        raise SystemExit(f"No native desktop engine build for {host}.")
+    if platform.python_version() != versions["python"]:
+        raise SystemExit(f"Use pinned Python {versions['python']}.")
     browsers = Path(os.environ["GARDEN_BUILD_BROWSERS"])
     work = ROOT / ".verification"
     command = [
@@ -25,8 +33,7 @@ def main():
         "--onedir",
         "--name",
         "garden-engine",
-        "--target-arch",
-        "arm64",
+        *arch_args,
         "--distpath",
         str(ROOT / "desktop/src-tauri/engine-dist"),
         "--workpath",

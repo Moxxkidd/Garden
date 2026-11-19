@@ -17,4 +17,4 @@ for(const [button,input]of[['choose-backup','backup'],['choose-restore','restore
 bind('restore',b=>{if(!$('restore-consent').checked){show('请先确认备份后修改不会保留。');return;}return run(b,'restore',{home:$('restore-home').value.trim(),backup_directory:$('backup').value.trim(),confirmed:true});});
 window.__TAURI__.event.listen('startup-error',e=>show(e.payload));
 window.__TAURI__.event.listen('menu-action',e=>{if(e.payload==='diagnostics')$('diagnose').click();if(e.payload==='update')$('check-update').focus();});
-invoke('state').then(state=>{$('version').textContent=state.version;$('home').value=state.preferences.home||'';$('notifications').checked=state.preferences.notifications;if(state.error)show(state.error);}).catch(e=>show(String(e)));
+invoke('state').then(state=>{$('version').textContent=state.version;$('manual-update').hidden=!state.manualInstall;$('update-channel').hidden=state.manualInstall;$('home').value=state.preferences.home||'';$('notifications').checked=state.preferences.notifications;if(state.error)show(state.error);}).catch(e=>show(String(e)));

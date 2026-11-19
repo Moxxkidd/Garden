@@ -9,6 +9,7 @@ from pathlib import Path
 from sqlalchemy.engine import make_url
 
 from app.core.errors import ConflictError, InputValidationError
+from app.core.local_files import local_file_lock
 
 _owners = {}
 _mutex = threading.RLock()
@@ -29,8 +30,6 @@ class CollectionExecutor:
         self.pid = os.getpid()
 
     def acquire(self):
-        import fcntl
-
         with _mutex:
             if self.held:
                 return
@@ -40,32 +39,29 @@ class CollectionExecutor:
             if key in _owners:
                 _owners[key][1] += 1
             else:
-                descriptor = None
+                lock = None
                 if self.key:
-                    descriptor = os.open(self.key, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+                    lock = local_file_lock(self.key, blocking=False)
                     try:
-                        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        lock.__enter__()
                     except BlockingIOError:
-                        os.close(descriptor)
                         raise ConflictError("collection_executor_busy") from None
-                _owners[key] = [descriptor, 1]
+                _owners[key] = [lock, 1]
             self.held = True
 
     def close(self):
-        import fcntl
-
         with _mutex:
             if not self.held or self.pid != os.getpid():
                 return
             self.held = False
             key = (self.pid, self.key)
-            owner = _owners[key]
-            owner[1] -= 1
-            if not owner[1]:
-                if owner[0] is not None:
-                    fcntl.flock(owner[0], fcntl.LOCK_UN)
-                    os.close(owner[0])
+            lock, count = _owners[key]
+            if count == 1:
                 del _owners[key]
+                if lock is not None:
+                    lock.__exit__(None, None, None)
+            else:
+                _owners[key][1] -= 1
 
     def __del__(self):
         # Kernel ownership also disappears if the entire process terminates abruptly.

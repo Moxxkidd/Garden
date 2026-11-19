@@ -24,7 +24,7 @@
 <main id="home">
   <section class="hero wrap" aria-labelledby="hero-title">
     <div class="hero-copy">
-      <a class="source-status" href="#docs/release-status"><span>v2.0.0</span> 本地资产工作台</a>
+      <a class="source-status" href="#docs/release-status"><span>v2.1.0</span> 本地资产工作台</a>
       <h1 id="hero-title"><i lang="en">Garden</i><span>从观察，到交付。</span></h1>
       <p>把页面、接口和请求的来源收进一份资产清单。沿着每一条记录，回看它来自哪个入口、哪次身份观察。</p>
       <div class="actions">
@@ -86,7 +86,7 @@ garden --version
 garden doctor
 garden ui</pre></div>
   </div></section>
-  <footer class="wrap footer"><div><a class="brand" href="#home"><span class="mark"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg></span>Garden</a><p>v2.0.0 已完成发布准备，正式发行待完成。<br>当前未声明开源许可证。</p></div><div class="foot-links"><a href="#docs/release-status">版本验收与包校验</a><a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/README.md">版本索引</a><a href="https://github.com/Moxxkidd/Garden/blob/main/docs/history.md">历史沿革</a><a href="https://github.com/Moxxkidd/Garden">GitHub 仓库</a></div></footer>
+  <footer class="wrap footer"><div><a class="brand" href="#home"><span class="mark"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg></span>Garden</a><p>v2.1.0 增加 Windows x64 安装包支持，正式发行待完成。<br>当前未声明开源许可证。</p></div><div class="foot-links"><a href="#docs/release-status">版本验收与包校验</a><a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/README.md">版本索引</a><a href="https://github.com/Moxxkidd/Garden/blob/main/docs/history.md">历史沿革</a><a href="https://github.com/Moxxkidd/Garden">GitHub 仓库</a></div></footer>
 </main>
 <main id="docs" hidden>
   <div class="reader-tools wrap">
@@ -199,14 +199,15 @@ garden projects schedules 1
 garden projects --help</pre><p>项目 ID 使用实际返回值。完整导出不受屏幕页码限制；PDF / ZIP 必须指定输出路径，OpenAPI 为推断草稿。</p>
 `},
 'release-status':{b:'快速开始 > 版本状态与验收',h:`
-<h1>v2.0.0 版本状态与验收</h1><p>当前源码版本 2.0.0、数据库 head 0016。下表记录 11 月 14 日的运行与构建候选 <code>8146a43</code>。11 月 19 日的安装、恢复、清理和部署修复见<a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/v2.0.0.md#2026-11-19-发布候选排查">发布候选排查记录</a>。</p>
+<h1>v2.0.0 版本状态与验收</h1><p>当前源码版本 2.1.0、数据库 head 0016。Windows 构建安装记录见 <a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/v2.1.0.md">v2.1.0</a>。下表记录 11 月 14 日的运行与构建候选 <code>8146a43</code>。11 月 19 日的安装、恢复、清理和部署修复见<a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/v2.0.0.md#2026-11-19-发布候选排查">发布候选排查记录</a>。</p>
 <table><tr><th>验证项</th><th>实际结果</th></tr><tr><td>Linux CI</td><td>Python 3.10.22 / 3.12.16 各 993 passed；Ruff、format、CLI smoke、Docker build 全绿。</td></tr><tr><td>真实旧结构升级</td><td>实际 v1.0 0011 合成库→0016，40 张旧表原列和值、报告、标签、备注与私有引用保留；不伪造未知字段。</td></tr><tr><td>综合旅程</td><td>匿名、两入口两身份→复核→离线交付→周期复查→空目录恢复；5 主体、6 观察、3 会话，恢复后计划暂停。</td></tr><tr><td>候选包</td><td>wheel / sdist / DMG 已构建审计与安装；App 原生保存后核对落盘，源码和日用数据隔离。</td></tr></table>
-<h2>正式发行仍待完成</h2><p>未打 tag、创建 Release 或上传软件包；没有公开发行包下载入口。macOS 只有 Apple Silicon / 26.0+ 本地 Beta 证据，正式签名、公证、更新渠道、独立许可证与再分发条件、外部干净机器待核实。没有 Windows、Intel 或更早 macOS 的本轮证据。</p>
+<h2>正式发行仍待完成</h2><p>未打 tag、创建 Release 或上传软件包；没有公开发行包下载入口。macOS 只有 Apple Silicon / 26.0+ 本地 Beta 证据，正式签名、公证、更新渠道、独立许可证与再分发条件、外部干净机器待核实。Intel 与更早 macOS 仍待验证。</p>
 <p>固定合成语料发现 3/3、候选确认 3/3、误合并 0/20，不代表实际站点发现率或独立安全审计。前版性能实验保持其原有环境与版本归属。</p>
 <p><a href="https://github.com/Moxxkidd/Garden/actions/runs/43563921740">最终候选 CI</a> · <a href="https://github.com/Moxxkidd/Garden/blob/main/docs/quality/v2.0.0-acceptance-2026-11-14.md">完整验收报告</a> · <a href="quality/v2.0.0-packages.json">包清单与完整 SHA256</a> · <a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/README.md">版本索引</a></p>
 `},
 desktop:{b:'资产工作台 > macOS App Beta',h:`
 <h1>macOS App Beta</h1><p>当前仅支持 Apple Silicon / macOS ≥26.0，宿主实测 26.3。Tauri 2 窗口捆绑 Python 3.12 和匹配 Chromium，扫描仍使用原有 Python 引擎与 WebUI；运行不要求安装 Python、Node、Rust 或源码。</p>
+<h2>Windows x64 安装包</h2><p>使用当前用户安装的 NSIS EXE，内置 Python、Chromium 与 WebView2 离线安装器。<a href="https://github.com/Moxxkidd/Garden/blob/main/desktop/README.md#windows-x64-安装包">构建、安装与卸载说明</a></p>
 <h2>与 CLI / 浏览器共用数据</h2><p>首次选择数据目录，新建或备份升级分别确认。同一目录通过带本地会话的实例握手共享引擎；版本或所有权不符时不接管未知端口。原生菜单、窗口和保存对话框复用同一项目清单。</p>
 <h2>候选实测与发行状态</h2><p>最终 DMG 已实际校验、挂载、安装与隔离启动。页面渲染单次约 3.204 秒；项目 CSV 经原生 Save 后实际落盘 5 行。候选仅使用 ad-hoc 完整性签名，没有 Developer ID、公证、装订或外部机器发行验收，也没有公开下载包。</p>
 <h2>更新和回退</h2><p>只有用户触发并确认后才检查/安装，复用官方签名验证，更新前私有备份；程序回退与数据恢复分开。默认无正式更新渠道，不自动检查或请求通知权限。</p>
@@ -253,7 +254,7 @@ intro:{b:'快速开始 > 简介与当前能力',h:`
 <p>从已授权 HTTP(S) 入口发现页面、接口与资源，保留匿名、登录身份及不同时间的观察，整理成可追溯清单。WebUI、CLI、API 与 macOS App 共用 Python 引擎和项目数据。</p>
 <h2>按任务选择入口</h2>
 <ul class="check-list"><li><strong>快速扫描</strong>：独立提交 URL，预览预设、同源边界和预算；不需要先配置登录。</li><li><strong>登录与多入口</strong>：人工完成验证码后恢复验证；每个入口单独绑定身份和配额，再确认计划。</li><li><strong>整理与交付</strong>：筛选项目清单、批量人工复核，生成完整报告与离线文件，必要时显式开启后续复查。</li></ul>
-<h2>当前交付状态</h2><p>源码 2.0.0、迁移 head 0016、核心 Python ≥3.10。11 月 14 日候选两版 Python 各 993 passed。macOS 为 Apple Silicon / 26.0+ 本地 Beta；没有正式发行包。</p>
+<h2>当前交付状态</h2><p>源码 2.1.0、迁移 head 0016、核心 Python ≥3.10。11 月 14 日候选两版 Python 各 993 passed。macOS 为 Apple Silicon / 26.0+ 本地 Beta；没有正式发行包。</p>
 <div class="tip">执行结束不等于覆盖完整；人工保留不证明业务有效。已观察、候选、未知、范围和身份限制分别保留。文件已生成与用户保存也分别说明。</div>
 <p><a href="#docs/quickstart">从本机试跑开始</a> · <a href="#docs/release-status">核对验收和发行状态</a></p>
 `},
@@ -731,7 +732,7 @@ outputs:{b:'进阶 > 结构化产出',h:`
 <h1>结构化产出</h1><ul class="check-list"><li>任务：阶段、实际计数、等待/失败、预算及覆盖缺口。</li><li>项目：路由主体、请求变体、身份观察、候选、关系与来源引用。</li><li>整理：保存视图、注释、人工复核、撤销和需复核变化。</li><li>交付：delivery-v1、三层报告、可读 CSV、离线 HTML / PDF / ZIP、推断 OpenAPI 草稿。</li><li>持续更新：历史对照、增量补采、显式周期计划与本地私有备份。</li><li>高级流程：原有 Inventory、Finding、脱敏 Evidence 与复测记录。</li></ul><p>主体数、观察数、关注类别与原始观察分别计数；未知与缺失不当作零。OpenAPI 只是已观察接口的推断草稿，不猜测鉴权或响应 schema。</p>
 `},
 constraints:{b:'进阶 > 支持范围与限制',h:`
-<h1>支持范围与限制</h1><h2>已实现边界</h2><p>授权的 HTTP(S) 资产发现与清单交付；自动采集受同源、GET 和预算约束，人工浏览明确记录用户触发请求。登录、来源、复核和私有材料各自保留，不把人工决定变成机器证明。</p><h2>平台与发行</h2><p>核心 Python ≥3.10，最终 CI 覆盖 Linux 3.10/3.12；macOS App 仅有 Apple Silicon / 26.0+ 本地 Beta。没有 Windows、Intel Mac、早期 macOS、外部干净机器的本轮验收。正式签名、公证、更新渠道及再分发许可待独立发布准备。</p><h2>功能限制</h2><p>匿名单入口才使用混合发现预设；没有通用 SSO、验证码绕过、自动流程重放、动态预算借用、云同步或分布式调度。候选未请求、历史字段缺失、覆盖不足时保留未知，不输出目标全量已知或业务有效保证。</p>
+<h1>支持范围与限制</h1><h2>已实现边界</h2><p>授权的 HTTP(S) 资产发现与清单交付；自动采集受同源、GET 和预算约束，人工浏览明确记录用户触发请求。登录、来源、复核和私有材料各自保留，不把人工决定变成机器证明。</p><h2>平台与发行</h2><p>核心 Python ≥3.10，最终 CI 覆盖 Linux 3.10/3.12；macOS App 仅有 Apple Silicon / 26.0+ 本地 Beta。Windows x64 安装与启动证据见 <a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/v2.1.0.md">v2.1.0 实施记录</a>。Intel Mac、早期 macOS 和外部干净机器待验证。正式签名、公证、更新渠道及再分发许可待独立发布准备。</p><h2>功能限制</h2><p>匿名单入口才使用混合发现预设；没有通用 SSO、验证码绕过、自动流程重放、动态预算借用、云同步或分布式调度。候选未请求、历史字段缺失、覆盖不足时保留未知，不输出目标全量已知或业务有效保证。</p>
 `}
 };
 

@@ -6,6 +6,7 @@ import os
 import shutil
 import ssl
 import subprocess
+import sys
 import sysconfig
 from pathlib import Path
 
@@ -27,7 +28,8 @@ def main():
         python=[],
         rust=[],
     )
-    python_license = Path(sysconfig.get_path("stdlib")) / "LICENSE.txt"
+    python_root = Path(sys.base_prefix if os.name == "nt" else sysconfig.get_path("stdlib"))
+    python_license = python_root / "LICENSE.txt"
     shutil.copy2(python_license, output / "Python-LICENSE.txt")
     for dist in sorted(
         importlib.metadata.distributions(), key=lambda d: d.metadata["Name"].lower()
@@ -53,6 +55,8 @@ def main():
                 notices=notices,
             )
         )
+    pins = json.loads((ROOT / "desktop/build-versions.json").read_text())
+    target = pins["windows"]["target"] if os.name == "nt" else pins["target"]
     cargo = subprocess.run(
         [
             "cargo",
@@ -61,7 +65,7 @@ def main():
             "--format-version",
             "1",
             "--filter-platform",
-            "aarch64-apple-darwin",
+            target,
         ],
         cwd=ROOT / "desktop/src-tauri",
         capture_output=True,
@@ -97,10 +101,12 @@ def main():
         browser = pw.chromium.launch(headless=True, channel="chromium")
         page = browser.new_page()
         page.goto("chrome://credits")
-        (output / "Chromium-credits.html").write_text(page.content())
+        (output / "Chromium-credits.html").write_text(page.content(), encoding="utf-8")
         inventory["chromium"] = browser.version
         browser.close()
-    (output / "inventory.json").write_text(json.dumps(inventory, ensure_ascii=False, indent=2))
+    (output / "inventory.json").write_text(
+        json.dumps(inventory, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     (output / "README.txt").write_text(
         "Local Beta notice inventory. Python, Rust, Playwright/Node, "
         "Chromium and OpenSSL notices are included.\n"

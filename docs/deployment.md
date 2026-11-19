@@ -2,10 +2,11 @@
 
 ## 当前状态与部署入口
 
-当前源码 **2.0.0**、SQLite 迁移 head **0016**，核心 Python **≥3.10**。v2.0 最终候选已完成真实旧库升级、完整旅程及 wheel/sdist/macOS 本地包验证；正式 tag、Release 与软件包发行尚未执行。[最终验收](quality/v2.0.0-acceptance-2026-11-14.md) · [操作和升级](release-v2.md)
+当前源码 **2.1.0**、SQLite 迁移 head **0016**，核心 Python **≥3.10**。v2.0 最终候选已完成真实旧库升级、完整旅程及 wheel/sdist/macOS 本地包验证；正式 tag、Release 与软件包发行尚未执行。[最终验收](quality/v2.0.0-acceptance-2026-11-14.md) · [操作和升级](release-v2.md)
 
 - 日常使用：下方用户级 CLI，自动启动或复用本机服务；安装会备份升级所选数据目录，更新前先核对目录并停止原实例。
 - 开发或服务器：源码 / Docker 部署；容器内回环地址指向容器自身。
+- Windows x64 App：用户级 NSIS `.exe`，内置 Python、Chromium 与 WebView2 离线安装器。见 [Windows 安装包](../desktop/README.md#windows-x64-安装包)。
 - macOS App：Apple Silicon / macOS ≥26.0 本地 Beta，捆绑 Python 3.12 与 Chromium，尚未正式签名、公证或提供公开发行包；见[桌面说明](../desktop/README.md)。
 
 `make demo` 只启动 Garden 本身，不会启动独立业务目标。后文的示例登录配置和 DVWA 联调是需要自行启动的受控环境，不代表本轮已验证真实站点或通用 SSO。

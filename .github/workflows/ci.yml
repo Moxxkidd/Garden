@@ -97,3 +97,59 @@ jobs:
 
       - name: gardenctl healthcheck
         run: python -m app.cli.main healthcheck
+
+  windows-installer:
+    name: Windows x64 installer
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read desktop toolchain pins
+        id: pins
+        shell: pwsh
+        run: |
+          $pins = Get-Content desktop/build-versions.json -Raw | ConvertFrom-Json
+          "python=$($pins.windows.python)" >> $env:GITHUB_OUTPUT
+          "rust=$($pins.rust)" >> $env:GITHUB_OUTPUT
+          "target=$($pins.windows.target)" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.pins.outputs.python }}
+          architecture: x64
+          cache: pip
+          cache-dependency-path: desktop/python-build-requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          rustup toolchain install "${{ steps.pins.outputs.rust }}-${{ steps.pins.outputs.target }}" --profile minimal
+          rustup override set "${{ steps.pins.outputs.rust }}-${{ steps.pins.outputs.target }}"
+          python -m pip install -r desktop/python-build-requirements.txt
+          python -m pip install --no-deps -e .
+          python -m pip check
+          npm ci --prefix desktop --ignore-scripts --no-audit --no-fund
+
+      - name: Build engine and NSIS installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .verification | Out-Null
+          $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $PWD .verification/browsers
+          $env:GARDEN_BUILD_BROWSERS = $env:PLAYWRIGHT_BROWSERS_PATH
+          $env:GARDEN_OPENSSL_LICENSE = Join-Path $PWD .verification/OpenSSL-LICENSE.txt
+          $openssl = python -c "import ssl; print(ssl.OPENSSL_VERSION.split()[1])"
+          Invoke-WebRequest "https://raw.githubusercontent.com/openssl/openssl/openssl-$openssl/LICENSE.txt" -OutFile $env:GARDEN_OPENSSL_LICENSE
+          python -m playwright install chromium
+          python desktop/build_engine.py
+          python desktop/build_notices.py
+          python desktop/build_app.py
+
+      - name: Install, launch, connect, reinstall and uninstall
+        run: python desktop/verify_windows.py
