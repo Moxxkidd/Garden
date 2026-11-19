@@ -65,10 +65,9 @@ def workbench_window(process):
     windows = []
 
     def collect(hwnd, _):
-        if (
-            win32process.GetWindowThreadProcessId(hwnd)[1] == process.pid
-            and "资产工作台" in win32gui.GetWindowText(hwnd)
-        ):
+        if win32process.GetWindowThreadProcessId(hwnd)[
+            1
+        ] == process.pid and "资产工作台" in win32gui.GetWindowText(hwnd):
             windows.append(hwnd)
 
     win32gui.EnumWindows(collect, None)
