@@ -141,7 +141,8 @@ def main():
         assert hashlib.file_digest(handle, "sha256").hexdigest() == report["artifacts"][0]["sha256"]
 
     with tempfile.TemporaryDirectory(prefix="garden-install-") as path:
-        directory = Path(path)
+        # Windows may supply a DOS short path for TEMP; the engine resolves it.
+        directory = Path(path).resolve(strict=True)
         verify_files(directory)
         # Exercise quoting and Unicode in both program and data paths.
         installed = directory / "Garden 安装"
@@ -151,7 +152,9 @@ def main():
         probe = run_engine(installed, ["probe"], cwd=directory)
         assert probe["version"] == version
         assert probe["frozen"] and probe["offline_download"] and probe["migration"]
-        assert Path(probe["chromium_path"]).is_relative_to(installed / "browsers")
+        chromium = Path(probe["chromium_path"]).resolve(strict=True)
+        browsers = (installed / "browsers").resolve(strict=True)
+        assert chromium.is_relative_to(browsers), f"{chromium} is outside {browsers}"
         print(f"Installed engine and bundled Chromium {probe['chromium']} passed", flush=True)
 
         serve_and_close(installed, home, directory, version)
