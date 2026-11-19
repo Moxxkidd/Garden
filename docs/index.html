@@ -7,7 +7,7 @@
 <title>Garden 2.0 — 资产发现、整理与交付</title>
 <meta name="description" content="从已授权入口发现资产，把匿名与登录态观察汇成可复核、可交付的项目清单。浏览 Garden 工作流程、真实界面和使用文档。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231e5f48'/%3E%3Cpath d='M18 34c0-11 8-19 22-20-1 13-8 22-20 22m0 0c7 1 13 5 16 12M20 36v14' fill='none' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E"/>
-<link rel="stylesheet" href="showcase/site.css">
+<link rel="stylesheet" href="showcase/site.css?v=atlas2">
 </head>
 <body>
 <svg xmlns="http://www.w3.org/2000/svg" class="symbols" aria-hidden="true"><symbol id="i-leaf" viewBox="0 0 24 24"><path d="M4 21c1-6 4-11 11-15M7 15C3 7 13 4 21 3c0 8-3 15-12 14"/></symbol><symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6c-3-2-6-2-9-1v13c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1Zm0 0v13"/></symbol><symbol id="i-github" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></symbol><symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.6" cy="10.6" r="6.2"/><path d="m15.3 15.3 5 5"/></symbol><symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5m8-10 5 5-5 5M14 4l-4 16"/></symbol><symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 6 6 6-6 6m9 0h7"/></symbol><symbol id="i-route" viewBox="0 0 24 24"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M8 6h6a3 3 0 0 1 0 6h-4a3 3 0 0 0 0 6h6"/></symbol><symbol id="i-layers" viewBox="0 0 24 24"><path d="m3 8 9-5 9 5-9 5-9-5Zm0 5 9 5 9-5M3 17l9 5 9-5"/></symbol><symbol id="i-box" viewBox="0 0 24 24"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Zm0 0 9 4 9-4m-9 4v10m-5-16 9 4"/></symbol><symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 4H4v5m11-5h5v5m0 6v5h-5M4 15v5h5"/></symbol><symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M15 5V3H4v13h1"/></symbol><symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></symbol><symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol><symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol><symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5h6l2 2h10v12H3V7Z"/></symbol></svg>
@@ -19,18 +19,33 @@
   <a class="repo" href="https://github.com/Moxxkidd/Garden" aria-label="GitHub 仓库"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg><span>GitHub</span></a>
   <button class="mobile-menu" id="menuBtn" aria-label="打开导航" aria-expanded="false" aria-controls="mobileNav"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button></div>
 </nav></header>
-<nav id="mobileNav" hidden aria-label="移动端导航"><a href="#identity-collection">工作流程</a><a href="#product-preview">产品预览</a><a href="#docs/intro">使用文档</a><button id="openDirectory" hidden>打开文档目录</button></nav>
+<nav id="mobileNav" hidden aria-label="移动端导航"><a href="#identity-collection">工作流程</a><a href="#product-preview">产品预览</a><a href="#docs/intro">使用文档</a></nav>
 <div id="main-content" tabindex="-1"></div>
 <main id="home">
-  <section class="hero" aria-labelledby="hero-title">
-    <img class="hero-art" src="showcase/fern.webp" alt="" fetchpriority="high" width="1600" height="900">
-    <div class="hero-shade"></div>
-    <div class="wrap hero-inner">
-      <a class="source-status" href="#docs/release-status"><span>v2.0.0</span>源码候选</a>
-      <h1 id="hero-title">从授权入口，<br>到<em>资产清单。</em></h1>
-      <p>发现页面、接口与资源，把匿名与登录态观察汇入同一份清单。每项资产都能复核，每份交付都能追溯来源。</p>
-      <div class="actions"><a class="button primary" href="#docs/install"><svg class="icon" aria-hidden="true"><use href="#i-terminal"/></svg>安装与开始</a><a class="button ghost" href="#docs/quickstart"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>走一遍使用流程</a></div>
+  <section class="hero wrap" aria-labelledby="hero-title">
+    <div class="hero-copy">
+      <a class="source-status" href="#docs/release-status"><span>v2.0.0</span> 本地资产工作台</a>
+      <h1 id="hero-title"><i lang="en">Garden</i><span>从观察，到交付。</span></h1>
+      <p>把页面、接口和请求的来源收进一份资产清单。沿着每一条记录，回看它来自哪个入口、哪次身份观察。</p>
+      <div class="actions">
+        <a class="button primary" href="#docs/quickstart"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg> 阅读快速开始</a>
+        <a class="button secondary" href="#docs/install"><svg class="icon" aria-hidden="true"><use href="#i-terminal"/></svg> 安装 Garden</a>
+      </div>
     </div>
+    <figure class="specimen">
+      <div class="specimen-print">
+        <img src="showcase/specimen.webp" alt="" width="1080" height="1080" fetchpriority="high">
+        <div class="print-rule" aria-hidden="true"></div>
+        <div class="sample-pins" role="group" aria-label="探索合成验收样本">
+          <button data-sample="plan" aria-pressed="true" aria-controls="sampleCaption">入口</button>
+          <button data-sample="observations" aria-pressed="false" aria-controls="sampleCaption">观察</button>
+          <button data-sample="delivery" aria-pressed="false" aria-controls="sampleCaption">交付</button>
+        </div>
+      </div>
+      <figcaption><div class="specimen-index"><span>合成验收样本</span><a href="examples/v2-journey.json">原始 JSON</a></div>
+        <div id="sampleCaption" aria-live="polite"><strong>2 个入口</strong><span>计划为每个入口固定分配 20 个请求。</span></div>
+      </figcaption>
+    </figure>
   </section>
   <div class="facts"><dl class="wrap">
     <div><dt>核心运行环境</dt><dd>Python <b>≥ 3.10</b></dd></div>
@@ -38,7 +53,7 @@
     <div><dt>Apple Silicon · macOS 26.0+</dt><dd>macOS App <small>本地 Beta</small></dd></div>
   </dl></div>
   <section class="wrap section workflow" id="identity-collection">
-    <div class="section-head"><div><p class="eyebrow">工作流程</p><h2>从发现到交付</h2></div><p>按手头的任务进入，<br class="wide">每一步都有对应的操作指南。</p></div>
+    <div class="section-head"><div><p class="eyebrow">工作流程</p><h2>从发现到交付</h2></div><p><a class="text-link" href="#docs/intro">浏览使用文档</a></p></div>
     <div class="steps">
       <article><span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-route"/></svg></span><h3>快速发现</h3><p>从一个授权 URL 开始，预览同源范围与请求预算。已观察资产和未请求候选分别保留。</p><a href="#docs/discovery">发现策略与预算</a></article>
       <article><span class="step-icon"><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg></span><h3>多入口与身份</h3><p>恢复并验证登录态，为每个入口绑定身份与固定配额，分别记录匿名和登录后的观察。</p><div><a href="#docs/plans">多入口计划</a><a href="#docs/login">登录与验证</a></div></article>
@@ -51,7 +66,7 @@
       <a class="text-link" href="#docs/maintenance">查看后续复查与维护</a>
     </div>
     <figure class="preview-frame"><div class="frame-head"><span>Garden <b>/</b> <span id="previewTitle">多入口计划</span></span><a id="previewFull" href="quality/v2-assets/plan-desktop.png" target="_blank" rel="noopener" aria-label="打开完整原图（新标签页）"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg> 原图</a></div>
-    <div class="shot"><img id="previewImg" src="quality/v2-assets/plan-desktop.png" width="1280" height="1000" alt="两个入口的身份绑定与固定预算" loading="lazy"></div><figcaption id="previewCaption" aria-live="polite">提交前核对两个入口、各自的身份与请求配额。</figcaption></figure>
+    <div class="shot"><button type="button" id="inspectShot" aria-label="在页面中放大产品截图"><img id="previewImg" src="quality/v2-assets/plan-desktop.png" width="1280" height="1000" alt="两个入口的身份绑定与固定预算" loading="lazy"></button></div><figcaption id="previewCaption" aria-live="polite">提交前核对两个入口、各自的身份与请求配额。</figcaption></figure>
   </div></section>
   <section class="wrap section notes">
     <div><p class="eyebrow">结果解读</p><h2>读懂清单里的证据</h2></div>
@@ -73,8 +88,27 @@ garden ui</pre></div>
   </div></section>
   <footer class="wrap footer"><div><a class="brand" href="#home"><span class="mark"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg></span>Garden</a><p>v2.0.0 已完成发布准备，正式发行待完成。<br>当前未声明开源许可证。</p></div><div class="foot-links"><a href="#docs/release-status">版本验收与包校验</a><a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/README.md">版本索引</a><a href="https://github.com/Moxxkidd/Garden/blob/main/docs/history.md">历史沿革</a><a href="https://github.com/Moxxkidd/Garden">GitHub 仓库</a></div></footer>
 </main>
-<main id="docs" hidden><div class="wrap docs-layout"><aside id="sidebar" aria-label="文档目录"></aside><article id="docContent" tabindex="-1"></article></div></main>
-<dialog id="searchDialog" aria-label="搜索文档"><div class="search-line"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="searchInput" type="search" aria-label="按文档标题搜索" placeholder="按文档标题搜索…" autocomplete="off"><button id="closeSearch" aria-label="关闭搜索"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><p id="searchStatus" role="status"></p><div id="searchResults"></div></dialog>
+<main id="docs" hidden>
+  <div class="reader-tools wrap">
+    <button id="libraryButton" aria-haspopup="dialog">文档目录</button>
+    <button id="contentsButton" aria-haspopup="dialog">本页章节</button>
+  </div>
+  <div class="wrap docs-layout">
+    <aside id="sidebar" aria-label="文档目录"></aside>
+    <header id="docHeading"></header>
+    <article id="docContent" tabindex="-1"></article>
+    <nav id="contents" aria-label="本页章节"></nav>
+  </div>
+</main>
+<dialog id="readerDialog" aria-labelledby="readerDialogTitle">
+  <div class="dialog-head"><strong id="readerDialogTitle"></strong><button data-dismiss aria-label="关闭目录"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+  <div id="drawerContents"></div>
+</dialog>
+<dialog id="imageDialog" aria-labelledby="imageTitle">
+  <div class="dialog-head"><strong id="imageTitle"></strong><div><button id="imageScale" aria-pressed="false">原始尺寸</button><button data-dismiss aria-label="关闭预览"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div></div>
+  <div class="image-scroll" tabindex="0"><img id="largeImage" alt=""></div>
+</dialog>
+<dialog id="searchDialog" aria-label="搜索文档"><div class="search-line"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="searchInput" type="search" aria-label="搜索文档与章节" placeholder="搜索文档与章节…" autocomplete="off"><button id="closeSearch" aria-label="关闭搜索"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><p id="searchStatus" role="status"></p><div id="searchResults"></div></dialog>
 <script>
 const TREE=[
   {cat:"快速开始",items:[
@@ -703,6 +737,6 @@ constraints:{b:'进阶 > 支持范围与限制',h:`
 
 /* ── app logic ── */
 </script>
-<script src="showcase/site.js"></script>
+<script src="showcase/site.js?v=atlas2"></script>
 </body>
 </html>
