@@ -1,5 +1,6 @@
 """Exercise the actual NSIS package on a Windows desktop runner."""
 
+import argparse
 import hashlib
 import json
 import os
@@ -30,17 +31,13 @@ def install(package, destination):
     assert (destination / "uninstall.exe").is_file()
 
 
-def run_engine(destination, args, *, cwd):
-    return json.loads(
-        subprocess.check_output(
-            [destination / "engine/garden-engine.exe", *args], cwd=cwd, timeout=120
-        )
-    )
+def run_engine(executable, args, *, cwd):
+    return json.loads(subprocess.check_output([executable, *args], cwd=cwd, timeout=120))
 
 
-def control_engine(destination, home, operation, *, cwd):
+def control_engine(executable, home, operation, *, cwd):
     args = ["control", "--home", str(home), "--operation", operation]
-    return run_engine(destination, args, cwd=cwd)
+    return run_engine(executable, args, cwd=cwd)
 
 
 def webview_port():
@@ -110,6 +107,7 @@ def serve_and_close(destination, home, directory, version):
         cwd=directory,
         env=env,
     )
+    executable = destination / "engine/garden-engine.exe"
     state = home / "runtime/server.json"
     try:
         wait_for_webview(process, endpoint)
@@ -124,7 +122,7 @@ def serve_and_close(destination, home, directory, version):
             setup.locator("#inspect").click()
             setup.locator("#output").filter(has_text='"exists": false').wait_for()
             connect_workbench(session, setup, state)
-            assert control_engine(destination, home, "activity", cwd=directory)["idle"] is True
+            assert control_engine(executable, home, "activity", cwd=directory)["idle"] is True
             win32gui.PostMessage(workbench_window(process), win32con.WM_CLOSE, 0, 0)
             assert process.wait(timeout=45) == 0
         assert not state.exists(), "Closing the App should stop its owned engine and clear state"
@@ -133,7 +131,7 @@ def serve_and_close(destination, home, directory, version):
             process.terminate()
             process.wait(timeout=15)
         if state.exists():
-            control_engine(destination, home, "stop", cwd=directory)
+            control_engine(executable, home, "stop", cwd=directory)
 
 
 def verify_files(work):
@@ -155,7 +153,28 @@ def verify_files(work):
         pass
 
 
+def verify_engine_start(executable):
+    with tempfile.TemporaryDirectory(prefix="garden-engine-") as path:
+        directory = Path(path).resolve(strict=True)
+        home = directory / "引擎 数据"
+        args = ["connect", "--home", str(home), "--initialize"]
+        instance = run_engine(executable, args, cwd=directory)
+        try:
+            assert instance["owned"]
+            assert control_engine(executable, home, "activity", cwd=directory)["idle"]
+        finally:
+            assert control_engine(executable, home, "stop", cwd=directory)["stopped"]
+        assert not (home / "runtime/server.json").exists()
+        print("Frozen Windows engine started and stopped successfully", flush=True)
+
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--engine", type=Path, help="Check the frozen engine before bundling")
+    args = parser.parse_args()
+    if args.engine:
+        verify_engine_start(args.engine.resolve(strict=True))
+        return
     version = json.loads((ROOT / "desktop/package.json").read_text())["version"]
     report = json.loads((ROOT / ".verification/package-report.json").read_text())
     package = Path(report["artifacts"][0]["file"])
@@ -171,7 +190,7 @@ def main():
         home = directory / "工作台 数据"
         install(package, installed)
         assert (installed / "notices/inventory.json").is_file()
-        probe = run_engine(installed, ["probe"], cwd=directory)
+        probe = run_engine(installed / "engine/garden-engine.exe", ["probe"], cwd=directory)
         assert probe["version"] == version
         assert probe["frozen"] and probe["offline_download"] and probe["migration"]
         chromium = Path(probe["chromium_path"]).resolve(strict=True)

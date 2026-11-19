@@ -16,9 +16,10 @@ def main():
     host = platform.system(), platform.machine().lower()
     if host == ("Windows", "amd64"):
         versions.update(versions["windows"])
-        arch_args = []
+        # Loaded by the pywin32 extension at runtime, outside Python import analysis.
+        platform_args = ["--hidden-import", "win32timezone"]
     elif host == ("Darwin", "arm64"):
-        arch_args = ["--target-arch", "arm64"]
+        platform_args = ["--target-arch", "arm64"]
     else:
         raise SystemExit(f"No native desktop engine build for {host}.")
     if platform.python_version() != versions["python"]:
@@ -33,7 +34,7 @@ def main():
         "--onedir",
         "--name",
         "garden-engine",
-        *arch_args,
+        *platform_args,
         "--distpath",
         str(ROOT / "desktop/src-tauri/engine-dist"),
         "--workpath",

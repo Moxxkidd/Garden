@@ -152,6 +152,9 @@ jobs:
           python desktop/build_engine.py
           python desktop/build_notices.py
 
+      - name: Check frozen engine startup and shutdown
+        run: python desktop/verify_windows.py --engine desktop/src-tauri/engine-dist/garden-engine/garden-engine.exe
+
       - name: Build the NSIS installer
         run: python desktop/build_app.py
 
