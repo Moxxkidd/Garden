@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, computed_field
 from sqlalchemy.engine import make_url
 
 import app
-from app.cli.paths import GardenPaths
+from app.cli.paths import GardenPaths, formal_runtime_paths
 from app.core.settings import Settings
 from app.core.version import project_version
 from app.redaction.service import RedactionService
@@ -72,9 +72,9 @@ def diagnose(ui_port: int | None = None) -> DoctorReport:
         )
         report.checks.append(safe_check("browser", check_browser))
         return report
-    formal = os.environ.get("GARDEN_CLI_RUNTIME") == "1"
+    formal = formal_runtime_paths() is not None
     config = paths.config_file if formal else Path.cwd() / ".env"
-    source = "正式安装 config.env" if formal else "当前工作目录 .env"
+    source = "数据目录 config.env" if formal else "当前工作目录 .env"
     source += "（环境变量优先；不显示配置内容）"
 
     try:

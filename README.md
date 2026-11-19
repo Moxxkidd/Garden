@@ -19,11 +19,12 @@ Garden 支持从一个 HTTP(S) URL 开始，也支持为项目绑定多个入口
 | 源码版本 | **2.0.0**；G2-01—26 已完成实施与验收，止于发布准备 |
 | 数据结构 | SQLite，迁移 head **0016**；历史观察与 delivery-v1 保留 |
 | 核心运行环境 | Python **≥3.10**；最终 CI 验证 Linux Python 3.10 / 3.12 |
-| 最终候选 | `8146a43`；两版各 **993 passed**，CLI smoke / Docker build 通过 |
+| 11 月 14 日候选 | `8146a43`；两版各 **993 passed**，CLI smoke / Docker build 通过 |
+| 11 月 19 日排查 | 数据目录、安装备份、恢复、清理及部署复测见[实施记录](docs/versions/v2.0.0.md#2026-11-19-发布候选排查) |
 | macOS App | **Apple Silicon / macOS ≥26.0 本地 Beta**，实测 26.3，捆绑 Python 3.12 与 Chromium |
 | 正式发布 | **尚未发布**；未创建 tag / Release 或上传软件包；正式签名、公证与外部机器验证待完成 |
 
-这里的测试数属于 [2026-11-14 最终候选 CI](https://github.com/Moxxkidd/Garden/actions/runs/43563921740)，文档更新不会将其改写为新代码的测试结果。[包清单与 SHA256](docs/quality/v2.0.0-packages.json)记录已验证的本地 wheel、sdist 和 DMG，当前没有公开发行包下载入口。
+这里的测试数属于 [2026-11-14 候选 CI](https://github.com/Moxxkidd/Garden/actions/runs/43563921740)。[包清单与 SHA256](docs/quality/v2.0.0-packages.json)记录同一候选的 wheel、sdist 和 DMG。当前没有公开发行包下载入口。
 
 ## 可以做什么
 
@@ -37,6 +38,8 @@ Garden 支持从一个 HTTP(S) URL 开始，也支持为项目绑定多个入口
 | 后续管理 | 时效与变化比较、缺口补采、显式固定间隔复查、私有备份、空目录恢复与清理预览 |
 
 浏览器深入混合模式面向**匿名单入口**；需要身份时使用独立身份采集或人工浏览流程。JS/OpenAPI 声明可能只是候选，未经请求不会变成已观察资产。模板只改变展示，人工保留不证明业务有效。
+
+匿名、普通用户与管理员的可见面比较见[被动认证覆盖](docs/deployment.md#被动认证覆盖可选高级入口)。
 
 ## 安装与第一次扫描
 
@@ -79,12 +82,22 @@ source .venv/bin/activate
 make install
 python -m playwright install chromium
 cp .env.example .env
+garden db upgrade
 make dev
 ```
 
 打开 [http://127.0.0.1:8000](http://127.0.0.1:8000)。`make demo` 也只是启动 Garden，不会另外启动示例业务站点。若只想本机试跑，可在另一个终端用 `python3 -m http.server 8080 --bind 127.0.0.1 --directory docs` 提供本仓库公开文档作为目标。
 
-Docker 使用 `cp .env.example .env`、`docker compose up --build`；数据卷、容器网络和代理配置见[部署文档](docs/deployment.md)。容器里的 `127.0.0.1` 指向容器自身。
+Docker 首次启动或更新代码后，先用同一数据卷执行数据库迁移。
+
+```bash
+cp .env.example .env  # 首次部署，已有配置时跳过
+docker compose build
+docker compose run --rm garden garden db upgrade
+docker compose up -d
+```
+
+数据卷、升级顺序、容器网络和代理配置见[部署文档](docs/deployment.md)。容器里的 `127.0.0.1` 指向容器自身。
 
 ## 一条完整使用路径
 

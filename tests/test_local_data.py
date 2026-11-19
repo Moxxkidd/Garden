@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, text
 
-from app.core.errors import ConflictError
+from app.core.errors import ConflictError, InputValidationError
 from app.core.settings import get_settings
 from app.db.bootstrap import session_scope
 from app.models.auth_session import AuthSession
@@ -66,6 +66,7 @@ def test_private_backup_restore_and_reference_safe_cleanup(seeded_records, tmp_p
         assert stat.S_IMODE(p.stat().st_mode) == (0o700 if p.is_dir() else 0o600)
     restored = service.restore(tmp_path / "private-backup", tmp_path / "restored-home")
     assert restored["active_directory_changed"] is False
+    assert "garden ui" in restored["switch_instruction"]
     engine = create_engine(restored["database_url"])
     with engine.connect() as db:
         assert db.execute(text("select count(*) from project_observations")).scalar() == 1
@@ -101,3 +102,49 @@ def test_private_backup_restore_and_reference_safe_cleanup(seeded_records, tmp_p
     assert result["count"] == preview["count"]
     assert result["count"] > 1
     assert ref.exists() and not orphan.exists()
+
+
+def test_cleanup_keeps_export_state_consistent_after_a_later_delete_fails(
+    seeded_records, tmp_path, monkeypatch
+):
+    from app.schemas.delivery import DeliveryExportRequest
+    from app.services.delivery_jobs import ExportJobService
+    from tests.test_delivery_jobs import HeldExecutor
+
+    storage = tmp_path / "storage"
+    service = LocalDataService(storage_directory=storage)
+    exports = ExportJobService(base_directory=storage / "exports", dispatcher=HeldExecutor())
+    with session_scope() as session:
+        target = session.get(Target, seeded_records["target"].id)
+        project, _ = project_fixture(session, target)
+        ready = exports.submit(session, project.id, DeliveryExportRequest(), inline=True)
+        artifact = exports.artifact(session, ready["id"])[0]
+
+    orphan = storage / "session_payloads" / "locked.json"
+    orphan.parent.mkdir()
+    orphan.write_text("{}")
+    unlink = Path.unlink
+
+    def unlink_or_fail(path, *args, **kwargs):
+        if path == orphan:
+            raise PermissionError("simulated file permission failure")
+        return unlink(path, *args, **kwargs)
+
+    preview = service.cleanup_preview(retention_days=0)
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "unlink", unlink_or_fail)
+        with pytest.raises((OSError, InputValidationError)) as error:
+            service.cleanup_confirm(preview["token"])
+
+    assert not artifact.exists() and orphan.exists()
+    with session_scope() as session:
+        result = exports.view(session, ready["id"])
+    exports.shutdown()
+    assert result["status"] == "failed"
+    assert result["error_code"] == "artifact_cleaned"
+    assert result["download_url"] is None
+    assert isinstance(error.value, InputValidationError)
+    assert "重新预览" in str(error.value)
+    retry = service.cleanup_preview(retention_days=0)
+    assert service.cleanup_confirm(retry["token"])["count"] == 1
+    assert service.backup(tmp_path / "backup-after-cleanup")["private"]

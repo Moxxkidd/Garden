@@ -366,6 +366,27 @@ assert "alembic_version" in inspect(create_engine(database_url)).get_table_names
     )
     assert verify.returncode == 0, verify.stderr
 
+    home = tmp_path / "selected-home"
+    home.mkdir()
+    selected_db = home / "selected.db"
+    (home / "config.env").write_text(f"GARDEN_DATABASE_URL=sqlite+pysqlite:///{selected_db}\n")
+    wrong_db = tmp_path / "wrong-location.db"
+    (tmp_path / ".env").write_text(f"GARDEN_DATABASE_URL=sqlite+pysqlite:///{wrong_db}\n")
+    verify_environment["GARDEN_HOME"] = str(home)
+    verify_environment.pop("GARDEN_CLI_RUNTIME", None)
+    verify_environment.pop("GARDEN_DATABASE_URL", None)
+    upgrade = subprocess.run(
+        [sys.executable, str(install_target / "bin" / "garden"), "db", "upgrade"],
+        cwd=tmp_path,
+        env=verify_environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert upgrade.returncode == 0, upgrade.stderr
+    assert selected_db.is_file()
+    assert not wrong_db.exists()
+
 
 def test_percent_encoded_non_sqlite_url_fails_without_leaking_credentials(capsys):
     encoded_password = "encoded-secret%40value%2Fpart"

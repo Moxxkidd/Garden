@@ -137,6 +137,12 @@ export GARDEN_DEMO_USER_PASSWORD=demo-user-password
 
 ### 5. 启动服务
 
+首次启动或升级后，在配置指向正确数据库时执行迁移：
+
+```bash
+garden db upgrade
+```
+
 方式一，直接使用 Make：
 
 ```bash
@@ -190,35 +196,29 @@ garden scan http://127.0.0.1:8080/
 docker build -t garden:local .
 ```
 
-### 2. 运行容器
+### 2. 初始化数据卷并运行容器
+
+数据库迁移和服务使用同一个数据目录。升级已有数据时，先停止原容器。
 
 ```bash
+mkdir -p data exports
+docker run --rm -v "$(pwd)/data:/app/data" garden:local garden db upgrade
 docker run --rm -it \
-  -p 8000:8000 \
-  -v "$(pwd)/exports:/app/exports" \
-  -e GARDEN_DATABASE_URL=sqlite+pysqlite:///./data/garden.db \
-  -e GARDEN_ALLOW_NON_LOCAL_TARGETS=true \
-  -e GARDEN_DEMO_ADMIN_PASSWORD=demo-admin-password \
-  -e GARDEN_DEMO_USER_PASSWORD=demo-user-password \
-  garden:local
-```
-
-如果你希望持久化 `data/`：
-
-```bash
-docker run --rm -it \
-  -p 8000:8000 \
+  -p 127.0.0.1:8000:8000 \
   -v "$(pwd)/data:/app/data" \
-  -e GARDEN_DATABASE_URL=sqlite+pysqlite:///./data/garden.db \
+  -v "$(pwd)/exports:/app/exports" \
   garden:local
 ```
 
 ### 3. 使用 docker compose
 
-如果你想直接使用仓库里的 compose：
+首次使用时复制配置；升级时保留原配置，并先运行 `docker compose stop garden`。
 
 ```bash
-docker compose up --build
+cp .env.example .env  # 首次部署，已有配置时跳过
+docker compose build
+docker compose run --rm garden garden db upgrade
+docker compose up -d
 ```
 
 ## 六、旧版登录后高级工作流（可选）

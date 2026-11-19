@@ -1,4 +1,7 @@
+import sqlite3
 import subprocess
+import sys
+from contextlib import closing
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -117,6 +120,43 @@ exec "{versioned_python}" "$@"
     )
     generic_python.chmod(0o755)
     return generic_python, versioned_python
+
+
+def test_installer_backup_includes_committed_wal_data(tmp_path):
+    environment, _ = _fake_installer_environment(tmp_path)
+    fake_bin = Path(environment["PATH"].split(":", 1)[0])
+    interpreter = fake_bin / "backup-python"
+    interpreter.write_text(
+        f"""#!/bin/sh
+case "$1" in
+  -|-c) exec "{sys.executable}" "$@" ;;
+  -I) if [ "$2" = - ]; then exec "{sys.executable}" "$@"; fi ;;
+esac
+exec "{fake_bin / "python3"}" "$@"
+"""
+    )
+    interpreter.chmod(0o755)
+    environment["GARDEN_PYTHON"] = str(interpreter)
+    garden_home = Path(environment["GARDEN_HOME"])
+    garden_home.mkdir()
+    with closing(sqlite3.connect(garden_home / "garden.db")) as source:
+        assert source.execute("PRAGMA journal_mode=WAL").fetchone() == ("wal",)
+        source.execute("PRAGMA wal_autocheckpoint=0")
+        source.execute("CREATE TABLE notes (note TEXT)")
+        source.execute("INSERT INTO notes VALUES ('committed in WAL')")
+        source.commit()
+        installed = subprocess.run(
+            ["bash", str(PROJECT_ROOT / "install.sh")],
+            cwd=PROJECT_ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert installed.returncode == 0, installed.stderr
+        (backup,) = (garden_home / "backups").glob("garden-*.db")
+        with closing(sqlite3.connect(backup)) as copied:
+            assert copied.execute("SELECT note FROM notes").fetchone() == ("committed in WAL",)
 
 
 def test_install_ignores_socks_all_proxy_for_isolated_pip(tmp_path):

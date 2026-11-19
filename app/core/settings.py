@@ -1,23 +1,17 @@
 """Central settings loader for Garden."""
 
-import os
 from functools import lru_cache
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, DotEnvSettingsSource, SettingsConfigDict
 
-from app.cli.paths import GardenPaths
+from app.cli.paths import formal_runtime_paths
 from app.core.version import project_version
 
 
-def _is_formal_cli_runtime() -> bool:
-    return os.environ.get("GARDEN_CLI_RUNTIME") == "1"
-
-
 def _default_database_url() -> str:
-    if _is_formal_cli_runtime():
-        return GardenPaths.from_environment().database_url
-    return "sqlite+pysqlite:///./data/garden.db"
+    paths = formal_runtime_paths()
+    return paths.database_url if paths else "sqlite+pysqlite:///./data/garden.db"
 
 
 class Settings(BaseSettings):
@@ -101,10 +95,11 @@ class Settings(BaseSettings):
         dotenv_settings,
         file_secret_settings,
     ):
-        if _is_formal_cli_runtime():
+        paths = formal_runtime_paths()
+        if paths:
             formal_dotenv = DotEnvSettingsSource(
                 settings_cls,
-                env_file=GardenPaths.from_environment().config_file,
+                env_file=paths.config_file,
                 env_file_encoding="utf-8",
                 case_sensitive=False,
             )

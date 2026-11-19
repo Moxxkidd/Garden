@@ -6,10 +6,11 @@
 
 ### 快速扫描
 
-源码 / Python 安装仍使用 `garden` 或 `gardenctl`，核心支持 Python ≥3.10。使用明确的隔离数据目录开始合成演示；这里的 8080 应是你已经启动并授权的本机站点。
+源码 / Python 安装仍使用 `garden` 或 `gardenctl`，核心支持 Python ≥3.10。在明确选定的隔离目录初始化数据库，再开始合成演示。这里的 8080 应是你已经启动并授权的本机站点。
 
 ```bash
 GARDEN_HOME=/absolute/path/to/demo-home garden --version
+GARDEN_HOME=/absolute/path/to/demo-home garden db upgrade
 GARDEN_HOME=/absolute/path/to/demo-home garden scan http://127.0.0.1:8080/ --preset balanced
 GARDEN_HOME=/absolute/path/to/demo-home garden ui
 ```

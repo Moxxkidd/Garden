@@ -27,9 +27,9 @@ def test_v030_documents_guided_and_automated_passive_coverage() -> None:
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     deployment = (PROJECT_ROOT / "docs" / "deployment.md").read_text(encoding="utf-8")
 
-    for text in (readme, deployment):
-        assert "garden coverage URL" in text
-        assert "--non-interactive" in text
-        assert "ephemeral-file://" in text
-        assert "主动权限重放未执行" in text
-        assert "覆盖差异不是已确认漏洞" in text
+    assert "[被动认证覆盖](docs/deployment.md#被动认证覆盖可选高级入口)" in readme
+    assert "garden coverage URL" in deployment
+    assert "--non-interactive" in deployment
+    assert "ephemeral-file://" in deployment
+    assert "主动权限重放未执行" in deployment
+    assert "覆盖差异不是已确认漏洞" in deployment

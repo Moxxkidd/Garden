@@ -335,7 +335,7 @@ nav .logo{text-decoration:none}
 </div>
 <div class="status-row" aria-label="当前版本状态">
   <div><strong>2.0.0 / 迁移 0016</strong>核心 Python ≥3.10，WebUI / CLI / API 共用引擎</div>
-  <div><strong>两套环境各 993 项通过</strong>最终候选 Linux Python 3.10 / 3.12，<a href="#docs/release-status" onclick="showDocs('release-status');return false">查看验收范围</a></div>
+  <div><strong>两套环境各 993 项通过</strong>11 月 14 日候选 Linux Python 3.10 / 3.12，<a href="#docs/release-status" onclick="showDocs('release-status');return false">查看验收范围</a></div>
   <div><strong>macOS App 本地 Beta</strong>Apple Silicon / 26.0+，正式签名、公证与发行待完成</div>
 </div>
 <section class="feat" aria-label="当前能力">
@@ -386,7 +386,7 @@ garden ui</pre>
 </section>
 <section class="extra overview-section">
   <div class="tag">交付与验收</div><h2>发布准备完成，正式发行另行进行</h2>
-  <p>运行候选 <code>8146a43</code> 已验证真实 v1.0 结构升级、完整合成旅程、wheel / sdist / macOS DMG 与 App 实际保存。Python 3.10 / 3.12 各 993 passed，CLI 和 Docker 检查通过。</p>
+  <p>11 月 14 日候选 <code>8146a43</code> 已验证真实 v1.0 结构升级、完整合成旅程、wheel / sdist / macOS DMG 与 App 实际保存。Python 3.10 / 3.12 各 993 passed，CLI 和 Docker 构建通过。</p>
   <p>当前没有公开发行包。macOS 仅为 Apple Silicon / 26.0+ 本地 Beta；正式签名、公证、更新渠道、许可证再分发及外部干净机器仍待核实。合成结果不代表实际站点发现率。</p>
   <p><a href="#docs/release-status" onclick="showDocs('release-status');return false">完整验收与包 SHA256</a> · <a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/README.md">版本索引</a> · <a href="https://github.com/Moxxkidd/Garden/blob/main/docs/history.md">历史沿革</a></p>
 </section>
@@ -492,7 +492,7 @@ garden projects schedules 1
 garden projects --help</pre><p>项目 ID 使用实际返回值。完整导出不受屏幕页码限制；PDF / ZIP 必须指定输出路径，OpenAPI 为推断草稿。</p>
 `},
 'release-status':{b:'快速开始 > 版本状态与验收',h:`
-<h1>v2.0.0 版本状态与验收</h1><p>G2-01—26 已完成实施与验收，止于发布准备。当前源码版本 2.0.0、数据库 head 0016；冻结运行/构建候选为 <code>8146a4345bb8e29dec606727590b8b3ff5042cb5</code>，验收文档补交为 2e10a28。后续文档更新不冒充新的应用测试结果。</p>
+<h1>v2.0.0 版本状态与验收</h1><p>当前源码版本 2.0.0、数据库 head 0016。下表记录 11 月 14 日的运行与构建候选 <code>8146a43</code>。11 月 19 日的安装、恢复、清理和部署修复见<a href="https://github.com/Moxxkidd/Garden/blob/main/docs/versions/v2.0.0.md#2026-11-19-发布候选排查">发布候选排查记录</a>。</p>
 <table><tr><th>验证项</th><th>实际结果</th></tr><tr><td>Linux CI</td><td>Python 3.10.22 / 3.12.16 各 993 passed；Ruff、format、CLI smoke、Docker build 全绿。</td></tr><tr><td>真实旧结构升级</td><td>实际 v1.0 0011 合成库→0016，40 张旧表原列和值、报告、标签、备注与私有引用保留；不伪造未知字段。</td></tr><tr><td>综合旅程</td><td>匿名、两入口两身份→复核→离线交付→周期复查→空目录恢复；5 主体、6 观察、3 会话，恢复后计划暂停。</td></tr><tr><td>候选包</td><td>wheel / sdist / DMG 已构建审计与安装；App 原生保存后核对落盘，源码和日用数据隔离。</td></tr></table>
 <h2>正式发行仍待完成</h2><p>未打 tag、创建 Release 或上传软件包；没有公开发行包下载入口。macOS 只有 Apple Silicon / 26.0+ 本地 Beta 证据，正式签名、公证、更新渠道、独立许可证与再分发条件、外部干净机器待核实。没有 Windows、Intel 或更早 macOS 的本轮证据。</p>
 <p>固定合成语料发现 3/3、候选确认 3/3、误合并 0/20，不代表实际站点发现率或独立安全审计。前版性能实验保持其原有环境与版本归属。</p>
@@ -546,7 +546,7 @@ intro:{b:'快速开始 > 简介与当前能力',h:`
 <p>从已授权 HTTP(S) 入口发现页面、接口与资源，保留匿名、登录身份及不同时间的观察，整理成可追溯清单。WebUI、CLI、API 与 macOS App 共用 Python 引擎和项目数据。</p>
 <h2>按任务选择入口</h2>
 <ul class="check-list"><li><strong>快速扫描</strong>：独立提交 URL，预览预设、同源边界和预算；不需要先配置登录。</li><li><strong>登录与多入口</strong>：人工完成验证码后恢复验证；每个入口单独绑定身份和配额，再确认计划。</li><li><strong>整理与交付</strong>：筛选项目清单、批量人工复核，生成完整报告与离线文件，必要时显式开启后续复查。</li></ul>
-<h2>当前交付状态</h2><p>源码 2.0.0、迁移 head 0016、核心 Python ≥3.10。G2-01—26 已完成实施与验收，最终候选两版 Python 各 993 passed。macOS 为 Apple Silicon / 26.0+ 本地 Beta；没有正式发行包。</p>
+<h2>当前交付状态</h2><p>源码 2.0.0、迁移 head 0016、核心 Python ≥3.10。11 月 14 日候选两版 Python 各 993 passed。macOS 为 Apple Silicon / 26.0+ 本地 Beta；没有正式发行包。</p>
 <div class="tip">执行结束不等于覆盖完整；人工保留不证明业务有效。已观察、候选、未知、范围和身份限制分别保留。文件已生成与用户保存也分别说明。</div>
 <p><a href="#docs/quickstart" onclick="nav('quickstart');return false">从本机试跑开始</a> · <a href="#docs/release-status" onclick="nav('release-status');return false">核对验收和发行状态</a></p>
 `},
@@ -567,9 +567,14 @@ source .venv/bin/activate
 make install
 python -m playwright install chromium
 cp .env.example .env
+garden db upgrade
 make dev</pre>
-<p>打开 http://127.0.0.1:8000。make demo 同样只启动 Garden，不会额外启动业务目标。源码配置来自 .env；正式 CLI 使用数据目录中的 config.env，环境变量优先。</p>
-<h2>Docker 与 App</h2><p>Docker：复制 .env.example 为 .env 后执行 docker compose up --build。容器里的 127.0.0.1 指向容器自身；数据卷与目标网络须单独配置。macOS App 捆绑 Python 与 Chromium，只支持 Apple Silicon / macOS 26.0+ 本地 Beta，尚无公开发行包。</p>
+<p>打开 http://127.0.0.1:8000。make demo 启动 Garden 本身。使用 GARDEN_HOME 时读取所选目录的 config.env，否则源码模式读取 .env，环境变量优先。</p>
+<h2>Docker 与 App</h2><p>首次运行 Compose 时复制 .env.example 为 .env，然后构建镜像、迁移数据卷并启动：</p>
+<pre>docker compose build
+docker compose run --rm garden garden db upgrade
+docker compose up -d</pre>
+<p>升级已有部署前先停止原容器。容器里的 127.0.0.1 指向容器自身。macOS App 捆绑 Python 与 Chromium，仅支持 Apple Silicon / macOS 26.0+ 本地 Beta，尚无公开发行包。</p>
 <p><a href="https://github.com/Moxxkidd/Garden/blob/main/docs/deployment.md">详细部署与代理说明</a> · <a href="#docs/desktop" onclick="nav('desktop');return false">App 使用与限制</a></p>
 `},
 quickstart:{b:'快速开始 > 本机试跑与完整流程',h:`

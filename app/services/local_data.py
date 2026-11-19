@@ -355,7 +355,7 @@ class LocalDataService:
                 schedules_paused=True,
                 switch_instruction=(
                     f"检查此隔离目录后，明确使用 GARDEN_HOME={shlex.quote(str(target))} "
-                    "garden web start；当前服务与数据目录未切换。"
+                    "garden ui；当前服务与数据目录未切换。"
                 ),
             )
         except BaseException:
@@ -445,14 +445,28 @@ class LocalDataService:
             items = self._cleanup_items(db, days, pids)
             if items != expected:
                 raise ConflictError("cleanup_preview_changed：文件或引用已变化，请重新预览。")
+            removed = []
+            failure = None
             for item in items:
-                Path(item["path"]).unlink()
-            for job_id in {i["job_id"] for i in items if i["kind"] == "export"}:
-                db.execute(
-                    "update delivery_exports set artifact=NULL,status='failed',"
-                    "error_code='artifact_cleaned' where id=?",
-                    (job_id,),
-                )
+                path = Path(item["path"])
+                try:
+                    path.unlink()
+                except OSError as error:
+                    failure = error
+                    break
+                removed.append(item)
+                if item["kind"] == "export":
+                    job_id = item["job_id"]
+                    name = path.relative_to(self.storage / "exports" / job_id).as_posix()
+                    db.execute(
+                        "update delivery_exports set artifact=NULL,status='failed',"
+                        "error_code='artifact_cleaned' where id=? and artifact=?",
+                        (job_id, name),
+                    )
             db.commit()
             self.tokens.values.pop(token)
-            return dict(count=len(items), bytes=sum(i["size"] for i in items))
+            if failure is not None:
+                raise InputValidationError(
+                    f"清理中止，已删除 {len(removed)} 个文件。请检查目录权限后重新预览。"
+                ) from failure
+            return dict(count=len(removed), bytes=sum(i["size"] for i in removed))

@@ -77,8 +77,8 @@ class GardenPaths:
 
 
 def formal_runtime_paths() -> GardenPaths | None:
-    """正式 CLI 运行时返回用户目录约定；仓库开发模式保持原路径。"""
+    """Use the user layout for a managed CLI or an explicitly selected home."""
 
-    if os.environ.get("GARDEN_CLI_RUNTIME") != "1":
-        return None
-    return GardenPaths.from_environment()
+    if os.environ.get("GARDEN_CLI_RUNTIME") == "1" or os.environ.get("GARDEN_HOME"):
+        return GardenPaths.from_environment()
+    return None

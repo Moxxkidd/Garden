@@ -61,6 +61,22 @@ jobs:
       - name: Build image
         run: docker build -t garden:ci .
 
+      - name: Start image with a newly migrated volume
+        run: |
+          volume=$(docker volume create)
+          container=
+          trap 'if [ -n "$container" ]; then docker rm -f "$container"; fi; docker volume rm "$volume"' EXIT
+          docker run --rm --network none -v "$volume:/app/data" garden:ci garden db upgrade
+          container=$(docker run -d --network none -v "$volume:/app/data" garden:ci)
+          for attempt in {1..20}; do
+            if docker exec "$container" python -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/healthz", timeout=1).read()' 2>/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
+
   cli-smoke:
     name: CLI smoke
     runs-on: ubuntu-latest

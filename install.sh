@@ -186,8 +186,31 @@ fi
 if [ -f "$GARDEN_HOME/garden.db" ]; then
   GARDEN_BACKUP_DIR="$GARDEN_HOME/backups"
   mkdir -p "$GARDEN_BACKUP_DIR"
-  GARDEN_BACKUP_FILE="$GARDEN_BACKUP_DIR/garden-$(date +%Y%m%d%H%M%S).db"
-  cp -p "$GARDEN_HOME/garden.db" "$GARDEN_BACKUP_FILE"
+  GARDEN_BACKUP_FILE="$("$GARDEN_PYTHON_BIN" -I - "$GARDEN_HOME/garden.db" "$GARDEN_BACKUP_DIR" <<'PY'
+import sqlite3
+import sys
+from contextlib import closing
+from datetime import datetime
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+
+source = Path(sys.argv[1]).absolute()
+with NamedTemporaryFile(
+    dir=sys.argv[2], prefix=f"garden-{datetime.now():%Y%m%d%H%M%S}-", suffix=".db", delete=False
+) as file:
+    backup = Path(file.name)
+try:
+    with (
+        closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as incoming,
+        closing(sqlite3.connect(backup)) as outgoing,
+    ):
+        incoming.backup(outgoing)
+except BaseException:
+    backup.unlink()
+    raise
+print(backup)
+PY
+)"
   echo "已备份数据库：$GARDEN_BACKUP_FILE"
 fi
 
